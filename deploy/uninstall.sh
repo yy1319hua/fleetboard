@@ -21,8 +21,10 @@ rm -rf "$BASE"
 if [ -d "$DATA" ]; then
   echo
   echo "发现数据目录 $DATA（SQLite 数据库，含纳管记录与凭据密文）"
-  read -rp "确认删除？输入 DELETE 继续，其他任意键保留: " a
-  [ "$a" = "DELETE" ] && { rm -rf "$DATA"; echo "已删除 $DATA"; } || echo "已保留 $DATA"
+  # 确认从终端读（管道执行 curl|bash 时 stdin 是脚本自身，read 会吃 EOF）
+  a=""
+  if { printf "确认删除？输入 DELETE 继续，其他任意键保留: " >/dev/tty && read -r a </dev/tty; } 2>/dev/null; then :; fi
+  [ "$a" = "DELETE" ] && { rm -rf "$DATA"; echo "已删除 $DATA"; } || echo "已保留 $DATA（可稍后手动删除）"
 fi
 
 echo "==> 残留扫描"
