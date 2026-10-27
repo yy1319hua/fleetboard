@@ -38,6 +38,13 @@ func main() {
 	}
 	defer d.Close()
 
+	if created, err := db.EnsureAdmin(d, cfg.BootstrapUser, cfg.BootstrapPass); err != nil {
+		fmt.Fprintf(os.Stderr, "初始化管理员失败: %v\n", err)
+		os.Exit(1)
+	} else if created {
+		log.Printf("已创建初始管理员: %s", cfg.BootstrapUser)
+	}
+
 	schema, err := db.Version(d)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "读取 schema 版本失败: %v\n", err)
