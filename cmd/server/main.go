@@ -186,6 +186,7 @@ func main() {
 		Pool:      pool,
 
 		ComposeRoots: cfg.ComposeRoots,
+		WebDir:       os.Getenv("WEB_DIR"),
 	})
 	srv := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.ListenAddr, cfg.Port),

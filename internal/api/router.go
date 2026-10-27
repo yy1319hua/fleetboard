@@ -17,6 +17,7 @@ type RouterOptions struct {
 	MasterKey    string // 凭据加密主密钥（KEY）
 	Pool         *sshpool.Pool
 	ComposeRoots []string // compose 文件可读写根目录白名单（空=内置默认）
+	WebDir       string   // 前端构建产物目录（web/dist）；空或不存在则不托管静态资源
 }
 
 // NewRouter 构建 HTTP 路由。
@@ -100,6 +101,9 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 
 	// 软件包更新（SSE 流式）
 	authed.POST("/servers/:id/packages/update", packageUpdateHandler(opts.DB, opts.MasterKey, opts.Pool))
+
+	// 前端静态资源（web/dist），SPA 回退；目录缺失时静默跳过
+	registerWebStatic(r, opts.WebDir)
 
 	return r
 }

@@ -1,0 +1,24 @@
+[Unit]
+Description=fleetboard — 多服务器运维控制台
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 二进制与前端产物、.env 都在 /opt/fleetboard，数据在 /var/lib/fleetboard
+WorkingDirectory=/opt/fleetboard
+EnvironmentFile=/opt/fleetboard/.env
+ExecStart=/opt/fleetboard/fleetboard
+Restart=on-failure
+RestartSec=3
+
+# 加固：专用系统用户，仅数据目录可写
+User=fleetboard
+Group=fleetboard
+ReadWritePaths=/var/lib/fleetboard
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
