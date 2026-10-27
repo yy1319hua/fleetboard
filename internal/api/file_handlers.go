@@ -16,10 +16,11 @@ import (
 	"github.com/yy1319hua/fleetboard/internal/db"
 	"github.com/yy1319hua/fleetboard/internal/file"
 	"github.com/yy1319hua/fleetboard/internal/sshpool"
+	"golang.org/x/crypto/ssh"
 )
 
-// openSFTP 建立到被管机的 SFTP 会话；调用方负责 Close。
-func openSFTP(c *gin.Context, d *sql.DB, masterKey string, pool *sshpool.Pool, id int64) (*sftp.Client, error) {
+// openSSH 建立到被管机的 SSH 连接（来自连接池）。
+func openSSH(c *gin.Context, d *sql.DB, masterKey string, pool *sshpool.Pool, id int64) (*ssh.Client, error) {
 	s, err := db.GetServer(d, id)
 	if errors.Is(err, db.ErrServerNotFound) {
 		return nil, ErrNotFound("服务器不存在")
@@ -48,7 +49,15 @@ func openSFTP(c *gin.Context, d *sql.DB, masterKey string, pool *sshpool.Pool, i
 	if err != nil {
 		return nil, ErrBadGateway("SSH 连接失败: " + err.Error())
 	}
+	return cli, nil
+}
 
+// openSFTP 建立到被管机的 SFTP 会话；调用方负责 Close。
+func openSFTP(c *gin.Context, d *sql.DB, masterKey string, pool *sshpool.Pool, id int64) (*sftp.Client, error) {
+	cli, err := openSSH(c, d, masterKey, pool, id)
+	if err != nil {
+		return nil, err
+	}
 	sc, err := sftp.NewClient(cli)
 	if err != nil {
 		return nil, ErrBadGateway("SFTP 会话失败: " + err.Error())
