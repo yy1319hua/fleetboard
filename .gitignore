@@ -7,6 +7,12 @@
 *.test
 *.out
 
+# 前端
+node_modules/
+web/dist/
+web/dev-dist/
+*.tsbuildinfo
+
 # 运行期数据（SQLite 及 WAL）
 /data/
 *.db
