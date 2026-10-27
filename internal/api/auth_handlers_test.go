@@ -2,15 +2,20 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yy1319hua/fleetboard/internal/db"
+	"github.com/yy1319hua/fleetboard/internal/sshpool"
+	"golang.org/x/crypto/ssh"
 )
 
 func newAuthTestServer(t *testing.T) (*gin.Engine, *sql.DB) {
@@ -23,7 +28,16 @@ func newAuthTestServer(t *testing.T) (*gin.Engine, *sql.DB) {
 		t.Fatalf("EnsureAdmin: %v", err)
 	}
 	gin.SetMode(gin.TestMode)
-	r := NewRouter(RouterOptions{DB: d, JWTSecret: "test-secret", MasterKey: "test-master"})
+	pool := sshpool.NewPool(time.Minute)
+	pool.SetDialer(func(context.Context, sshpool.Config) (*ssh.Client, error) {
+		return nil, errors.New("fake dial error")
+	})
+	r := NewRouter(RouterOptions{
+		DB:        d,
+		JWTSecret: "test-secret",
+		MasterKey: "test-master",
+		Pool:      pool,
+	})
 	return r, d
 }
 

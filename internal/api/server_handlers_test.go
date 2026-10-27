@@ -124,3 +124,35 @@ func TestDeleteServerAPI(t *testing.T) {
 		t.Errorf("删除后 status=%d, want 404", gw.Code)
 	}
 }
+
+func TestServerStatusOffline(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	cw := authReq(r, http.MethodPost, "/api/servers", tokens.AccessToken, map[string]any{
+		"name": "probe", "host": "unreachable", "auth_method": "key", "private_key": "K",
+	})
+	if cw.Code != http.StatusCreated {
+		t.Fatalf("创建失败 status=%d body=%s", cw.Code, cw.Body)
+	}
+
+	// 假 dialer 必然失败 → 502 且状态落 offline
+	tw := authReq(r, http.MethodPost, "/api/servers/1/test", tokens.AccessToken, nil)
+	if tw.Code != http.StatusBadGateway {
+		t.Errorf("连接失败应 502，实际 status=%d body=%s", tw.Code, tw.Body)
+	}
+
+	gw := authReq(r, http.MethodGet, "/api/servers/1", tokens.AccessToken, nil)
+	var resp struct {
+		Data struct {
+			ConnectionStatus string `json:"connection_status"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(gw.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Data.ConnectionStatus != "offline" {
+		t.Errorf("connection_status=%q, want offline", resp.Data.ConnectionStatus)
+	}
+}

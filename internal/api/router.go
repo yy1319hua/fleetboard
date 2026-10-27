@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/yy1319hua/fleetboard/internal/sshpool"
 )
 
 // RouterOptions 是构建路由所需的运行期信息。
@@ -14,6 +15,7 @@ type RouterOptions struct {
 	DB        *sql.DB
 	JWTSecret string
 	MasterKey string // 凭据加密主密钥（KEY）
+	Pool      *sshpool.Pool
 }
 
 // NewRouter 构建 HTTP 路由。
@@ -46,6 +48,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.POST("/servers", createServerHandler(opts.DB, opts.MasterKey))
 	authed.GET("/servers/:id", getServerHandler(opts.DB))
 	authed.DELETE("/servers/:id", deleteServerHandler(opts.DB))
+	authed.POST("/servers/:id/test", testServerHandler(opts.DB, opts.MasterKey, opts.Pool))
 
 	return r
 }

@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yy1319hua/fleetboard/internal/db"
+	"github.com/yy1319hua/fleetboard/internal/sshpool"
 )
 
 type createServerRequest struct {
@@ -97,6 +100,57 @@ func deleteServerHandler(d *sql.DB) gin.HandlerFunc {
 			return
 		}
 		OK(c, gin.H{"deleted": id})
+	}
+}
+
+// testServerHandler 尝试建立 SSH 连接，更新并返回连接状态。
+func testServerHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+
+		s, err := db.GetServer(d, id)
+		if errors.Is(err, db.ErrServerNotFound) {
+			Fail(c, ErrNotFound("服务器不存在"))
+			return
+		}
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+
+		cred, err := db.GetDecryptedCredential(d, masterKey, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+		defer cancel()
+
+		_, connErr := pool.Get(ctx, id, sshpool.Config{
+			Host:       s.Host,
+			Port:       s.Port,
+			User:       s.SSHUser,
+			AuthMethod: cred.AuthMethod,
+			Password:   cred.Password,
+			PrivateKey: cred.PrivateKey,
+			KeyPass:    cred.KeyPass,
+		})
+
+		status := "online"
+		if connErr != nil {
+			status = "offline"
+		}
+		_ = db.UpdateServerStatus(d, id, status)
+
+		if connErr != nil {
+			Fail(c, ErrBadGateway("连接失败: "+connErr.Error()))
+			return
+		}
+		OK(c, gin.H{"server_id": id, "status": status})
 	}
 }
 

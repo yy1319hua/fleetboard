@@ -146,6 +146,25 @@ func DeleteServer(d *sql.DB, id int64) error {
 	return nil
 }
 
+// UpdateServerStatus 更新连接状态与最后心跳时间。
+func UpdateServerStatus(d *sql.DB, id int64, status string) error {
+	res, err := d.Exec(
+		`UPDATE servers SET connection_status = ?, last_heartbeat = CURRENT_TIMESTAMP WHERE id = ?`,
+		status, id,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrServerNotFound
+	}
+	return nil
+}
+
 // GetDecryptedCredential 读取并解密某服务器的 SSH 凭据。
 func GetDecryptedCredential(d *sql.DB, masterKey string, serverID int64) (*DecryptedCredential, error) {
 	var (

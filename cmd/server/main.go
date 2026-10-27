@@ -15,6 +15,7 @@ import (
 	"github.com/yy1319hua/fleetboard/internal/api"
 	"github.com/yy1319hua/fleetboard/internal/config"
 	"github.com/yy1319hua/fleetboard/internal/db"
+	"github.com/yy1319hua/fleetboard/internal/sshpool"
 )
 
 // version 在构建时可通过 -ldflags "-X main.version=..." 注入。
@@ -38,6 +39,23 @@ func main() {
 	}
 	defer d.Close()
 
+	pool := sshpool.NewPool(10 * time.Minute)
+	defer pool.CloseAll()
+	stopReap := make(chan struct{})
+	defer close(stopReap)
+	go func() {
+		t := time.NewTicker(5 * time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				pool.Reap()
+			case <-stopReap:
+				return
+			}
+		}
+	}()
+
 	if created, err := db.EnsureAdmin(d, cfg.BootstrapUser, cfg.BootstrapPass); err != nil {
 		fmt.Fprintf(os.Stderr, "初始化管理员失败: %v\n", err)
 		os.Exit(1)
@@ -57,6 +75,7 @@ func main() {
 		DB:        d,
 		JWTSecret: cfg.JWTSecret,
 		MasterKey: cfg.Key,
+		Pool:      pool,
 	})
 	srv := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.ListenAddr, cfg.Port),
