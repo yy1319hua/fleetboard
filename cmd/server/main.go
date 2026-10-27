@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/yy1319hua/fleetboard/internal/config"
+	"github.com/yy1319hua/fleetboard/internal/db"
 )
 
 // version 在构建时可通过 -ldflags "-X main.version=..." 注入。
@@ -21,6 +22,20 @@ func main() {
 		fmt.Fprintf(os.Stderr, "创建数据目录失败: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("fleetboard %s: listen=%s:%d data_dir=%s db=%s\n",
-		version, cfg.ListenAddr, cfg.Port, cfg.DataDir, cfg.DBPath)
+
+	d, err := db.Open(cfg.DBPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "数据库初始化失败: %v\n", err)
+		os.Exit(1)
+	}
+	defer d.Close()
+
+	schema, err := db.Version(d)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "读取 schema 版本失败: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("fleetboard %s: listen=%s:%d db=%s schema=%s\n",
+		version, cfg.ListenAddr, cfg.Port, cfg.DBPath, schema)
 }
