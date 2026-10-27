@@ -97,15 +97,28 @@ export interface ImageItem {
   repository: string;
   tag: string;
   size: string;
-  created_at: string;
+  created_since: string;
+}
+
+export interface NetworkItem {
+  id: string;
+  name: string;
+  driver: string;
+  scope: string;
+}
+
+export interface VolumeItem {
+  name: string;
+  driver: string;
+  mountpoint: string;
 }
 
 export interface ContainerStat {
-  id: string;
+  container: string;
   name: string;
-  cpu_pct: string;
+  cpu_perc: string;
   mem_usage: string;
-  mem_pct: string;
+  mem_perc: string;
   net_io: string;
   block_io: string;
   pids: string;

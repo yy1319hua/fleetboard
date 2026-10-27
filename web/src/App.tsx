@@ -5,6 +5,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { ServerDetailPage } from "@/pages/ServerDetailPage";
+import { ServerDockerTab } from "@/pages/tabs/ServerDockerTab";
 import { ServerFilesTab } from "@/pages/tabs/ServerFilesTab";
 import { ServerOverviewTab } from "@/pages/tabs/ServerOverviewTab";
 import { TabPlaceholder } from "@/pages/tabs/TabPlaceholder";
@@ -46,10 +47,7 @@ export function App() {
           path="monitor"
           element={<TabPlaceholder title="监控曲线" note="24h / 7d 历史曲线将在 M6.6 实现。" />}
         />
-        <Route
-          path="docker"
-          element={<TabPlaceholder title="容器" note="容器列表、操作与实时日志将在 M6.5 实现。" />}
-        />
+        <Route path="docker" element={<ServerDockerTab />} />
         <Route
           path="files"
           element={<ServerFilesTab />}
