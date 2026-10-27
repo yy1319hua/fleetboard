@@ -77,3 +77,48 @@ func TestDownloadServerNotFound(t *testing.T) {
 		t.Errorf("status=%d, want 404", w.Code)
 	}
 }
+
+func TestGetContentRequiresPath(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodGet, "/api/servers/1/files/content", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", w.Code)
+	}
+}
+
+func TestPutContentRequiresPath(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPut, "/api/servers/1/files/content", tokens.AccessToken,
+		map[string]any{"content": "x"})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", w.Code)
+	}
+}
+
+func TestPutContentBadBody(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPut, "/api/servers/1/files/content?path=/x", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", w.Code)
+	}
+}
+
+func TestGetContentServerNotFound(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodGet, "/api/servers/999/files/content?path=/x", tokens.AccessToken, nil)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status=%d, want 404", w.Code)
+	}
+}

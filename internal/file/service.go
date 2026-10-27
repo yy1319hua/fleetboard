@@ -2,6 +2,7 @@
 package file
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -118,4 +119,75 @@ func OpenWrite(sc *sftp.Client, p string, offset int64) (*sftp.File, error) {
 		}
 	}
 	return f, nil
+}
+
+// ReadText 读取文本内容；超过 maxBytes 返回错误（防止误开超大文件）。
+func ReadText(sc *sftp.Client, p string, maxBytes int64) (string, error) {
+	f, err := sc.Open(p)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	if fi.Size() > maxBytes {
+		return "", fmt.Errorf("文件过大（%d 字节，上限 %d）", fi.Size(), maxBytes)
+	}
+
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// WriteAtomic 原子写：同目录临时文件 → 写入 → 还原权限/属主 → rename 覆盖。
+// 任一环节失败都清理临时文件，不会留下半写状态。
+func WriteAtomic(sc *sftp.Client, p, content string) error {
+	dir := path.Dir(p)
+	base := path.Base(p)
+
+	var (
+		perm     os.FileMode
+		uid, gid uint32
+		hasMeta  bool
+	)
+	if fi, err := sc.Stat(p); err == nil {
+		perm = fi.Mode().Perm()
+		if st, ok := fi.Sys().(*sftp.FileStat); ok {
+			uid, gid = st.UID, st.GID
+		}
+		hasMeta = true
+	}
+
+	tmp := path.Join(dir, "."+base+".fleetboard.tmp")
+	_ = sc.Remove(tmp) // 清理历史残留
+
+	f, err := sc.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write([]byte(content)); err != nil {
+		_ = f.Close()
+		_ = sc.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = sc.Remove(tmp)
+		return err
+	}
+
+	if hasMeta {
+		_ = sc.Chmod(tmp, perm)
+		_ = sc.Chown(tmp, int(uid), int(gid)) // 非 root 或服务端不支持时可能失败，保权限优先
+	}
+
+	if err := sc.Rename(tmp, p); err != nil {
+		_ = sc.Remove(tmp)
+		return err
+	}
+	return nil
 }

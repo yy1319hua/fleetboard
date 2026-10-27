@@ -179,3 +179,85 @@ func uploadFileHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Hand
 		OK(c, gin.H{"path": p, "offset": offset, "written": n})
 	}
 }
+
+// maxTextBytes 在线编辑的文本大小上限（1 MiB）。
+const maxTextBytes = 1 << 20
+
+type fileContentResponse struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+	Size    int    `json:"size"`
+}
+
+// getContentHandler 读取文本内容（用于在线编辑）。
+// GET /api/servers/:id/files/content?path=/x
+func getContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		p := c.Query("path")
+		if p == "" {
+			Fail(c, ErrBadRequest("path 不能为空"))
+			return
+		}
+
+		sc, err := openSFTP(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		defer func() { _ = sc.Close() }()
+
+		content, err := file.ReadText(sc, p, maxTextBytes)
+		if err != nil {
+			Fail(c, ErrBadGateway("读取文件失败: "+err.Error()))
+			return
+		}
+		OK(c, fileContentResponse{Path: p, Content: content, Size: len(content)})
+	}
+}
+
+type putContentRequest struct {
+	Content string `json:"content"`
+}
+
+// putContentHandler 原子写入文本内容（保留权限属主）。
+// PUT /api/servers/:id/files/content?path=/x  body: {"content":"..."}
+func putContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		p := c.Query("path")
+		if p == "" {
+			Fail(c, ErrBadRequest("path 不能为空"))
+			return
+		}
+
+		var req putContentRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, ErrBadRequest(`请求体需为 {"content":"..."}`))
+			return
+		}
+		if len(req.Content) > maxTextBytes {
+			Fail(c, ErrBadRequest("内容超过 1MiB 上限"))
+			return
+		}
+
+		sc, err := openSFTP(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		defer func() { _ = sc.Close() }()
+
+		if err := file.WriteAtomic(sc, p, req.Content); err != nil {
+			Fail(c, ErrBadGateway("写入失败: "+err.Error()))
+			return
+		}
+		OK(c, gin.H{"path": p, "size": len(req.Content)})
+	}
+}
