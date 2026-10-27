@@ -137,6 +137,33 @@ func main() {
 		}
 	}()
 
+	stopPrune := make(chan struct{})
+	defer close(stopPrune)
+	go func() {
+		prune := func() {
+			cutoff := time.Now().AddDate(0, 0, -cfg.MetricsRetentionDays)
+			n, err := db.PruneMetrics(d, cutoff)
+			if err != nil {
+				log.Printf("指标清理失败: %v", err)
+				return
+			}
+			if n > 0 {
+				log.Printf("指标清理：删除 %d 条早于 %s 的采样", n, cutoff.Format("2006-01-02"))
+			}
+		}
+		prune()
+		t := time.NewTicker(24 * time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				prune()
+			case <-stopPrune:
+				return
+			}
+		}
+	}()
+
 	if created, err := db.EnsureAdmin(d, cfg.BootstrapUser, cfg.BootstrapPass); err != nil {
 		fmt.Fprintf(os.Stderr, "初始化管理员失败: %v\n", err)
 		os.Exit(1)
