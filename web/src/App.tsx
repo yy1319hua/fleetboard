@@ -6,6 +6,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { ServerDetailPage } from "@/pages/ServerDetailPage";
+import { ServerComposeTab } from "@/pages/tabs/ServerComposeTab";
 import { ServerDockerTab } from "@/pages/tabs/ServerDockerTab";
 import { ServerFilesTab } from "@/pages/tabs/ServerFilesTab";
 import { ServerMonitorTab } from "@/pages/tabs/ServerMonitorTab";
@@ -51,10 +52,7 @@ export function App() {
           path="files"
           element={<ServerFilesTab />}
         />
-        <Route
-          path="compose"
-          element={<TabPlaceholder title="Compose" note="compose 文件浏览、编辑与启停将在 M6.8 实现。" />}
-        />
+        <Route path="compose" element={<ServerComposeTab />} />
         <Route
           path="packages"
           element={<TabPlaceholder title="软件包更新" note="apt 流式更新面板将在 M6.9 实现。" />}

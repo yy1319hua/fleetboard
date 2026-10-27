@@ -185,11 +185,35 @@ func WriteAtomic(sc *sftp.Client, p, content string) error {
 		_ = sc.Chown(tmp, int(uid), int(gid)) // 非 root 或服务端不支持时可能失败，保权限优先
 	}
 
-	if err := sc.Rename(tmp, p); err != nil {
+	if err := replaceFile(sc, tmp, p); err != nil {
 		_ = sc.Remove(tmp)
 		return err
 	}
 	return nil
+}
+
+// replaceFile 用临时文件替换目标文件。
+// 优先 posix-rename@openssh.com 扩展（原子覆盖）；服务端不支持时回退为
+// 「先删目标再改名」（存在极短窗口期文件不存在，但保证写入成功）。
+func replaceFile(sc *sftp.Client, tmp, target string) error {
+	if _, ok := sc.HasExtension("posix-rename@openssh.com"); ok {
+		if err := sc.PosixRename(tmp, target); err == nil {
+			return nil
+		}
+	}
+
+	if err := sc.Rename(tmp, target); err == nil {
+		return nil
+	}
+
+	// 标准 rename 在目标已存在时会失败（SSH_FX_FAILURE）：删掉再改名
+	if err := sc.Remove(target); err != nil {
+		// 目标不存在也算正常
+		if _, statErr := sc.Stat(target); statErr == nil {
+			return err
+		}
+	}
+	return sc.Rename(tmp, target)
 }
 
 // Rename 重命名或移动。
