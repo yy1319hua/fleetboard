@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import { IconBell, IconGear, IconGrid, IconLogout } from "@/components/icons";
@@ -27,8 +28,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const logout = useAuth((s) => s.logout);
   const username = useAuth((s) => s.username);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const handleLogout = () => {
+    // 先清缓存再清登录态，避免下一位看到上一轮的服务端数据
+    queryClient.clear();
     logout();
     navigate("/login", { replace: true });
   };

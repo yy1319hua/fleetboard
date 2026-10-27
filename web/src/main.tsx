@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import { App } from "@/App";
+import { useAuth } from "@/store/auth";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,6 +23,11 @@ const queryClient = new QueryClient({
       retry: 0,
     },
   },
+});
+
+// 登录态失效（含 401 自动刷新失败）时清空查询缓存，防止残留上一位的数据
+useAuth.subscribe((state, prev) => {
+  if (!state.access && prev.access) queryClient.clear();
 });
 
 const container = document.getElementById("root");
