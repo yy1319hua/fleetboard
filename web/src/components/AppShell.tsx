@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import { IconBell, IconGear, IconGrid, IconLogout } from "@/components/icons";
+import { InstallPrompt } from "@/components/InstallPrompt";
 import { useAuth } from "@/store/auth";
 import { listAlerts } from "@/lib/alerts";
 import { cn } from "@/lib/cn";
@@ -149,6 +150,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           ))}
         </div>
       </nav>
+
+      {/* PWA 安装提示（M6.10）：独立模式下自动隐藏 */}
+      <InstallPrompt />
     </div>
   );
 }
