@@ -2,8 +2,37 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
+
+func TestSSEFrameFormat(t *testing.T) {
+	frame, err := sseFrame(gin.H{"event": "line", "line": "Reading package lists..."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(frame, "data: {") {
+		t.Errorf("帧应以 `data: {` 开头，实际 %q", frame)
+	}
+	if !strings.HasSuffix(frame, "\n\n") {
+		t.Errorf("帧应以空行结束，实际 %q", frame)
+	}
+	if strings.Count(frame, "\n") != 2 {
+		t.Errorf("单帧应只含两个换行，实际 %q", frame)
+	}
+	if !strings.Contains(frame, `"event":"line"`) {
+		t.Errorf("帧内应为紧凑 JSON，实际 %q", frame)
+	}
+}
+
+func TestSSEFrameRejectsUnserializable(t *testing.T) {
+	// 函数值无法 JSON 序列化 → 应返回错误而不是静默产出坏帧
+	if _, err := sseFrame(gin.H{"bad": func() {}}); err == nil {
+		t.Error("不可序列化负载应报错")
+	}
+}
 
 func TestPackageUpdateRequiresAuth(t *testing.T) {
 	r, d := newAuthTestServer(t)

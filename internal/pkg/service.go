@@ -68,17 +68,9 @@ func Upgrade(ctx context.Context, cli *ssh.Client, onLine func(string)) error {
 		mu.Unlock()
 	}
 
-	pump := func(r io.Reader) {
-		defer wg.Done()
-		sc := bufio.NewScanner(r)
-		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		for sc.Scan() {
-			emit(strings.TrimRight(sc.Text(), "\r"))
-		}
-	}
 	wg.Add(2)
-	go pump(stdout)
-	go pump(stderr)
+	go func() { defer wg.Done(); PumpLines(stdout, emit) }()
+	go func() { defer wg.Done(); PumpLines(stderr, emit) }()
 	wg.Wait()
 
 	err = sess.Wait()
@@ -91,4 +83,13 @@ func Upgrade(ctx context.Context, cli *ssh.Client, onLine func(string)) error {
 		return fmt.Errorf("apt 更新失败: %w", err)
 	}
 	return nil
+}
+
+// PumpLines 逐行读取输出并回调（去掉行尾 \r，支持最长 1MiB 的单行）。
+func PumpLines(r io.Reader, emit func(string)) {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		emit(strings.TrimRight(sc.Text(), "\r"))
+	}
 }

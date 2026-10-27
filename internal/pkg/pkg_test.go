@@ -5,6 +5,31 @@ import (
 	"testing"
 )
 
+func TestPumpLines(t *testing.T) {
+	in := "Reading package lists...\r\nBuilding dependency tree...\n\n最后一行的中文输出\n"
+
+	var got []string
+	PumpLines(strings.NewReader(in), func(line string) { got = append(got, line) })
+
+	want := []string{"Reading package lists...", "Building dependency tree...", "", "最后一行的中文输出"}
+	if len(got) != len(want) {
+		t.Fatalf("got=%q want=%q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("第 %d 行: got=%q want=%q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestPumpLinesDropsTrailingCR(t *testing.T) {
+	var got []string
+	PumpLines(strings.NewReader("进度 10%\r"), func(line string) { got = append(got, line) })
+	if len(got) != 1 || got[0] != "进度 10%" {
+		t.Errorf("行尾 \\r 应被去除，实际 %q", got)
+	}
+}
+
 func TestUpdateCommandShape(t *testing.T) {
 	cmd := UpdateCommand
 
