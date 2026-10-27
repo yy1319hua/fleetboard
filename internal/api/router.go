@@ -51,5 +51,8 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.DELETE("/servers/:id", deleteServerHandler(opts.DB))
 	authed.POST("/servers/:id/test", testServerHandler(opts.DB, opts.MasterKey, opts.Pool))
 
+	// 文件管理
+	authed.GET("/servers/:id/files", listFilesHandler(opts.DB, opts.MasterKey, opts.Pool))
+
 	return r
 }
