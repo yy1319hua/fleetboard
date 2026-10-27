@@ -93,5 +93,8 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.PUT("/servers/:id/compose/content", putComposeContentHandler(opts.DB, opts.MasterKey, opts.Pool, opts.ComposeRoots))
 	authed.POST("/servers/:id/compose/actions", composeActionHandler(opts.DB, opts.MasterKey, opts.Pool, opts.ComposeRoots))
 
+	// 软件包更新（SSE 流式）
+	authed.POST("/servers/:id/packages/update", packageUpdateHandler(opts.DB, opts.MasterKey, opts.Pool))
+
 	return r
 }
