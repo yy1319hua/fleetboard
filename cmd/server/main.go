@@ -15,6 +15,7 @@ import (
 	"github.com/yy1319hua/fleetboard/internal/api"
 	"github.com/yy1319hua/fleetboard/internal/config"
 	"github.com/yy1319hua/fleetboard/internal/db"
+	"github.com/yy1319hua/fleetboard/internal/monitor"
 	"github.com/yy1319hua/fleetboard/internal/sshpool"
 )
 
@@ -51,6 +52,58 @@ func main() {
 			case <-t.C:
 				pool.Reap()
 			case <-stopReap:
+				return
+			}
+		}
+	}()
+
+	stopMonitor := make(chan struct{})
+	defer close(stopMonitor)
+	go func() {
+		collect := func() {
+			servers, err := db.ListServers(d)
+			if err != nil {
+				log.Printf("指标采集：列出服务器失败: %v", err)
+				return
+			}
+			for _, s := range servers {
+				cred, err := db.GetDecryptedCredential(d, cfg.Key, s.ID)
+				if err != nil {
+					continue
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				cli, err := pool.Get(ctx, s.ID, sshpool.Config{
+					Host:       s.Host,
+					Port:       s.Port,
+					User:       s.SSHUser,
+					AuthMethod: cred.AuthMethod,
+					Password:   cred.Password,
+					PrivateKey: cred.PrivateKey,
+					KeyPass:    cred.KeyPass,
+				})
+				if err != nil {
+					cancel()
+					continue
+				}
+				snap, err := monitor.Collect(cli)
+				cancel()
+				if err != nil {
+					continue
+				}
+				if err := db.InsertMetric(d, s.ID, snap.CPUPct, snap.MemPct, snap.DiskPct, snap.Load1); err != nil {
+					log.Printf("指标采集：写入 #%d 失败: %v", s.ID, err)
+				}
+			}
+		}
+
+		collect()
+		t := time.NewTicker(time.Duration(cfg.MonitorIntervalSec) * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				collect()
+			case <-stopMonitor:
 				return
 			}
 		}
