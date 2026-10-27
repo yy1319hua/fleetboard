@@ -44,3 +44,36 @@ func TestListFilesConnectionError(t *testing.T) {
 		t.Errorf("status=%d, want 502 body=%s", w.Code, w.Body)
 	}
 }
+
+func TestDownloadRequiresPath(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodGet, "/api/servers/1/files/download", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", w.Code)
+	}
+}
+
+func TestUploadRequiresPath(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPost, "/api/servers/1/files/upload", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", w.Code)
+	}
+}
+
+func TestDownloadServerNotFound(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodGet, "/api/servers/999/files/download?path=/x", tokens.AccessToken, nil)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status=%d, want 404", w.Code)
+	}
+}

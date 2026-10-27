@@ -53,6 +53,8 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 
 	// 文件管理
 	authed.GET("/servers/:id/files", listFilesHandler(opts.DB, opts.MasterKey, opts.Pool))
+	authed.GET("/servers/:id/files/download", downloadFileHandler(opts.DB, opts.MasterKey, opts.Pool))
+	authed.POST("/servers/:id/files/upload", uploadFileHandler(opts.DB, opts.MasterKey, opts.Pool))
 
 	return r
 }

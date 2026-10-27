@@ -2,6 +2,8 @@
 package file
 
 import (
+	"io"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -90,4 +92,30 @@ func Paginate(entries []Entry, offset, limit int) []Entry {
 		end = len(entries)
 	}
 	return entries[offset:end]
+}
+
+// Open 打开文件用于读取（实现 io.ReadSeeker，可用于 http.ServeContent 的 Range 支持）。
+func Open(sc *sftp.Client, p string) (*sftp.File, error) {
+	return sc.Open(p)
+}
+
+// OpenWrite 打开文件用于写入。
+// offset==0 时截断重写；offset>0 时定位到该偏移续写（断点续传）。
+func OpenWrite(sc *sftp.Client, p string, offset int64) (*sftp.File, error) {
+	flags := os.O_WRONLY | os.O_CREATE
+	if offset == 0 {
+		flags |= os.O_TRUNC
+	}
+
+	f, err := sc.OpenFile(p, flags)
+	if err != nil {
+		return nil, err
+	}
+	if offset > 0 {
+		if _, err := f.Seek(offset, io.SeekStart); err != nil {
+			_ = f.Close()
+			return nil, err
+		}
+	}
+	return f, nil
 }
