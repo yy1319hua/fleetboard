@@ -36,9 +36,9 @@ if [ -f "$ENV_SRC" ]; then
   AUTOGEN=0
 else
   echo "==> 交互式填写配置（直接回车=自动生成/默认）"
-  ask() { # ask <提示> <变量名>：从终端读；无终端（无人值守）返回空
+  ask() { # ask <提示> <变量名>：提示写 /dev/tty（read -p 走 stderr，重定向下会被吞），输入也从终端读
     local v=""
-    if read -rp "$1" v </dev/tty 2>/dev/null; then printf -v "$2" "%s" "$v"; else printf -v "$2" ""; fi
+    if { printf "%s" "$1" >/dev/tty && read -r v </dev/tty; } 2>/dev/null; then printf -v "$2" "%s" "$v"; else printf -v "$2" ""; fi
   }
   ask "管理员用户名 [admin]: " BU; BU=${BU:-admin}
   ask "管理员密码 [随机生成]: " BP; BP=${BP:-$(openssl rand -hex 8)}
@@ -62,6 +62,7 @@ mkdir -p "$BASE" "$DATA"
 install -m 755 "$SRC/fleetboard" "$BASE/fleetboard"
 cp -r "$SRC/web-dist" "$BASE/web-dist"
 install -m 600 "$ENV_SRC" "$BASE/.env"
+cp "$SRC/uninstall.sh" "$BASE/uninstall.sh" && chmod +x "$BASE/uninstall.sh"
 
 echo "==> 写入 systemd 单元"
 install -m 644 "$SRC/fleetboard.service" "$UNIT"
@@ -89,4 +90,4 @@ if [ "$AUTOGEN" = 1 ]; then
   echo "    用户名: $BU"
   echo "    密  码: $BP"
 fi
-echo "==> 安装完成。卸载：sudo $(dirname "$0")/uninstall.sh 或重下载发布包执行 uninstall.sh"
+echo "==> 安装完成。卸载：sudo /opt/fleetboard/uninstall.sh"
