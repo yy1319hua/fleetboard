@@ -191,3 +191,119 @@ func WriteAtomic(sc *sftp.Client, p, content string) error {
 	}
 	return nil
 }
+
+// Rename 重命名或移动。
+func Rename(sc *sftp.Client, from, to string) error {
+	return sc.Rename(from, to)
+}
+
+// Remove 删除文件或目录（目录递归删除）。
+func Remove(sc *sftp.Client, p string) error {
+	fi, err := sc.Stat(p)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return sc.Remove(p)
+	}
+	return removeAll(sc, p)
+}
+
+func removeAll(sc *sftp.Client, dir string) error {
+	entries, err := sc.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		child := path.Join(dir, e.Name())
+		if e.IsDir() {
+			if err := removeAll(sc, child); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := sc.Remove(child); err != nil {
+			return err
+		}
+	}
+	return sc.RemoveDirectory(dir)
+}
+
+// Copy 复制文件或目录（目录递归）。
+func Copy(sc *sftp.Client, from, to string) error {
+	fi, err := sc.Stat(from)
+	if err != nil {
+		return err
+	}
+	if fi.IsDir() {
+		return copyDir(sc, from, to)
+	}
+	return copyFile(sc, from, to, fi.Mode().Perm())
+}
+
+func copyFile(sc *sftp.Client, from, to string, perm os.FileMode) error {
+	src, err := sc.Open(from)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = src.Close() }()
+
+	dst, err := sc.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		_ = dst.Close()
+		return err
+	}
+	if err := dst.Close(); err != nil {
+		return err
+	}
+	_ = sc.Chmod(to, perm)
+	return nil
+}
+
+func copyDir(sc *sftp.Client, from, to string) error {
+	if err := sc.MkdirAll(to); err != nil {
+		return err
+	}
+	entries, err := sc.ReadDir(from)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		src := path.Join(from, e.Name())
+		dst := path.Join(to, e.Name())
+		if e.IsDir() {
+			if err := copyDir(sc, src, dst); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := copyFile(sc, src, dst, e.Mode().Perm()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Stat 返回单个路径的详细信息（含权限与属主）。
+func Stat(sc *sftp.Client, p string) (*Entry, error) {
+	fi, err := sc.Stat(p)
+	if err != nil {
+		return nil, err
+	}
+	e := &Entry{
+		Name:    path.Base(p),
+		Path:    p,
+		Dir:     fi.IsDir(),
+		Size:    fi.Size(),
+		Mode:    fi.Mode().String(),
+		ModTime: fi.ModTime(),
+	}
+	if st, ok := fi.Sys().(*sftp.FileStat); ok {
+		e.UID = st.UID
+		e.GID = st.GID
+	}
+	return e, nil
+}

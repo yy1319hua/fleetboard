@@ -57,6 +57,9 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.POST("/servers/:id/files/upload", uploadFileHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.GET("/servers/:id/files/content", getContentHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.PUT("/servers/:id/files/content", putContentHandler(opts.DB, opts.MasterKey, opts.Pool))
+	authed.POST("/servers/:id/files/rename", renameFileHandler(opts.DB, opts.MasterKey, opts.Pool))
+	authed.POST("/servers/:id/files/copy", copyFileHandler(opts.DB, opts.MasterKey, opts.Pool))
+	authed.DELETE("/servers/:id/files", deleteFileHandler(opts.DB, opts.MasterKey, opts.Pool))
 
 	return r
 }

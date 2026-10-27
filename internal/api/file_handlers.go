@@ -261,3 +261,125 @@ func putContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Hand
 		OK(c, gin.H{"path": p, "size": len(req.Content)})
 	}
 }
+
+type filePairRequest struct {
+	From string `json:"from" binding:"required"`
+	To   string `json:"to" binding:"required"`
+}
+
+// renameFileHandler 重命名/移动。
+// POST /api/servers/:id/files/rename  body: {"from":"...","to":"..."}
+func renameFileHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		var req filePairRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, ErrBadRequest(`请求体需为 {"from":"...","to":"..."}`))
+			return
+		}
+
+		sc, err := openSFTP(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		defer func() { _ = sc.Close() }()
+
+		if err := file.Rename(sc, req.From, req.To); err != nil {
+			Fail(c, ErrBadGateway("重命名失败: "+err.Error()))
+			return
+		}
+		OK(c, gin.H{"from": req.From, "to": req.To})
+	}
+}
+
+// copyFileHandler 复制文件/目录。
+// POST /api/servers/:id/files/copy  body: {"from":"...","to":"..."}
+func copyFileHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		var req filePairRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, ErrBadRequest(`请求体需为 {"from":"...","to":"..."}`))
+			return
+		}
+
+		sc, err := openSFTP(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		defer func() { _ = sc.Close() }()
+
+		if err := file.Copy(sc, req.From, req.To); err != nil {
+			Fail(c, ErrBadGateway("复制失败: "+err.Error()))
+			return
+		}
+		OK(c, gin.H{"from": req.From, "to": req.To})
+	}
+}
+
+// deleteFileHandler 删除文件/目录（目录递归）。
+// DELETE /api/servers/:id/files?path=/x
+func deleteFileHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		p := c.Query("path")
+		if p == "" {
+			Fail(c, ErrBadRequest("path 不能为空"))
+			return
+		}
+
+		sc, err := openSFTP(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		defer func() { _ = sc.Close() }()
+
+		if err := file.Remove(sc, p); err != nil {
+			Fail(c, ErrBadGateway("删除失败: "+err.Error()))
+			return
+		}
+		OK(c, gin.H{"deleted": p})
+	}
+}
+
+// statFileHandler 查看权限与属主。
+// GET /api/servers/:id/files/stat?path=/x
+func statFileHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		p := c.Query("path")
+		if p == "" {
+			Fail(c, ErrBadRequest("path 不能为空"))
+			return
+		}
+
+		sc, err := openSFTP(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		defer func() { _ = sc.Close() }()
+
+		e, err := file.Stat(sc, p)
+		if err != nil {
+			Fail(c, ErrBadGateway("读取文件信息失败: "+err.Error()))
+			return
+		}
+		OK(c, e)
+	}
+}

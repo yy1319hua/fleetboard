@@ -122,3 +122,47 @@ func TestGetContentServerNotFound(t *testing.T) {
 		t.Errorf("status=%d, want 404", w.Code)
 	}
 }
+
+func TestRenameRequiresBody(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPost, "/api/servers/1/files/rename", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", w.Code)
+	}
+}
+
+func TestCopyRequiresBody(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPost, "/api/servers/1/files/copy", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", w.Code)
+	}
+}
+
+func TestDeleteRequiresPath(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodDelete, "/api/servers/1/files", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", w.Code)
+	}
+}
+
+func TestDeleteServerNotFound(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodDelete, "/api/servers/999/files?path=/x", tokens.AccessToken, nil)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status=%d, want 404", w.Code)
+	}
+}
