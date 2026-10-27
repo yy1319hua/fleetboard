@@ -51,7 +51,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	r := api.NewRouter(api.RouterOptions{Version: version, Schema: schema})
+	r := api.NewRouter(api.RouterOptions{
+		Version:   version,
+		Schema:    schema,
+		DB:        d,
+		JWTSecret: cfg.JWTSecret,
+	})
 	srv := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.ListenAddr, cfg.Port),
 		Handler:           r,

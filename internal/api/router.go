@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -8,8 +9,10 @@ import (
 
 // RouterOptions 是构建路由所需的运行期信息。
 type RouterOptions struct {
-	Version string // 服务版本
-	Schema  string // 当前数据库迁移版本
+	Version   string // 服务版本
+	Schema    string // 当前数据库迁移版本
+	DB        *sql.DB
+	JWTSecret string
 }
 
 // NewRouter 构建 HTTP 路由。
@@ -22,6 +25,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
+	// 公开端点
 	r.GET("/api/health", func(c *gin.Context) {
 		OK(c, gin.H{
 			"status":  "ok",
@@ -29,6 +33,12 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 			"schema":  opts.Schema,
 		})
 	})
+	r.POST("/api/login", loginHandler(opts.DB, opts.JWTSecret))
+	r.POST("/api/refresh", refreshHandler(opts.JWTSecret))
+
+	// 需鉴权端点
+	authed := r.Group("/api", JWTAuth(opts.JWTSecret))
+	authed.GET("/me", meHandler())
 
 	return r
 }
