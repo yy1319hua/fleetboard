@@ -219,3 +219,24 @@ func TestListNetworksRequiresAuth(t *testing.T) {
 		t.Errorf("status=%d, want 401", w.Code)
 	}
 }
+
+func TestContainerStatsServerNotFound(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodGet, "/api/servers/999/container-stats", tokens.AccessToken, nil)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status=%d, want 404", w.Code)
+	}
+}
+
+func TestContainerStatsRequiresAuth(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+
+	w := authReq(r, http.MethodGet, "/api/servers/1/container-stats", "", nil)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status=%d, want 401", w.Code)
+	}
+}

@@ -387,3 +387,68 @@ func ListVolumes(cli *ssh.Client) ([]Volume, error) {
 	}
 	return list, nil
 }
+
+// Stats 是容器资源占用快照。
+type Stats struct {
+	Container string `json:"container"`
+	Name      string `json:"name"`
+	CPUPerc   string `json:"cpu_perc"`
+	MemUsage  string `json:"mem_usage"`
+	MemPerc   string `json:"mem_perc"`
+	NetIO     string `json:"net_io"`
+	BlockIO   string `json:"block_io"`
+	PIDs      string `json:"pids"`
+}
+
+type statsLine struct {
+	Container string `json:"Container"`
+	Name      string `json:"Name"`
+	CPUPerc   string `json:"CPUPerc"`
+	MemUsage  string `json:"MemUsage"`
+	MemPerc   string `json:"MemPerc"`
+	NetIO     string `json:"NetIO"`
+	BlockIO   string `json:"BlockIO"`
+	PIDs      string `json:"PIDs"`
+}
+
+// ParseStatsLine 解析 `docker stats --format json` 的单行。
+func ParseStatsLine(line string) (*Stats, error) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil, nil
+	}
+	var p statsLine
+	if err := json.Unmarshal([]byte(line), &p); err != nil {
+		return nil, fmt.Errorf("解析资源行失败: %w", err)
+	}
+	return &Stats{
+		Container: p.Container,
+		Name:      p.Name,
+		CPUPerc:   p.CPUPerc,
+		MemUsage:  p.MemUsage,
+		MemPerc:   p.MemPerc,
+		NetIO:     p.NetIO,
+		BlockIO:   p.BlockIO,
+		PIDs:      p.PIDs,
+	}, nil
+}
+
+// ContainerStats 返回所有运行中容器的资源占用快照（--no-stream 单次采样）。
+func ContainerStats(cli *ssh.Client) ([]Stats, error) {
+	out, err := runErr(cli, `docker stats --no-stream --format '{{json .}}'`)
+	if err != nil {
+		return nil, fmt.Errorf("docker stats 失败: %w", err)
+	}
+
+	list := []Stats{}
+	for _, line := range strings.Split(out, "\n") {
+		s, err := ParseStatsLine(line)
+		if err != nil {
+			return nil, err
+		}
+		if s != nil {
+			list = append(list, *s)
+		}
+	}
+	return list, nil
+}

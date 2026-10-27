@@ -167,3 +167,21 @@ func TestParseVolumeLine(t *testing.T) {
 		t.Errorf("空行应 nil,nil: %v %v", v, err)
 	}
 }
+
+func TestParseStatsLine(t *testing.T) {
+	line := `{"Container":"abc123","Name":"web","CPUPerc":"1.23%","MemUsage":"10MiB / 1GiB","MemPerc":"0.98%","NetIO":"1kB / 2kB","BlockIO":"0B / 0B","PIDs":"5"}`
+	s, err := ParseStatsLine(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Container != "abc123" || s.CPUPerc != "1.23%" || s.MemUsage != "10MiB / 1GiB" {
+		t.Errorf("%+v", s)
+	}
+
+	if s, err := ParseStatsLine("  "); err != nil || s != nil {
+		t.Errorf("空行应 nil,nil: %v %v", s, err)
+	}
+	if _, err := ParseStatsLine("not-json"); err == nil {
+		t.Error("非法 JSON 应报错")
+	}
+}

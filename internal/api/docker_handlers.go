@@ -186,3 +186,25 @@ func listVolumesHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Han
 		OK(c, list)
 	}
 }
+
+// containerStatsHandler 返回所有运行中容器的资源占用快照。
+// GET /api/servers/:id/container-stats
+func containerStatsHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		cli, err := openSSH(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		list, err := docker.ContainerStats(cli)
+		if err != nil {
+			Fail(c, ErrBadGateway("获取资源占用失败: "+err.Error()))
+			return
+		}
+		OK(c, list)
+	}
+}
