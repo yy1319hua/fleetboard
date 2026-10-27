@@ -7,6 +7,7 @@ import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { ServerDetailPage } from "@/pages/ServerDetailPage";
 import { ServerDockerTab } from "@/pages/tabs/ServerDockerTab";
 import { ServerFilesTab } from "@/pages/tabs/ServerFilesTab";
+import { ServerMonitorTab } from "@/pages/tabs/ServerMonitorTab";
 import { ServerOverviewTab } from "@/pages/tabs/ServerOverviewTab";
 import { TabPlaceholder } from "@/pages/tabs/TabPlaceholder";
 import { RequireAuth } from "@/routes/RequireAuth";
@@ -43,10 +44,7 @@ export function App() {
         }
       >
         <Route index element={<ServerOverviewTab />} />
-        <Route
-          path="monitor"
-          element={<TabPlaceholder title="监控曲线" note="24h / 7d 历史曲线将在 M6.6 实现。" />}
-        />
+        <Route path="monitor" element={<ServerMonitorTab />} />
         <Route path="docker" element={<ServerDockerTab />} />
         <Route
           path="files"
