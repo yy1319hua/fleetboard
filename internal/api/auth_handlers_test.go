@@ -23,7 +23,7 @@ func newAuthTestServer(t *testing.T) (*gin.Engine, *sql.DB) {
 		t.Fatalf("EnsureAdmin: %v", err)
 	}
 	gin.SetMode(gin.TestMode)
-	r := NewRouter(RouterOptions{DB: d, JWTSecret: "test-secret"})
+	r := NewRouter(RouterOptions{DB: d, JWTSecret: "test-secret", MasterKey: "test-master"})
 	return r, d
 }
 

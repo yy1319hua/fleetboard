@@ -13,6 +13,7 @@ type RouterOptions struct {
 	Schema    string // 当前数据库迁移版本
 	DB        *sql.DB
 	JWTSecret string
+	MasterKey string // 凭据加密主密钥（KEY）
 }
 
 // NewRouter 构建 HTTP 路由。
@@ -39,6 +40,12 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	// 需鉴权端点
 	authed := r.Group("/api", JWTAuth(opts.JWTSecret))
 	authed.GET("/me", meHandler())
+
+	// 服务器管理
+	authed.GET("/servers", listServersHandler(opts.DB))
+	authed.POST("/servers", createServerHandler(opts.DB, opts.MasterKey))
+	authed.GET("/servers/:id", getServerHandler(opts.DB))
+	authed.DELETE("/servers/:id", deleteServerHandler(opts.DB))
 
 	return r
 }

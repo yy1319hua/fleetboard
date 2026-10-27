@@ -56,6 +56,7 @@ func main() {
 		Schema:    schema,
 		DB:        d,
 		JWTSecret: cfg.JWTSecret,
+		MasterKey: cfg.Key,
 	})
 	srv := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.ListenAddr, cfg.Port),

@@ -35,6 +35,11 @@ func Open(dbPath string) (*sql.DB, error) {
 		_ = d.Close()
 		return nil, fmt.Errorf("连接数据库: %w", err)
 	}
+	// SQLite 外键约束默认关闭；开启后 ssh_credentials 可随 servers 级联删除。
+	if _, err := d.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		_ = d.Close()
+		return nil, fmt.Errorf("开启外键约束: %w", err)
+	}
 	if err := ensureSchema(d); err != nil {
 		_ = d.Close()
 		return nil, err
