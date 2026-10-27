@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yy1319hua/fleetboard/internal/db"
@@ -76,5 +77,41 @@ func deleteAlertRuleHandler(d *sql.DB) gin.HandlerFunc {
 			return
 		}
 		OK(c, gin.H{"deleted": id})
+	}
+}
+
+// listAlertsHandler 通知中心列表。
+// GET /api/alerts?unread=1&limit=100
+func listAlertsHandler(d *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		unread := c.Query("unread") == "1"
+		limit := 100
+		if v := c.Query("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				limit = n
+			}
+		}
+		list, err := db.ListAlertEvents(d, unread, limit)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		OK(c, list)
+	}
+}
+
+// markAlertReadHandler 标记通知已读。
+// POST /api/alerts/:id/read
+func markAlertReadHandler(d *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		if err := db.MarkAlertRead(d, id); err != nil {
+			Fail(c, err)
+			return
+		}
+		OK(c, gin.H{"read": id})
 	}
 }

@@ -12,9 +12,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/yy1319hua/fleetboard/internal/alert"
 	"github.com/yy1319hua/fleetboard/internal/api"
 	"github.com/yy1319hua/fleetboard/internal/config"
 	"github.com/yy1319hua/fleetboard/internal/db"
+	"github.com/yy1319hua/fleetboard/internal/model"
 	"github.com/yy1319hua/fleetboard/internal/monitor"
 	"github.com/yy1319hua/fleetboard/internal/sshpool"
 )
@@ -107,6 +109,18 @@ func main() {
 					log.Printf("指标采集：写入 #%d 失败: %v", s.ID, err)
 				}
 				_ = db.UpdateServerStatus(d, s.ID, "online")
+
+				hits, err := alert.Evaluate(d, s.ID, &model.ServerMetric{
+					CPUPct:  snap.CPUPct,
+					MemPct:  snap.MemPct,
+					DiskPct: snap.DiskPct,
+					Load1:   snap.Load1,
+				})
+				if err != nil {
+					log.Printf("告警评估 #%d 失败: %v", s.ID, err)
+				} else if hits > 0 {
+					log.Printf("告警评估 #%d：命中 %d 条规则", s.ID, hits)
+				}
 			}
 		}
 

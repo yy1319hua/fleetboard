@@ -71,6 +71,10 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.POST("/alert-rules", createAlertRuleHandler(opts.DB))
 	authed.DELETE("/alert-rules/:id", deleteAlertRuleHandler(opts.DB))
 
+	// 通知中心
+	authed.GET("/alerts", listAlertsHandler(opts.DB))
+	authed.POST("/alerts/:id/read", markAlertReadHandler(opts.DB))
+
 	// 文件管理
 	authed.GET("/servers/:id/files", listFilesHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.GET("/servers/:id/files/download", downloadFileHandler(opts.DB, opts.MasterKey, opts.Pool))
