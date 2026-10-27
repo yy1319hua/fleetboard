@@ -5,6 +5,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { ServerDetailPage } from "@/pages/ServerDetailPage";
+import { ServerFilesTab } from "@/pages/tabs/ServerFilesTab";
 import { ServerOverviewTab } from "@/pages/tabs/ServerOverviewTab";
 import { TabPlaceholder } from "@/pages/tabs/TabPlaceholder";
 import { RequireAuth } from "@/routes/RequireAuth";
@@ -51,7 +52,7 @@ export function App() {
         />
         <Route
           path="files"
-          element={<TabPlaceholder title="文件管理" note="目录浏览、上传下载与在线编辑将在 M6.4 实现。" />}
+          element={<ServerFilesTab />}
         />
         <Route
           path="compose"

@@ -39,7 +39,7 @@ export function Button({
       {...rest}
       disabled={disabled || loading}
       className={cn(
-        "inline-flex items-center justify-center gap-1.5 rounded-control font-medium",
+        "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium",
         "transition-colors duration-ui ease-ui",
         "disabled:cursor-not-allowed disabled:opacity-40",
         "touch-manipulation min-h-11 sm:min-h-0",

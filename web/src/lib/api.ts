@@ -38,6 +38,11 @@ export function configureAuth(next: AuthBridge): void {
   bridge = next;
 }
 
+/** 当前 access token（供需要自行发请求的场景，如带认证头的下载）。 */
+export function currentAccessToken(): string | null {
+  return bridge.getAccess();
+}
+
 interface ApiEnvelope<T> {
   code: number;
   msg: string;
