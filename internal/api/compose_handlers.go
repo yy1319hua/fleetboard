@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"path"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yy1319hua/fleetboard/internal/compose"
@@ -96,5 +97,54 @@ func getComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, r
 			"content": content,
 			"size":    len(content),
 		})
+	}
+}
+
+// putComposeContentHandler 保存 compose 文件（原子写：临时文件 + rename，保留权限属主）。
+func putComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots []string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+
+		var req struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, ErrBadRequest("请求体非法"))
+			return
+		}
+		if req.Path == "" {
+			Fail(c, ErrBadRequest("缺少 path"))
+			return
+		}
+		if err := compose.ValidatePath(req.Path, roots); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
+		if strings.TrimSpace(req.Content) == "" {
+			Fail(c, ErrBadRequest("内容为空，拒绝写入"))
+			return
+		}
+
+		sc, err := openSFTP(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		defer func() { _ = sc.Close() }()
+
+		if err := compose.Write(sc, req.Path, req.Content, roots); err != nil {
+			if errors.Is(err, compose.ErrPathDenied) {
+				Fail(c, ErrBadRequest(err.Error()))
+				return
+			}
+			Fail(c, ErrBadGateway("保存 compose 文件失败: "+err.Error()))
+			return
+		}
+
+		OK(c, gin.H{"path": path.Clean(req.Path), "size": len(req.Content)})
 	}
 }

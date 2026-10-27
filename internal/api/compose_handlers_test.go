@@ -77,3 +77,67 @@ func TestListComposeConnectionError(t *testing.T) {
 		t.Errorf("status=%d, want 502 body=%s", w.Code, w.Body)
 	}
 }
+
+func TestPutComposeContentRequiresAuth(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+
+	w := authReq(r, http.MethodPut, "/api/servers/1/compose/content", "", map[string]any{
+		"path": "/root/docker-compose.yml", "content": "services: {}",
+	})
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status=%d, want 401", w.Code)
+	}
+}
+
+func TestPutComposeContentServerNotFound(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPut, "/api/servers/999/compose/content", tokens.AccessToken, map[string]any{
+		"path": "/root/docker-compose.yml", "content": "services: {}",
+	})
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status=%d, want 404", w.Code)
+	}
+}
+
+func TestPutComposeContentPathDenied(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPut, "/api/servers/1/compose/content", tokens.AccessToken, map[string]any{
+		"path": "/var/lib/docker-compose.yml", "content": "services: {}",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400 body=%s", w.Code, w.Body)
+	}
+}
+
+func TestPutComposeContentEmptyRejected(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPut, "/api/servers/1/compose/content", tokens.AccessToken, map[string]any{
+		"path": "/root/docker-compose.yml", "content": "   ",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400 body=%s", w.Code, w.Body)
+	}
+}
+
+func TestPutComposeContentMissingPath(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPut, "/api/servers/1/compose/content", tokens.AccessToken, map[string]any{
+		"content": "services: {}",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400 body=%s", w.Code, w.Body)
+	}
+}
