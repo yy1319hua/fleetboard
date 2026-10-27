@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
@@ -134,4 +135,16 @@ func Action(cli *ssh.Client, containerID, action string) (string, error) {
 		return output, fmt.Errorf("docker %s 失败: %w", action, err)
 	}
 	return output, nil
+}
+
+// LogsCommand 构造 `docker logs -f` 命令；容器 ID 与 tail 均校验后才拼接。
+func LogsCommand(containerID, tail string) (string, error) {
+	if err := ValidateContainerID(containerID); err != nil {
+		return "", err
+	}
+	n, err := strconv.Atoi(tail)
+	if err != nil || n <= 0 || n > 10000 {
+		return "", errors.New("tail 需为 1-10000 的整数")
+	}
+	return fmt.Sprintf("docker logs -f --tail %d %s", n, containerID), nil
 }

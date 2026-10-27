@@ -69,3 +69,28 @@ func TestAllowedActions(t *testing.T) {
 		t.Error("exec 不应在允许列表")
 	}
 }
+
+func TestLogsCommand(t *testing.T) {
+	cmd, err := LogsCommand("abc123", "200")
+	if err != nil {
+		t.Fatalf("LogsCommand: %v", err)
+	}
+	if cmd != "docker logs -f --tail 200 abc123" {
+		t.Errorf("命令错误: %q", cmd)
+	}
+}
+
+func TestLogsCommandValidation(t *testing.T) {
+	if _, err := LogsCommand("a;rm -rf /", "200"); err == nil {
+		t.Error("非法容器 ID 应报错")
+	}
+	if _, err := LogsCommand("abc", "0"); err == nil {
+		t.Error("tail=0 应报错")
+	}
+	if _, err := LogsCommand("abc", "99999"); err == nil {
+		t.Error("tail 超上限应报错")
+	}
+	if _, err := LogsCommand("abc", "x"); err == nil {
+		t.Error("tail 非数字应报错")
+	}
+}

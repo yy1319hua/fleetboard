@@ -94,3 +94,52 @@ func TestContainerActionRequiresAuth(t *testing.T) {
 		t.Errorf("status=%d, want 401", w.Code)
 	}
 }
+
+func TestLogsRequiresAuth(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+
+	w := authReq(r, http.MethodGet, "/api/servers/1/containers/abc/logs", "", nil)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status=%d, want 401", w.Code)
+	}
+}
+
+func TestLogsBadTail(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodGet, "/api/servers/1/containers/abc/logs?tail=x", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", w.Code)
+	}
+}
+
+func TestLogsServerNotFound(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodGet, "/api/servers/999/containers/abc/logs", tokens.AccessToken, nil)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status=%d, want 404", w.Code)
+	}
+}
+
+func TestLogsConnectionError(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	if cw := authReq(r, http.MethodPost, "/api/servers", tokens.AccessToken, map[string]any{
+		"name": "x", "host": "unreachable", "auth_method": "key", "private_key": "K",
+	}); cw.Code != http.StatusCreated {
+		t.Fatalf("创建失败 status=%d", cw.Code)
+	}
+
+	w := authReq(r, http.MethodGet, "/api/servers/1/containers/abc/logs", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status=%d, want 502 body=%s", w.Code, w.Body)
+	}
+}

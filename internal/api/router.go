@@ -54,6 +54,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	// Docker 管理
 	authed.GET("/servers/:id/containers", listContainersHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.POST("/servers/:id/containers/:cid/actions", containerActionHandler(opts.DB, opts.MasterKey, opts.Pool))
+	authed.GET("/servers/:id/containers/:cid/logs", containerLogsHandler(opts.DB, opts.MasterKey, opts.Pool))
 
 	// 文件管理
 	authed.GET("/servers/:id/files", listFilesHandler(opts.DB, opts.MasterKey, opts.Pool))
