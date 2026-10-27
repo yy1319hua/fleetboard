@@ -66,6 +66,11 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.GET("/servers/:id/metrics", metricsHandler(opts.DB))
 	authed.GET("/servers/:id/metrics/latest", latestMetricHandler(opts.DB))
 
+	// 告警规则
+	authed.GET("/alert-rules", listAlertRulesHandler(opts.DB))
+	authed.POST("/alert-rules", createAlertRuleHandler(opts.DB))
+	authed.DELETE("/alert-rules/:id", deleteAlertRuleHandler(opts.DB))
+
 	// 文件管理
 	authed.GET("/servers/:id/files", listFilesHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.GET("/servers/:id/files/download", downloadFileHandler(opts.DB, opts.MasterKey, opts.Pool))
