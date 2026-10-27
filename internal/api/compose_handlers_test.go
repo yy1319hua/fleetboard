@@ -141,3 +141,76 @@ func TestPutComposeContentMissingPath(t *testing.T) {
 		t.Errorf("status=%d, want 400 body=%s", w.Code, w.Body)
 	}
 }
+
+func TestComposeActionRequiresAuth(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+
+	w := authReq(r, http.MethodPost, "/api/servers/1/compose/actions", "", map[string]any{
+		"path": "/root/docker-compose.yml", "action": "up",
+	})
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status=%d, want 401", w.Code)
+	}
+}
+
+func TestComposeActionInvalidAction(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	for _, action := range []string{"", "exec", "up -d; rm -rf /"} {
+		w := authReq(r, http.MethodPost, "/api/servers/1/compose/actions", tokens.AccessToken, map[string]any{
+			"path": "/root/docker-compose.yml", "action": action,
+		})
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("action=%q status=%d, want 400", action, w.Code)
+		}
+	}
+}
+
+func TestComposeActionPathDenied(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPost, "/api/servers/1/compose/actions", tokens.AccessToken, map[string]any{
+		"path": "/var/lib/docker-compose.yml", "action": "up",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400 body=%s", w.Code, w.Body)
+	}
+}
+
+func TestComposeActionServerNotFound(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPost, "/api/servers/999/compose/actions", tokens.AccessToken, map[string]any{
+		"path": "/root/docker-compose.yml", "action": "ps",
+	})
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status=%d, want 404", w.Code)
+	}
+}
+
+func TestComposeActionConnectionError(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	cw := authReq(r, http.MethodPost, "/api/servers", tokens.AccessToken, map[string]any{
+		"name": "x", "host": "unreachable", "auth_method": "key", "private_key": "K",
+	})
+	if cw.Code != http.StatusCreated {
+		t.Fatalf("创建失败 status=%d", cw.Code)
+	}
+
+	w := authReq(r, http.MethodPost, "/api/servers/1/compose/actions", tokens.AccessToken, map[string]any{
+		"path": "/root/docker-compose.yml", "action": "up",
+	})
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status=%d, want 502 body=%s", w.Code, w.Body)
+	}
+}

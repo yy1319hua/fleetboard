@@ -148,3 +148,57 @@ func putComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, r
 		OK(c, gin.H{"path": path.Clean(req.Path), "size": len(req.Content)})
 	}
 }
+
+// composeActionHandler 执行 compose 动作（up/down/restart/ps）。
+func composeActionHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots []string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+
+		var req struct {
+			Path   string `json:"path"`
+			Action string `json:"action"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, ErrBadRequest("请求体非法"))
+			return
+		}
+		if req.Path == "" {
+			Fail(c, ErrBadRequest("缺少 path"))
+			return
+		}
+		if _, ok := compose.AllowedActions[req.Action]; !ok {
+			Fail(c, ErrBadRequest("不支持的动作，可选 up/down/restart/ps"))
+			return
+		}
+		// 先做路径与命令校验（不触达远端），避免无谓连接
+		if _, err := compose.ActionCommand(req.Path, req.Action, roots); err != nil {
+			if errors.Is(err, compose.ErrPathDenied) {
+				Fail(c, ErrBadRequest(err.Error()))
+				return
+			}
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
+
+		cli, err := openSSH(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+
+		out, err := compose.Action(cli, req.Path, req.Action, roots)
+		if err != nil {
+			Fail(c, ErrBadGateway("compose "+req.Action+" 失败: "+err.Error()))
+			return
+		}
+
+		OK(c, gin.H{
+			"path":   path.Clean(req.Path),
+			"action": req.Action,
+			"output": out,
+		})
+	}
+}

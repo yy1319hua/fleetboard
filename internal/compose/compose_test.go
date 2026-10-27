@@ -86,3 +86,48 @@ func TestNormalizeRoots(t *testing.T) {
 		}
 	}
 }
+
+func TestActionCommandAllowed(t *testing.T) {
+	roots := []string{"/opt/stacks"}
+	cases := map[string]string{
+		"up":      "docker compose -f '/opt/stacks/app/docker-compose.yml' --project-directory '/opt/stacks/app' up -d",
+		"down":    "docker compose -f '/opt/stacks/app/docker-compose.yml' --project-directory '/opt/stacks/app' down",
+		"restart": "docker compose -f '/opt/stacks/app/docker-compose.yml' --project-directory '/opt/stacks/app' restart",
+		"ps":      "docker compose -f '/opt/stacks/app/docker-compose.yml' --project-directory '/opt/stacks/app' ps",
+	}
+	for action, want := range cases {
+		got, err := ActionCommand("/opt/stacks/app/docker-compose.yml", action, roots)
+		if err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
+		if got != want {
+			t.Errorf("%s:\n got=%q\nwant=%q", action, got, want)
+		}
+	}
+}
+
+func TestActionCommandRejected(t *testing.T) {
+	roots := []string{"/opt/stacks"}
+
+	// 动作白名单
+	for _, a := range []string{"", "exec", "rm", "up -d; rm -rf /", "DOWN"} {
+		if _, err := ActionCommand("/opt/stacks/app/docker-compose.yml", a, roots); err == nil {
+			t.Errorf("动作 %q 应被拒绝", a)
+		}
+	}
+
+	// 路径白名单
+	if _, err := ActionCommand("/etc/passwd", "up", roots); !errors.Is(err, ErrPathDenied) {
+		t.Errorf("白名单外路径应返回 ErrPathDenied，实际 %v", err)
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	if got := shellQuote("/root/app.yml"); got != "'/root/app.yml'" {
+		t.Errorf("got=%q", got)
+	}
+	// 含单引号时必须是 '...'\''...' 形式，闭合后再转义
+	if got := shellQuote("/root/a'b.yml"); got != `'/root/a'\''b.yml'` {
+		t.Errorf("got=%q", got)
+	}
+}

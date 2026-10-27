@@ -91,6 +91,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.GET("/servers/:id/compose", listComposeHandler(opts.DB, opts.MasterKey, opts.Pool, opts.ComposeRoots))
 	authed.GET("/servers/:id/compose/content", getComposeContentHandler(opts.DB, opts.MasterKey, opts.Pool, opts.ComposeRoots))
 	authed.PUT("/servers/:id/compose/content", putComposeContentHandler(opts.DB, opts.MasterKey, opts.Pool, opts.ComposeRoots))
+	authed.POST("/servers/:id/compose/actions", composeActionHandler(opts.DB, opts.MasterKey, opts.Pool, opts.ComposeRoots))
 
 	return r
 }

@@ -3,12 +3,15 @@ package compose
 
 import (
 	"errors"
+	"fmt"
 	"path"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
+
 	"github.com/yy1319hua/fleetboard/internal/file"
 )
 
@@ -139,4 +142,55 @@ func Write(sc *sftp.Client, p, content string, roots []string) error {
 		return errors.New("内容超出上限（2MiB）")
 	}
 	return file.WriteAtomic(sc, path.Clean(p), content)
+}
+
+// AllowedActions 是允许的 compose 动作白名单（动作 → 命令行参数）。
+var AllowedActions = map[string]string{
+	"up":      "up -d",
+	"down":    "down",
+	"restart": "restart",
+	"ps":      "ps",
+}
+
+// shellQuote 用单引号包裹路径，转义内部单引号，避免空格与特殊字符注入。
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// ActionCommand 构造 compose 动作命令；路径必须在白名单内，动作必须在白名单内。
+// 形如：docker compose -f '<file>' --project-directory '<dir>' up -d
+func ActionCommand(p, action string, roots []string) (string, error) {
+	if err := ValidatePath(p, roots); err != nil {
+		return "", err
+	}
+	clean := path.Clean(p)
+
+	args, ok := AllowedActions[action]
+	if !ok {
+		return "", fmt.Errorf("不支持的动作: %q（可选 up/down/restart/ps）", action)
+	}
+
+	return fmt.Sprintf("docker compose -f %s --project-directory %s %s",
+		shellQuote(clean), shellQuote(path.Dir(clean)), args), nil
+}
+
+// Action 在被管机执行 compose 动作，返回命令输出（stdout+stderr）。
+func Action(cli *ssh.Client, p, action string, roots []string) (string, error) {
+	cmd, err := ActionCommand(p, action, roots)
+	if err != nil {
+		return "", err
+	}
+
+	sess, err := cli.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("创建 SSH 会话失败: %w", err)
+	}
+	defer func() { _ = sess.Close() }()
+
+	// 合并 stderr，便于把 compose 报错回传给前端
+	out, err := sess.CombinedOutput(cmd)
+	if err != nil {
+		return string(out), fmt.Errorf("docker compose %s 失败: %w", action, err)
+	}
+	return string(out), nil
 }
