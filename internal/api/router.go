@@ -58,6 +58,8 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.GET("/servers/:id/images", listImagesHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.POST("/servers/:id/images/pull", pullImageHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.DELETE("/servers/:id/images/:imageId", removeImageHandler(opts.DB, opts.MasterKey, opts.Pool))
+	authed.GET("/servers/:id/networks", listNetworksHandler(opts.DB, opts.MasterKey, opts.Pool))
+	authed.GET("/servers/:id/volumes", listVolumesHandler(opts.DB, opts.MasterKey, opts.Pool))
 
 	// 文件管理
 	authed.GET("/servers/:id/files", listFilesHandler(opts.DB, opts.MasterKey, opts.Pool))

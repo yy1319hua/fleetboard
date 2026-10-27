@@ -293,3 +293,97 @@ func RemoveImage(cli *ssh.Client, id string) (string, error) {
 	}
 	return out, nil
 }
+
+// Network 是 Docker 网络摘要。
+type Network struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Driver string `json:"driver"`
+	Scope  string `json:"scope"`
+}
+
+type networkLine struct {
+	ID     string `json:"ID"`
+	Name   string `json:"Name"`
+	Driver string `json:"Driver"`
+	Scope  string `json:"Scope"`
+}
+
+// ParseNetworkLine 解析 `docker network ls --format json` 的单行。
+func ParseNetworkLine(line string) (*Network, error) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil, nil
+	}
+	var p networkLine
+	if err := json.Unmarshal([]byte(line), &p); err != nil {
+		return nil, fmt.Errorf("解析网络行失败: %w", err)
+	}
+	return &Network{ID: p.ID, Name: p.Name, Driver: p.Driver, Scope: p.Scope}, nil
+}
+
+// ListNetworks 返回全部 Docker 网络。
+func ListNetworks(cli *ssh.Client) ([]Network, error) {
+	out, err := runErr(cli, `docker network ls --format '{{json .}}'`)
+	if err != nil {
+		return nil, fmt.Errorf("docker network ls 失败: %w", err)
+	}
+
+	list := []Network{}
+	for _, line := range strings.Split(out, "\n") {
+		n, err := ParseNetworkLine(line)
+		if err != nil {
+			return nil, err
+		}
+		if n != nil {
+			list = append(list, *n)
+		}
+	}
+	return list, nil
+}
+
+// Volume 是 Docker 数据卷摘要。
+type Volume struct {
+	Name       string `json:"name"`
+	Driver     string `json:"driver"`
+	Mountpoint string `json:"mountpoint"`
+}
+
+type volumeLine struct {
+	Name       string `json:"Name"`
+	Driver     string `json:"Driver"`
+	Mountpoint string `json:"Mountpoint"`
+}
+
+// ParseVolumeLine 解析 `docker volume ls --format json` 的单行。
+func ParseVolumeLine(line string) (*Volume, error) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil, nil
+	}
+	var p volumeLine
+	if err := json.Unmarshal([]byte(line), &p); err != nil {
+		return nil, fmt.Errorf("解析卷行失败: %w", err)
+	}
+	return &Volume{Name: p.Name, Driver: p.Driver, Mountpoint: p.Mountpoint}, nil
+}
+
+// ListVolumes 返回全部 Docker 数据卷。
+func ListVolumes(cli *ssh.Client) ([]Volume, error) {
+	out, err := runErr(cli, `docker volume ls --format '{{json .}}'`)
+	if err != nil {
+		return nil, fmt.Errorf("docker volume ls 失败: %w", err)
+	}
+
+	list := []Volume{}
+	for _, line := range strings.Split(out, "\n") {
+		v, err := ParseVolumeLine(line)
+		if err != nil {
+			return nil, err
+		}
+		if v != nil {
+			list = append(list, *v)
+		}
+	}
+	return list, nil
+}

@@ -142,3 +142,47 @@ func removeImageHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Han
 		OK(c, gin.H{"deleted": imageID, "output": out})
 	}
 }
+
+// listNetworksHandler 返回 Docker 网络列表。
+// GET /api/servers/:id/networks
+func listNetworksHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		cli, err := openSSH(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		list, err := docker.ListNetworks(cli)
+		if err != nil {
+			Fail(c, ErrBadGateway("获取网络列表失败: "+err.Error()))
+			return
+		}
+		OK(c, list)
+	}
+}
+
+// listVolumesHandler 返回 Docker 数据卷列表。
+// GET /api/servers/:id/volumes
+func listVolumesHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		cli, err := openSSH(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		list, err := docker.ListVolumes(cli)
+		if err != nil {
+			Fail(c, ErrBadGateway("获取卷列表失败: "+err.Error()))
+			return
+		}
+		OK(c, list)
+	}
+}

@@ -139,3 +139,31 @@ func TestValidateImageID(t *testing.T) {
 		}
 	}
 }
+
+func TestParseNetworkLine(t *testing.T) {
+	n, err := ParseNetworkLine(`{"ID":"n1","Name":"bridge","Driver":"bridge","Scope":"local"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.ID != "n1" || n.Name != "bridge" || n.Driver != "bridge" {
+		t.Errorf("%+v", n)
+	}
+
+	if n, err := ParseNetworkLine(""); err != nil || n != nil {
+		t.Errorf("空行应 nil,nil: %v %v", n, err)
+	}
+}
+
+func TestParseVolumeLine(t *testing.T) {
+	v, err := ParseVolumeLine(`{"Name":"data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/data/_data"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Name != "data" || v.Driver != "local" {
+		t.Errorf("%+v", v)
+	}
+
+	if v, err := ParseVolumeLine(""); err != nil || v != nil {
+		t.Errorf("空行应 nil,nil: %v %v", v, err)
+	}
+}
