@@ -40,8 +40,9 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	r.POST("/api/refresh", refreshHandler(opts.JWTSecret))
 
 	// 需鉴权端点
-	authed := r.Group("/api", JWTAuth(opts.JWTSecret))
+	authed := r.Group("/api", JWTAuth(opts.JWTSecret), AuditMiddleware(opts.DB))
 	authed.GET("/me", meHandler())
+	authed.GET("/audit", listAuditHandler(opts.DB))
 
 	// 服务器管理
 	authed.GET("/servers", listServersHandler(opts.DB))

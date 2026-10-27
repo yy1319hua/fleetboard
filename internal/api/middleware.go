@@ -1,10 +1,12 @@
 package api
 
 import (
+	"database/sql"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yy1319hua/fleetboard/internal/auth"
+	"github.com/yy1319hua/fleetboard/internal/db"
 )
 
 const ctxUserID = "uid"
@@ -38,4 +40,22 @@ func CurrentUserID(c *gin.Context) int64 {
 	}
 	id, _ := v.(int64)
 	return id
+}
+
+// AuditMiddleware 在请求完成后记录操作审计（须置于 JWTAuth 之后）。
+func AuditMiddleware(d *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+
+		uid := CurrentUserID(c)
+		if uid == 0 {
+			return
+		}
+		action := c.Request.Method + " " + c.FullPath()
+		result := "ok"
+		if c.Writer.Status() >= 400 {
+			result = "fail"
+		}
+		_ = db.InsertAudit(d, uid, nil, action, c.Request.URL.Path, result)
+	}
 }
