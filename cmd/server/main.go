@@ -184,6 +184,8 @@ func main() {
 		JWTSecret: cfg.JWTSecret,
 		MasterKey: cfg.Key,
 		Pool:      pool,
+
+		ComposeRoots: cfg.ComposeRoots,
 	})
 	srv := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.ListenAddr, cfg.Port),

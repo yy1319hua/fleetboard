@@ -12,18 +12,19 @@ import (
 
 // Config 汇总服务启动所需的配置，全部来自环境变量（可辅以 .env）。
 type Config struct {
-	ListenAddr           string // HTTP 监听地址，默认 127.0.0.1（公网仅经 Cloudflare Tunnel）
-	Port                 int    // HTTP 监听端口
-	DataDir              string // 数据目录（SQLite、日志等）
-	DBPath               string // SQLite 文件路径
-	Key                  string // 凭据加密主密钥（AES-256-GCM），绝不落库明文
-	JWTSecret            string // JWT 签名密钥
-	BootstrapUser        string // 首次启动创建的管理员用户名
-	BootstrapPass        string // 首次启动创建的管理员密码
-	MonitorIntervalSec   int    // 指标采集间隔（秒）
-	MetricsRetentionDays int    // 指标保留天数
-	OfflineThreshold     int    // 连续失败多少次判定离线
-	PushPlusToken        string // PushPlus 告警通道 token
+	ListenAddr           string   // HTTP 监听地址，默认 127.0.0.1（公网仅经 Cloudflare Tunnel）
+	Port                 int      // HTTP 监听端口
+	DataDir              string   // 数据目录（SQLite、日志等）
+	DBPath               string   // SQLite 文件路径
+	Key                  string   // 凭据加密主密钥（AES-256-GCM），绝不落库明文
+	JWTSecret            string   // JWT 签名密钥
+	BootstrapUser        string   // 首次启动创建的管理员用户名
+	BootstrapPass        string   // 首次启动创建的管理员密码
+	MonitorIntervalSec   int      // 指标采集间隔（秒）
+	MetricsRetentionDays int      // 指标保留天数
+	OfflineThreshold     int      // 连续失败多少次判定离线
+	PushPlusToken        string   // PushPlus 告警通道 token
+	ComposeRoots         []string // compose 文件可读写根目录白名单（空=用内置默认）
 }
 
 // Load 先加载 .env（若存在），再读取环境变量，返回校验通过的配置。
@@ -57,6 +58,7 @@ func Load() (*Config, error) {
 	}
 
 	cfg.DBPath = getenv("DB_PATH", cfg.DataDir+"/fleetboard.db")
+	cfg.ComposeRoots = splitCSV(os.Getenv("COMPOSE_ROOTS"))
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -145,4 +147,19 @@ func getenvInt(k string, def int) (int, error) {
 		return 0, fmt.Errorf("%s 需为整数，实际 %q", k, v)
 	}
 	return n, nil
+}
+
+// splitCSV 把逗号分隔的配置项拆成切片，去空与首尾空白。
+func splitCSV(v string) []string {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

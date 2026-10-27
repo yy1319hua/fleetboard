@@ -10,12 +10,13 @@ import (
 
 // RouterOptions 是构建路由所需的运行期信息。
 type RouterOptions struct {
-	Version   string // 服务版本
-	Schema    string // 当前数据库迁移版本
-	DB        *sql.DB
-	JWTSecret string
-	MasterKey string // 凭据加密主密钥（KEY）
-	Pool      *sshpool.Pool
+	Version      string // 服务版本
+	Schema       string // 当前数据库迁移版本
+	DB           *sql.DB
+	JWTSecret    string
+	MasterKey    string // 凭据加密主密钥（KEY）
+	Pool         *sshpool.Pool
+	ComposeRoots []string // compose 文件可读写根目录白名单（空=内置默认）
 }
 
 // NewRouter 构建 HTTP 路由。
@@ -85,6 +86,10 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.POST("/servers/:id/files/copy", copyFileHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.DELETE("/servers/:id/files", deleteFileHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.GET("/servers/:id/files/stat", statFileHandler(opts.DB, opts.MasterKey, opts.Pool))
+
+	// Compose 配置管理
+	authed.GET("/servers/:id/compose", listComposeHandler(opts.DB, opts.MasterKey, opts.Pool, opts.ComposeRoots))
+	authed.GET("/servers/:id/compose/content", getComposeContentHandler(opts.DB, opts.MasterKey, opts.Pool, opts.ComposeRoots))
 
 	return r
 }
