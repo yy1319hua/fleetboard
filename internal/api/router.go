@@ -40,6 +40,11 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	r.POST("/api/login", loginHandler(opts.DB, opts.JWTSecret))
 	r.POST("/api/refresh", refreshHandler(opts.JWTSecret))
 
+	// WebSocket 日志流：浏览器无法自带 Authorization 头，改由 handler 内
+	// 校验「Authorization 或一次性 ticket」。故该路由不放入鉴权组。
+	r.GET("/api/servers/:id/containers/:cid/logs",
+		containerLogsHandler(opts.DB, opts.MasterKey, opts.JWTSecret, opts.Pool))
+
 	// 需鉴权端点
 	authed := r.Group("/api", JWTAuth(opts.JWTSecret), AuditMiddleware(opts.DB))
 	authed.GET("/me", meHandler())
@@ -55,7 +60,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	// Docker 管理
 	authed.GET("/servers/:id/containers", listContainersHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.POST("/servers/:id/containers/:cid/actions", containerActionHandler(opts.DB, opts.MasterKey, opts.Pool))
-	authed.GET("/servers/:id/containers/:cid/logs", containerLogsHandler(opts.DB, opts.MasterKey, opts.Pool))
+	authed.POST("/servers/:id/containers/:cid/logs-ticket", logsTicketHandler(opts.JWTSecret))
 	authed.GET("/servers/:id/images", listImagesHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.POST("/servers/:id/images/pull", pullImageHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.DELETE("/servers/:id/images/:imageId", removeImageHandler(opts.DB, opts.MasterKey, opts.Pool))

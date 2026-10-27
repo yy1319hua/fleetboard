@@ -21,14 +21,23 @@ var logsUpgrader = websocket.Upgrader{
 }
 
 // containerLogsHandler 升级为 WebSocket，持续推送 `docker logs -f` 输出。
-// GET /api/servers/:id/containers/:cid/logs?tail=200
-func containerLogsHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+// GET /api/servers/:id/containers/:cid/logs?tail=200&ticket=<一次性票据>
+//
+// 鉴权：优先 Authorization 头（能带头部的客户端），否则用 ?ticket=（浏览器）；
+// 该端点不在 JWTAuth 组内，鉴权在本函数内完成。
+func containerLogsHandler(d *sql.DB, masterKey, secret string, pool *sshpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := parseID(c)
 		if !ok {
 			return
 		}
 		cid := c.Param("cid")
+
+		uid, authErr := authorizeWS(c, secret, id, cid)
+		if authErr != nil {
+			Fail(c, authErr)
+			return
+		}
 
 		cmdline, err := docker.LogsCommand(cid, c.DefaultQuery("tail", "200"))
 		if err != nil {
@@ -71,6 +80,8 @@ func containerLogsHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.H
 			return
 		}
 		defer func() { _ = conn.Close() }()
+
+		insertLogsAudit(d, uid, id, cid)
 
 		// 客户端断开检测：读循环出错即取消
 		done := make(chan struct{})
