@@ -52,7 +52,7 @@ func Load() (*Config, error) {
 	if cfg.MetricsRetentionDays, err = getenvInt("METRICS_RETENTION_DAYS", 30); err != nil {
 		return nil, err
 	}
-	if cfg.OfflineThreshold, err = getenvInt("OFFLINE_THRESHOLD", 3); err != nil {
+	if cfg.OfflineThreshold, err = getenvInt("OFFLINE_THRESHOLD", 2); err != nil {
 		return nil, err
 	}
 

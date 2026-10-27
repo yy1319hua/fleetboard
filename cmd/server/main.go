@@ -60,6 +60,8 @@ func main() {
 	stopMonitor := make(chan struct{})
 	defer close(stopMonitor)
 	go func() {
+		// 连续失败计数：达到阈值才判 offline（默认 2 次 × 30s = 60s）
+		failCount := make(map[int64]int)
 		collect := func() {
 			servers, err := db.ListServers(d)
 			if err != nil {
@@ -83,16 +85,28 @@ func main() {
 				})
 				if err != nil {
 					cancel()
+					failCount[s.ID]++
+					if failCount[s.ID] >= cfg.OfflineThreshold {
+						_ = db.UpdateServerStatus(d, s.ID, "offline")
+					}
 					continue
 				}
+
 				snap, err := monitor.Collect(cli)
 				cancel()
 				if err != nil {
+					failCount[s.ID]++
+					if failCount[s.ID] >= cfg.OfflineThreshold {
+						_ = db.UpdateServerStatus(d, s.ID, "offline")
+					}
 					continue
 				}
+
+				failCount[s.ID] = 0
 				if err := db.InsertMetric(d, s.ID, snap.CPUPct, snap.MemPct, snap.DiskPct, snap.Load1); err != nil {
 					log.Printf("指标采集：写入 #%d 失败: %v", s.ID, err)
 				}
+				_ = db.UpdateServerStatus(d, s.ID, "online")
 			}
 		}
 
