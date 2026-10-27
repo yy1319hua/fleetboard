@@ -143,3 +143,47 @@ func TestLogsConnectionError(t *testing.T) {
 		t.Errorf("status=%d, want 502 body=%s", w.Code, w.Body)
 	}
 }
+
+func TestListImagesRequiresAuth(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+
+	w := authReq(r, http.MethodGet, "/api/servers/1/images", "", nil)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status=%d, want 401", w.Code)
+	}
+}
+
+func TestPullImageRequiresBody(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPost, "/api/servers/1/images/pull", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400", w.Code)
+	}
+}
+
+func TestPullImageServerNotFound(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPost, "/api/servers/999/images/pull", tokens.AccessToken,
+		map[string]any{"image": "nginx:alpine"})
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status=%d, want 404", w.Code)
+	}
+}
+
+func TestRemoveImageServerNotFound(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodDelete, "/api/servers/999/images/sha256:abc", tokens.AccessToken, nil)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status=%d, want 404", w.Code)
+	}
+}

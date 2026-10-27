@@ -148,3 +148,148 @@ func LogsCommand(containerID, tail string) (string, error) {
 	}
 	return fmt.Sprintf("docker logs -f --tail %d %s", n, containerID), nil
 }
+
+// Image 是镜像摘要。
+type Image struct {
+	ID           string `json:"id"`
+	Repository   string `json:"repository"`
+	Tag          string `json:"tag"`
+	Size         string `json:"size"`
+	CreatedSince string `json:"created_since"`
+}
+
+type imageLine struct {
+	ID           string `json:"ID"`
+	Repository   string `json:"Repository"`
+	Tag          string `json:"Tag"`
+	Size         string `json:"Size"`
+	CreatedSince string `json:"CreatedSince"`
+}
+
+// ParseImageLine 解析 `docker images --format json` 的单行输出；空行返回 (nil, nil)。
+func ParseImageLine(line string) (*Image, error) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil, nil
+	}
+	var p imageLine
+	if err := json.Unmarshal([]byte(line), &p); err != nil {
+		return nil, fmt.Errorf("解析镜像行失败: %w", err)
+	}
+	return &Image{
+		ID:           p.ID,
+		Repository:   p.Repository,
+		Tag:          p.Tag,
+		Size:         p.Size,
+		CreatedSince: p.CreatedSince,
+	}, nil
+}
+
+// run 在 SSH 上执行命令并返回合并输出。
+func run(cli *ssh.Client, cmd string) (string, error) {
+	sess, err := cli.NewSession()
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = sess.Close() }()
+	out, _ := sess.CombinedOutput(cmd)
+	return string(out), nil
+}
+
+// runErr 在 SSH 上执行命令，返回输出与错误。
+func runErr(cli *ssh.Client, cmd string) (string, error) {
+	sess, err := cli.NewSession()
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = sess.Close() }()
+	out, err := sess.CombinedOutput(cmd)
+	return string(out), err
+}
+
+// ListImages 返回全部本地镜像。
+func ListImages(cli *ssh.Client) ([]Image, error) {
+	out, err := runErr(cli, `docker images --format '{{json .}}'`)
+	if err != nil {
+		return nil, fmt.Errorf("docker images 失败: %w", err)
+	}
+
+	list := []Image{}
+	for _, line := range strings.Split(out, "\n") {
+		img, err := ParseImageLine(line)
+		if err != nil {
+			return nil, err
+		}
+		if img != nil {
+			list = append(list, *img)
+		}
+	}
+	return list, nil
+}
+
+// ValidateImageRef 校验镜像引用（repo[:tag][@digest]），防命令注入。
+func ValidateImageRef(ref string) error {
+	if ref == "" {
+		return errors.New("镜像名不能为空")
+	}
+	if len(ref) > 255 {
+		return errors.New("镜像名过长")
+	}
+	for i, r := range ref {
+		ok := (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '_' || r == '-' || r == '.' || r == '/' || r == ':' || r == '@'
+		if !ok {
+			return fmt.Errorf("镜像名含非法字符: %q", string(r))
+		}
+		if i == 0 && !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+			return errors.New("镜像名需以字母或数字开头")
+		}
+	}
+	return nil
+}
+
+// ValidateImageID 校验镜像 ID（支持 sha256: 前缀）。
+func ValidateImageID(id string) error {
+	if id == "" {
+		return errors.New("镜像 ID 不能为空")
+	}
+	for _, r := range id {
+		ok := (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '_' || r == '-' || r == '.' || r == ':'
+		if !ok {
+			return fmt.Errorf("镜像 ID 含非法字符: %q", string(r))
+		}
+	}
+	return nil
+}
+
+// PullImage 拉取镜像，返回输出。
+func PullImage(cli *ssh.Client, ref string) (string, error) {
+	if err := ValidateImageRef(ref); err != nil {
+		return "", err
+	}
+	out, err := runErr(cli, "docker pull "+ref)
+	if err != nil {
+		return out, fmt.Errorf("docker pull 失败: %w", err)
+	}
+	return out, nil
+}
+
+// RemoveImage 删除镜像；不存在视为幂等成功。
+func RemoveImage(cli *ssh.Client, id string) (string, error) {
+	if err := ValidateImageID(id); err != nil {
+		return "", err
+	}
+	out, err := runErr(cli, "docker rmi "+id)
+	if err != nil {
+		if strings.Contains(out, "No such image") {
+			return out, nil
+		}
+		return out, fmt.Errorf("docker rmi 失败: %w", err)
+	}
+	return out, nil
+}

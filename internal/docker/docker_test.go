@@ -94,3 +94,48 @@ func TestLogsCommandValidation(t *testing.T) {
 		t.Error("tail 非数字应报错")
 	}
 }
+
+func TestParseImageLine(t *testing.T) {
+	line := `{"ID":"sha256:abc","Repository":"nginx","Tag":"alpine","Size":"23.4MB","CreatedSince":"2 days ago"}`
+	img, err := ParseImageLine(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img.ID != "sha256:abc" || img.Repository != "nginx" || img.Tag != "alpine" {
+		t.Errorf("%+v", img)
+	}
+
+	if img, err := ParseImageLine("  "); err != nil || img != nil {
+		t.Errorf("空行应返回 nil,nil: %v %v", img, err)
+	}
+}
+
+func TestValidateImageRef(t *testing.T) {
+	valid := []string{"nginx", "nginx:alpine", "ghcr.io/u/app:v1", "registry:5000/a/b:t", "img@sha256:abc"}
+	for _, r := range valid {
+		if err := ValidateImageRef(r); err != nil {
+			t.Errorf("%q 应合法: %v", r, err)
+		}
+	}
+	invalid := []string{"", "-bad", "a b", "a;rm -rf /", "$(x)", "a|b", "a&&b"}
+	for _, r := range invalid {
+		if err := ValidateImageRef(r); err == nil {
+			t.Errorf("%q 应非法", r)
+		}
+	}
+}
+
+func TestValidateImageID(t *testing.T) {
+	valid := []string{"sha256:abc", "abc123", "a_b-c.d"}
+	for _, id := range valid {
+		if err := ValidateImageID(id); err != nil {
+			t.Errorf("%q 应合法: %v", id, err)
+		}
+	}
+	invalid := []string{"", "a/b", "a b", "a;b", "$(x)"}
+	for _, id := range invalid {
+		if err := ValidateImageID(id); err == nil {
+			t.Errorf("%q 应非法", id)
+		}
+	}
+}
