@@ -42,3 +42,30 @@ func TestParsePSLinePartial(t *testing.T) {
 		t.Errorf("%+v", c)
 	}
 }
+
+func TestValidateContainerID(t *testing.T) {
+	valid := []string{"abc123", "my_container-1", "a.b", "A9", "0f3a2b1c4d5e"}
+	for _, id := range valid {
+		if err := ValidateContainerID(id); err != nil {
+			t.Errorf("%q 应合法，实际报错: %v", id, err)
+		}
+	}
+
+	invalid := []string{"", "a b", "a;rm -rf /", "$(x)", "a/b", "a&&b", "a|b"}
+	for _, id := range invalid {
+		if err := ValidateContainerID(id); err == nil {
+			t.Errorf("%q 应非法，实际通过", id)
+		}
+	}
+}
+
+func TestAllowedActions(t *testing.T) {
+	for _, a := range []string{"start", "stop", "restart", "rm"} {
+		if _, ok := allowedActions[a]; !ok {
+			t.Errorf("缺少允许操作: %s", a)
+		}
+	}
+	if _, ok := allowedActions["exec"]; ok {
+		t.Error("exec 不应在允许列表")
+	}
+}

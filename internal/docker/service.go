@@ -3,6 +3,7 @@ package docker
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -78,4 +79,59 @@ func List(cli *ssh.Client) ([]Container, error) {
 		}
 	}
 	return list, nil
+}
+
+// allowedActions 是允许的容器操作白名单（action → docker 子命令）。
+var allowedActions = map[string]string{
+	"start":   "start",
+	"stop":    "stop",
+	"restart": "restart",
+	"rm":      "rm -f",
+}
+
+// ValidateContainerID 校验容器 ID/名称，防命令注入。
+// 只允许字母、数字与 `_ - .`。
+func ValidateContainerID(id string) error {
+	if id == "" {
+		return errors.New("容器 ID 不能为空")
+	}
+	for _, r := range id {
+		ok := (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '_' || r == '-' || r == '.'
+		if !ok {
+			return fmt.Errorf("容器 ID 含非法字符: %q", string(r))
+		}
+	}
+	return nil
+}
+
+// Action 对容器执行 start/stop/restart/rm，返回命令输出。
+// 幂等：对不存在的容器执行 rm 视为成功。
+func Action(cli *ssh.Client, containerID, action string) (string, error) {
+	if err := ValidateContainerID(containerID); err != nil {
+		return "", err
+	}
+	sub, ok := allowedActions[action]
+	if !ok {
+		return "", fmt.Errorf("不支持的操作: %q（允许 start/stop/restart/rm）", action)
+	}
+
+	sess, err := cli.NewSession()
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = sess.Close() }()
+
+	out, err := sess.CombinedOutput(fmt.Sprintf("docker %s %s", sub, containerID))
+	output := string(out)
+	if err != nil {
+		// 幂等：删除不存在的容器不视为失败
+		if action == "rm" && strings.Contains(output, "No such container") {
+			return output, nil
+		}
+		return output, fmt.Errorf("docker %s 失败: %w", action, err)
+	}
+	return output, nil
 }
