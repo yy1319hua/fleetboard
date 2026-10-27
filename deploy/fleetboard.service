@@ -12,12 +12,9 @@ ExecStart=/opt/fleetboard/fleetboard
 Restart=on-failure
 RestartSec=3
 
-# 加固：专用系统用户，仅数据目录可写
-User=fleetboard
-Group=fleetboard
+# 加固：仅数据目录可写
 ReadWritePaths=/var/lib/fleetboard
 NoNewPrivileges=true
-ProtectSystem=strict
 ProtectHome=true
 
 [Install]

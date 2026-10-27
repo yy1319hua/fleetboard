@@ -18,9 +18,6 @@ systemctl reset-failed 2>/dev/null || true
 echo "==> 回收程序目录 $BASE"
 rm -rf "$BASE"
 
-echo "==> 回收用户"
-id fleetboard >/dev/null 2>&1 && userdel fleetboard || true
-
 if [ -d "$DATA" ]; then
   echo
   echo "发现数据目录 $DATA（SQLite 数据库，含纳管记录与凭据密文）"

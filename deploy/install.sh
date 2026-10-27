@@ -47,15 +47,11 @@ EOF
 fi
 ENV_FILE="${ENV_SRC:-$SRC/.env.filled}"
 
-echo "==> 创建系统用户 fleetboard"
-id fleetboard >/dev/null 2>&1 || useradd --system --home "$BASE" --shell /usr/sbin/nologin fleetboard
-
 echo "==> 安装文件到 $BASE"
 mkdir -p "$BASE" "$DATA"
 install -m 755 "$SRC/fleetboard" "$BASE/fleetboard"
 cp -r "$SRC/web-dist" "$BASE/web-dist"
 install -m 600 "$ENV_FILE" "$BASE/.env"
-chown -R fleetboard:fleetboard "$BASE" "$DATA"
 
 echo "==> 写入 systemd 单元"
 install -m 644 "$SRC/fleetboard.service" "$UNIT"
