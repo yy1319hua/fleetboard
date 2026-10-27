@@ -115,7 +115,7 @@ func main() {
 					MemPct:  snap.MemPct,
 					DiskPct: snap.DiskPct,
 					Load1:   snap.Load1,
-				})
+				}, cfg.PushPlusToken)
 				if err != nil {
 					log.Printf("告警评估 #%d 失败: %v", s.ID, err)
 				} else if hits > 0 {

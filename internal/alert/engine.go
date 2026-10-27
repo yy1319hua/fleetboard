@@ -4,13 +4,18 @@ package alert
 import (
 	"database/sql"
 	"fmt"
+	"log"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
 
 	"github.com/yy1319hua/fleetboard/internal/db"
 	"github.com/yy1319hua/fleetboard/internal/model"
 )
 
-// Evaluate 对某服务器的最新指标评估所有启用规则，命中则写通知事件，返回命中条数。
-func Evaluate(d *sql.DB, serverID int64, m *model.ServerMetric) (int, error) {
+// Evaluate 对某服务器的最新指标评估所有启用规则，命中则写通知事件并推送，返回命中条数。
+func Evaluate(d *sql.DB, serverID int64, m *model.ServerMetric, pushPlusToken string) (int, error) {
 	rules, err := db.ListAlertRules(d)
 	if err != nil {
 		return 0, err
@@ -41,8 +46,35 @@ func Evaluate(d *sql.DB, serverID int64, m *model.ServerMetric) (int, error) {
 			return hits, err
 		}
 		hits++
+
+		// PushPlus：失败仅记日志，不影响主流程（不阻断采集与入库）
+		if pushPlusToken != "" && strings.Contains(r.NotifyChannels, "pushplus") {
+			if err := sendPushPlus(pushPlusToken, title, msg); err != nil {
+				log.Printf("PushPlus 推送失败（不阻断）: %v", err)
+			}
+		}
 	}
 	return hits, nil
+}
+
+// sendPushPlus 调用 PushPlus Webhook。
+func sendPushPlus(token, title, content string) error {
+	form := url.Values{}
+	form.Set("token", token)
+	form.Set("title", title)
+	form.Set("content", content)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.PostForm("https://www.pushplus.plus/send", form)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("pushplus 返回状态 %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // MetricValue 取指标数值；offline 由连接状态单独判断，不在此处理。
