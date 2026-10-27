@@ -2,9 +2,17 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	"github.com/yy1319hua/fleetboard/internal/api"
 	"github.com/yy1319hua/fleetboard/internal/config"
 	"github.com/yy1319hua/fleetboard/internal/db"
 )
@@ -36,6 +44,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("fleetboard %s: listen=%s:%d db=%s schema=%s\n",
-		version, cfg.ListenAddr, cfg.Port, cfg.DBPath, schema)
+	r := api.NewRouter(api.RouterOptions{Version: version, Schema: schema})
+	srv := &http.Server{
+		Addr:              fmt.Sprintf("%s:%d", cfg.ListenAddr, cfg.Port),
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	go func() {
+		log.Printf("fleetboard %s 启动: http://%s (schema=%s)", version, srv.Addr, schema)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("HTTP 服务异常: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("收到退出信号，正在关闭...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("关闭异常: %v", err)
+	}
 }
