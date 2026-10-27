@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "@/components/AppShell";
+import { AlertsPage } from "@/pages/AlertsPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
@@ -64,7 +65,7 @@ export function App() {
         path="/alerts"
         element={
           <Shell>
-            <PlaceholderPage title="通知中心" note="告警列表与规则管理将在 M6.7 实现。" />
+            <AlertsPage />
           </Shell>
         }
       />

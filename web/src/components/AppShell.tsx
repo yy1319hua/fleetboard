@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import { IconBell, IconGear, IconGrid, IconLogout } from "@/components/icons";
 import { useAuth } from "@/store/auth";
+import { listAlerts } from "@/lib/alerts";
 import { cn } from "@/lib/cn";
 
 interface NavItem {
@@ -29,6 +30,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const username = useAuth((s) => s.username);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
+  // 未读告警：30s 轮询，作为导航红点
+  const unread = useQuery({
+    queryKey: ["alerts-unread"],
+    queryFn: () => listAlerts({ unreadOnly: true, limit: 100 }),
+    refetchInterval: 30_000,
+  });
+  const unreadCount = unread.data?.length ?? 0;
 
   const handleLogout = () => {
     // 先清缓存再清登录态，避免下一位看到上一轮的服务端数据
@@ -63,6 +72,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               {item.icon}
               {item.label}
+              {item.to === "/alerts" && unreadCount > 0 ? (
+                <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-pill bg-danger px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white tabular">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              ) : null}
             </NavLink>
           ))}
         </nav>
@@ -121,7 +135,15 @@ export function AppShell({ children }: { children: ReactNode }) {
                 )
               }
             >
-              {item.icon}
+              <span className="relative">
+                {item.icon}
+                {item.to === "/alerts" && unreadCount > 0 ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -right-1.5 -top-1 h-2 w-2 rounded-full bg-danger"
+                  />
+                ) : null}
+              </span>
               {item.label}
             </NavLink>
           ))}
