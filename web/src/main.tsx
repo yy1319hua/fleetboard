@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import { App } from "@/App";
+import { ToastHost } from "@/components/ui/Toast";
 import { useAuth } from "@/store/auth";
 
 const queryClient = new QueryClient({
@@ -40,6 +41,7 @@ createRoot(container).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <App />
+        <ToastHost />
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,

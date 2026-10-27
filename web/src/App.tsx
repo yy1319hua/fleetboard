@@ -1,8 +1,12 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "@/components/AppShell";
+import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
+import { ServerDetailPage } from "@/pages/ServerDetailPage";
+import { ServerOverviewTab } from "@/pages/tabs/ServerOverviewTab";
+import { TabPlaceholder } from "@/pages/tabs/TabPlaceholder";
 import { RequireAuth } from "@/routes/RequireAuth";
 
 /** 受保护区域统一套 AppShell。 */
@@ -23,10 +27,42 @@ export function App() {
         path="/"
         element={
           <Shell>
-            <PlaceholderPage title="总览" note="服务器卡片与在线状态将在 M6.3 实现。" />
+            <DashboardPage />
           </Shell>
         }
       />
+
+      <Route
+        path="/servers/:id"
+        element={
+          <Shell>
+            <ServerDetailPage />
+          </Shell>
+        }
+      >
+        <Route index element={<ServerOverviewTab />} />
+        <Route
+          path="monitor"
+          element={<TabPlaceholder title="监控曲线" note="24h / 7d 历史曲线将在 M6.6 实现。" />}
+        />
+        <Route
+          path="docker"
+          element={<TabPlaceholder title="容器" note="容器列表、操作与实时日志将在 M6.5 实现。" />}
+        />
+        <Route
+          path="files"
+          element={<TabPlaceholder title="文件管理" note="目录浏览、上传下载与在线编辑将在 M6.4 实现。" />}
+        />
+        <Route
+          path="compose"
+          element={<TabPlaceholder title="Compose" note="compose 文件浏览、编辑与启停将在 M6.8 实现。" />}
+        />
+        <Route
+          path="packages"
+          element={<TabPlaceholder title="软件包更新" note="apt 流式更新面板将在 M6.9 实现。" />}
+        />
+      </Route>
+
       <Route
         path="/alerts"
         element={
