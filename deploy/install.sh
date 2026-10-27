@@ -18,7 +18,12 @@ SRC="$(cd "$(dirname "$0")" && pwd)"
 [ -f "$SRC/web-dist/index.html" ] || { echo "缺 web-dist/"; exit 1; }
 
 ARCH=$(uname -m); case "$ARCH" in x86_64) a=amd64;; aarch64) a=arm64;; *) echo "不支持的架构 $ARCH"; exit 1;; esac
-file "$SRC/fleetboard" | grep -q "arm64\|aarch64" && built=arm64 || built=amd64
+# 架构校验：直接读 ELF 头 e_machine（62=amd64, 183=arm64），不依赖 file/外部命令
+elf_machine=$(od -An -j18 -N2 -tu2 "$SRC/fleetboard" | tr -d ' ')
+case "$elf_machine" in
+  62) built=amd64;; 183) built=arm64;;
+  *) echo "无法识别二进制架构（e_machine=$elf_machine）"; exit 1;;
+esac
 [ "$built" = "$a" ] || { echo "二进制架构($built)与本机($a)不符，请换对应发布包"; exit 1; }
 
 # ---- 收集必填配置 ----
