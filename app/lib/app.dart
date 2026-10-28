@@ -10,6 +10,7 @@ import 'features/alerts/presentation/alert_detail_page.dart';
 import 'features/alerts/presentation/alerts_page.dart';
 import 'features/auth/application/auth_notifier.dart';
 import 'features/auth/presentation/login_page.dart';
+import 'features/containers/presentation/containers_page.dart';
 import 'features/emergency/presentation/update_task_page.dart';
 import 'features/overview/application/overview_notifier.dart';
 import 'features/overview/presentation/overview_page.dart';
@@ -152,6 +153,14 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => ServerDetailPage(
               serverId: state.pathParameters['serverId'] ?? '',
             ),
+            routes: <RouteBase>[
+              GoRoute(
+                path: 'containers',
+                builder: (context, state) => ContainersPage(
+                  serverId: state.pathParameters['serverId'] ?? '',
+                ),
+              ),
+            ],
           ),
           GoRoute(
             path: '/tasks/update',
