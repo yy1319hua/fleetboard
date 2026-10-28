@@ -21,7 +21,7 @@ void main() {
       ],
     );
     await tester.pumpWidget(
-      ProviderScope(
+      UncontrolledProviderScope(
         container: container,
         child: const MaterialApp(home: LoginPage()),
       ),

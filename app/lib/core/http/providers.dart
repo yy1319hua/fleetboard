@@ -1,8 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../storage/secure_store.dart';
-import '../auth_notifier.dart';
+import '../storage/secure_store.dart';
+import '../../features/auth/application/auth_notifier.dart';
 import 'auth_interceptor.dart';
 import 'dio_client.dart';
 

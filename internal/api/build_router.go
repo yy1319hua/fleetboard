@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yy1319hua/fleetboard/internal/alert"
 	"github.com/yy1319hua/fleetboard/internal/config"
 	"github.com/yy1319hua/fleetboard/internal/db"
@@ -14,7 +15,6 @@ import (
 	"github.com/yy1319hua/fleetboard/internal/monitor"
 	"github.com/yy1319hua/fleetboard/internal/settings"
 	"github.com/yy1319hua/fleetboard/internal/sshpool"
-	"github.com/gin-gonic/gin"
 )
 
 // BuildVersion 由 main 在启动时从 -ldflags 注入，供 /api/bootstrap 与 /api/health 返回。

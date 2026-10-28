@@ -12,6 +12,8 @@ import '../../../core/storage/secure_store.dart';
 import '../data/auth_repository.dart';
 import '../domain/token.dart';
 
+part 'auth_notifier.freezed.dart';
+
 /// 7 天硬墙状态（供 UI 决定提示/登出）。
 enum RefreshWallStatus { ok, warn, expired }
 

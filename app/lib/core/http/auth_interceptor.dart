@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+import '../errors/api_exception.dart';
+
 /// 鉴权拦截器（M9.2 落地）。
 ///
 /// 职责：

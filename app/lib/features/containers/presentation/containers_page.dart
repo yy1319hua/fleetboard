@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Container;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/status_dot.dart';

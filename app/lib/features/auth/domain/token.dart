@@ -17,7 +17,6 @@ class LoginRequest with _$LoginRequest {
   factory LoginRequest.fromJson(Map<String, dynamic> json) =>
       _$LoginRequestFromJson(json);
 
-  Map<String, dynamic> toJson() => _$LoginRequestToJson(this);
 }
 
 /// 令牌响应体（登录与刷新共用）。

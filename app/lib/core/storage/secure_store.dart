@@ -16,7 +16,7 @@ class SecureStore {
 
   static const _storage = FlutterSecureStorage(
     // Android：硬件支持时强加密（encryptedSharedPreferences 仅 API 23+ 可用，会自动降级）。
-    androidOptions: AndroidOptions(
+    aOptions: AndroidOptions(
       encryptedSharedPreferences: true,
     ),
   );
