@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yy1319hua/fleetboard/internal/settings"
@@ -18,6 +19,7 @@ type RouterOptions struct {
 	MasterKey    string // 凭据加密主密钥（KEY）
 	Pool         *sshpool.Pool
 	Settings     *settings.Store // 运行期设置（M8.1b；nil 时设置端点返回 500）
+	Port         int             // 只读展示用（M8.1c）
 	ComposeRoots []string        // compose 文件可读写根目录白名单（空=内置默认）
 	WebDir       string          // 前端构建产物目录（web/dist）；空或不存在则不托管静态资源
 }
@@ -75,9 +77,10 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.GET("/servers/:id/volumes", listVolumesHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.GET("/servers/:id/container-stats", containerStatsHandler(opts.DB, opts.MasterKey, opts.Pool))
 
-	// 设置面（M8.1b）
-	authed.GET("/settings", getSettingsHandler(opts.Settings))
-	authed.PUT("/settings", putSettingsHandler(opts.Settings))
+	// 设置面（M8.1b/M8.1c）
+	authed.GET("/settings", getSettingsHandler(opts.Settings, opts.MasterKey, opts.Port))
+	authed.PUT("/settings", putSettingsHandler(opts.Settings, opts.MasterKey, opts.Port))
+	authed.POST("/settings/test-channel", testChannelHandler(opts.Settings))
 
 	// 监控
 	authed.GET("/servers/:id/metrics", metricsHandler(opts.DB))
@@ -104,10 +107,19 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.GET("/servers/:id/files/stat", statFileHandler(opts.DB, opts.MasterKey, opts.Pool))
 
 	// Compose 配置管理
-	authed.GET("/servers/:id/compose", listComposeHandler(opts.DB, opts.MasterKey, opts.Pool, opts.ComposeRoots))
-	authed.GET("/servers/:id/compose/content", getComposeContentHandler(opts.DB, opts.MasterKey, opts.Pool, opts.ComposeRoots))
-	authed.PUT("/servers/:id/compose/content", putComposeContentHandler(opts.DB, opts.MasterKey, opts.Pool, opts.ComposeRoots))
-	authed.POST("/servers/:id/compose/actions", composeActionHandler(opts.DB, opts.MasterKey, opts.Pool, opts.ComposeRoots))
+	// compose.roots 白名单每请求解析：settings 有值用 settings（热生效），否则回落启动配置
+	composeRoots := func() []string {
+		if opts.Settings != nil {
+			if v := strings.TrimSpace(opts.Settings.GetOr("compose.roots", "")); v != "" {
+				return strings.Split(v, ",")
+			}
+		}
+		return opts.ComposeRoots
+	}
+	authed.GET("/servers/:id/compose", listComposeHandler(opts.DB, opts.MasterKey, opts.Pool, composeRoots))
+	authed.GET("/servers/:id/compose/content", getComposeContentHandler(opts.DB, opts.MasterKey, opts.Pool, composeRoots))
+	authed.PUT("/servers/:id/compose/content", putComposeContentHandler(opts.DB, opts.MasterKey, opts.Pool, composeRoots))
+	authed.POST("/servers/:id/compose/actions", composeActionHandler(opts.DB, opts.MasterKey, opts.Pool, composeRoots))
 
 	// 软件包更新（SSE 流式）
 	authed.POST("/servers/:id/packages/update", packageUpdateHandler(opts.DB, opts.MasterKey, opts.Pool))

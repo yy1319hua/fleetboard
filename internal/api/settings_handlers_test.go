@@ -33,6 +33,7 @@ func newSettingsTestServer(t *testing.T) (*gin.Engine, *settings.Store) {
 		JWTSecret: "test-secret",
 		MasterKey: "test-master",
 		Settings:  st,
+		Port:      8080,
 	})
 	return r, st
 }
@@ -64,17 +65,23 @@ func TestSettingsGetMasked(t *testing.T) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body)
 	}
 	var resp struct {
-		Data map[string]any `json:"data"`
+		Data struct {
+			Items    map[string]any `json:"items"`
+			Readonly map[string]any `json:"readonly"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("解析: %v", err)
 	}
-	if resp.Data["monitor.interval"] != "30" {
-		t.Errorf("非敏感默认应可见: %v", resp.Data["monitor.interval"])
+	if resp.Data.Readonly["key_masked"] != "****ster" || resp.Data.Readonly["port"] != float64(8080) {
+		t.Errorf("只读区应含 KEY 尾4位与端口: %v", resp.Data.Readonly)
 	}
-	m, ok := resp.Data["pushplus.token"].(map[string]any)
+	if resp.Data.Items["monitor.interval"] != "30" {
+		t.Errorf("非敏感默认应可见: %v", resp.Data.Items["monitor.interval"])
+	}
+	m, ok := resp.Data.Items["pushplus.token"].(map[string]any)
 	if !ok || m["set"] != false {
-		t.Errorf("敏感未设项应 {set:false}: %v", resp.Data["pushplus.token"])
+		t.Errorf("敏感未设项应 {set:false}: %v", resp.Data.Items["pushplus.token"])
 	}
 }
 
@@ -97,10 +104,12 @@ func TestSettingsPutRoundTrip(t *testing.T) {
 		t.Errorf("pushplus.token 未生效: %q", v)
 	}
 	var resp struct {
-		Data map[string]any `json:"data"`
+		Data struct {
+			Items map[string]any `json:"items"`
+		} `json:"data"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	m := resp.Data["pushplus.token"].(map[string]any)
+	m := resp.Data.Items["pushplus.token"].(map[string]any)
 	if m["masked"] != "****1234" {
 		t.Errorf("GET 视图应只回掩码: %v", m)
 	}

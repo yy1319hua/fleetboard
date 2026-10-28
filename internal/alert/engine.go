@@ -57,6 +57,11 @@ func Evaluate(d *sql.DB, serverID int64, m *model.ServerMetric, pushPlusToken st
 	return hits, nil
 }
 
+// SendPushPlus 对外暴露的测试推送入口（M8.1c 设置页「测试」按钮）。
+func SendPushPlus(token, title, content string) error {
+	return sendPushPlus(token, title, content)
+}
+
 // sendPushPlus 调用 PushPlus Webhook。
 func sendPushPlus(token, title, content string) error {
 	form := url.Values{}

@@ -4,7 +4,6 @@ import { AppShell } from "@/components/AppShell";
 import { AlertsPage } from "@/pages/AlertsPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginPage } from "@/pages/LoginPage";
-import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { ServerDetailPage } from "@/pages/ServerDetailPage";
 import { ServerPackagesTab } from "@/pages/tabs/ServerPackagesTab";
 import { ServerComposeTab } from "@/pages/tabs/ServerComposeTab";
@@ -12,6 +11,7 @@ import { ServerDockerTab } from "@/pages/tabs/ServerDockerTab";
 import { ServerFilesTab } from "@/pages/tabs/ServerFilesTab";
 import { ServerMonitorTab } from "@/pages/tabs/ServerMonitorTab";
 import { ServerOverviewTab } from "@/pages/tabs/ServerOverviewTab";
+import { SettingsPage } from "@/pages/SettingsPage";
 import { RequireAuth } from "@/routes/RequireAuth";
 
 /** 受保护区域统一套 AppShell。 */
@@ -68,7 +68,7 @@ export function App() {
         path="/settings"
         element={
           <Shell>
-            <PlaceholderPage title="设置" note="连接与告警设置将在后续实现。" />
+            <SettingsPage />
           </Shell>
         }
       />

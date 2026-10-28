@@ -21,15 +21,16 @@ func firstComposeRoot(roots []string) string {
 }
 
 // listComposeHandler 列出指定目录下的 compose 文件（含可下钻子目录）。
-func listComposeHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots []string) gin.HandlerFunc {
+func listComposeHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots func() []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		rs := roots() // M8.1c：每请求读取，白名单改设置即热生效
 		id, ok := parseID(c)
 		if !ok {
 			return
 		}
 
-		dir := c.DefaultQuery("dir", firstComposeRoot(roots))
-		if err := compose.ValidatePath(dir, roots); err != nil {
+		dir := c.DefaultQuery("dir", firstComposeRoot(rs))
+		if err := compose.ValidatePath(dir, rs); err != nil {
 			Fail(c, ErrBadRequest(err.Error()))
 			return
 		}
@@ -41,7 +42,7 @@ func listComposeHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots [
 		}
 		defer func() { _ = sc.Close() }()
 
-		res, err := compose.ListFiles(sc, dir, roots)
+		res, err := compose.ListFiles(sc, dir, rs)
 		if err != nil {
 			if errors.Is(err, compose.ErrPathDenied) {
 				Fail(c, ErrBadRequest(err.Error()))
@@ -52,7 +53,7 @@ func listComposeHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots [
 		}
 
 		OK(c, gin.H{
-			"roots":   compose.NormalizeRoots(roots),
+			"roots":   compose.NormalizeRoots(rs),
 			"dir":     res.Dir,
 			"dirs":    res.Dirs,
 			"files":   res.Files,
@@ -62,8 +63,9 @@ func listComposeHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots [
 }
 
 // getComposeContentHandler 读取 compose 文件内容（仅文本，限制 2MiB）。
-func getComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots []string) gin.HandlerFunc {
+func getComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots func() []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		rs := roots() // M8.1c：每请求读取，白名单改设置即热生效
 		id, ok := parseID(c)
 		if !ok {
 			return
@@ -74,7 +76,7 @@ func getComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, r
 			Fail(c, ErrBadRequest("缺少 path 参数"))
 			return
 		}
-		if err := compose.ValidatePath(p, roots); err != nil {
+		if err := compose.ValidatePath(p, rs); err != nil {
 			Fail(c, ErrBadRequest(err.Error()))
 			return
 		}
@@ -86,7 +88,7 @@ func getComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, r
 		}
 		defer func() { _ = sc.Close() }()
 
-		content, err := compose.Read(sc, p, roots)
+		content, err := compose.Read(sc, p, rs)
 		if err != nil {
 			Fail(c, ErrBadGateway("读取 compose 文件失败: "+err.Error()))
 			return
@@ -101,8 +103,9 @@ func getComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, r
 }
 
 // putComposeContentHandler 保存 compose 文件（原子写：临时文件 + rename，保留权限属主）。
-func putComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots []string) gin.HandlerFunc {
+func putComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots func() []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		rs := roots() // M8.1c：每请求读取，白名单改设置即热生效
 		id, ok := parseID(c)
 		if !ok {
 			return
@@ -120,7 +123,7 @@ func putComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, r
 			Fail(c, ErrBadRequest("缺少 path"))
 			return
 		}
-		if err := compose.ValidatePath(req.Path, roots); err != nil {
+		if err := compose.ValidatePath(req.Path, rs); err != nil {
 			Fail(c, ErrBadRequest(err.Error()))
 			return
 		}
@@ -136,7 +139,7 @@ func putComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, r
 		}
 		defer func() { _ = sc.Close() }()
 
-		if err := compose.Write(sc, req.Path, req.Content, roots); err != nil {
+		if err := compose.Write(sc, req.Path, req.Content, rs); err != nil {
 			if errors.Is(err, compose.ErrPathDenied) {
 				Fail(c, ErrBadRequest(err.Error()))
 				return
@@ -150,8 +153,9 @@ func putComposeContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, r
 }
 
 // composeActionHandler 执行 compose 动作（up/down/restart/ps）。
-func composeActionHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots []string) gin.HandlerFunc {
+func composeActionHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots func() []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		rs := roots() // M8.1c：每请求读取，白名单改设置即热生效
 		id, ok := parseID(c)
 		if !ok {
 			return
@@ -174,7 +178,7 @@ func composeActionHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots
 			return
 		}
 		// 先做路径与命令校验（不触达远端），避免无谓连接
-		if _, err := compose.ActionCommand(req.Path, req.Action, roots); err != nil {
+		if _, err := compose.ActionCommand(req.Path, req.Action, rs); err != nil {
 			if errors.Is(err, compose.ErrPathDenied) {
 				Fail(c, ErrBadRequest(err.Error()))
 				return
@@ -189,7 +193,7 @@ func composeActionHandler(d *sql.DB, masterKey string, pool *sshpool.Pool, roots
 			return
 		}
 
-		out, err := compose.Action(cli, req.Path, req.Action, roots)
+		out, err := compose.Action(cli, req.Path, req.Action, rs)
 		if err != nil {
 			Fail(c, ErrBadGateway("compose "+req.Action+" 失败: "+err.Error()))
 			return

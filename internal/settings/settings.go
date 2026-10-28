@@ -327,6 +327,9 @@ func (s *Store) Set(updates map[string]string) error {
 			return err
 		}
 	}
+	if len(updates) == 0 {
+		return nil
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err

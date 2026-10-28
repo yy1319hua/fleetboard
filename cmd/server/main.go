@@ -208,6 +208,7 @@ func main() {
 		MasterKey: cfg.Key,
 		Pool:      pool,
 		Settings:  store,
+		Port:      cfg.Port,
 
 		ComposeRoots: cfg.ComposeRoots,
 		WebDir:       os.Getenv("WEB_DIR"),
