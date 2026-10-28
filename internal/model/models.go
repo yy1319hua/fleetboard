@@ -31,6 +31,7 @@ type User struct {
 	ID           int64     `json:"id"`
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"`
+	TokenVer     int64     `json:"-"` // JWT ver epoch：改密/注销时自增，旧 token 全失效
 	CreatedAt    time.Time `json:"created_at"`
 }
 

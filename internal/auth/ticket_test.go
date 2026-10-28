@@ -37,7 +37,7 @@ func TestWSTicketWrongSecret(t *testing.T) {
 
 func TestWSTicketRejectsAccessToken(t *testing.T) {
 	secret := "s"
-	access, err := GenerateAccessToken(secret, 1)
+	access, err := GenerateAccessToken(secret, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

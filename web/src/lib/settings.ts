@@ -28,3 +28,16 @@ export function saveSettings(updates: Record<string, string>): Promise<SettingsV
 export function testPushChannel(token?: string): Promise<{ sent: boolean }> {
   return apiPost<{ sent: boolean }>("/api/settings/test-channel", token ? { token } : {});
 }
+
+/** POST /api/auth/change-password：返回新 token 对（当前会话无感续期，其他端全下线）。 */
+export function changePassword(oldPassword: string, newPassword: string) {
+  return apiPost<{ access_token: string; refresh_token: string; expires_in: number }>(
+    "/api/auth/change-password",
+    { old_password: oldPassword, new_password: newPassword },
+  );
+}
+
+/** POST /api/settings/actions/revoke-sessions：注销所有会话（含当前端），需重新登录。 */
+export function revokeSessions(): Promise<{ revoked: boolean }> {
+  return apiPost<{ revoked: boolean }>("/api/settings/actions/revoke-sessions", {});
+}

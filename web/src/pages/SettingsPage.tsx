@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Field, Input, Textarea } from "@/components/ui/Form";
 import { toast } from "@/components/ui/Toast";
-import { fetchSettings, saveSettings, testPushChannel } from "@/lib/settings";
+import { changePassword, fetchSettings, revokeSessions, saveSettings, testPushChannel } from "@/lib/settings";
 import type { SecretView } from "@/lib/settings";
+import { useAuth } from "@/store/auth";
 
 /** 判断 settings 项是否为敏感掩码视图。 */
 function isSecret(v: string | SecretView): v is SecretView {
@@ -56,6 +57,56 @@ export function SettingsPage() {
     setOffline(itemText(it["monitor.offline_threshold"]));
     setComposeRoots(itemText(it["compose.roots"]));
   }, [data]);
+
+
+  const [oldPwd, setOldPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [confirmPwd, setConfirmPwd] = useState("");
+  const [pwdErr, setPwdErr] = useState<string | null>(null);
+
+  const changePwd = useMutation({
+    mutationFn: () => changePassword(oldPwd, newPwd),
+    onSuccess: (data) => {
+      useAuth.getState().setTokens(data.access_token, data.refresh_token);
+      setOldPwd("");
+      setNewPwd("");
+      setConfirmPwd("");
+      setPwdErr(null);
+      toast("密码已修改，其他端已全部下线", "ok");
+    },
+    onError: (e: Error) => {
+      setPwdErr(e.message);
+      toast(e.message, "danger");
+    },
+  });
+
+  const revoke = useMutation({
+    mutationFn: () => revokeSessions(),
+    onSuccess: () => {
+      toast("已注销所有会话，请重新登录", "ok");
+      setTimeout(() => {
+        useAuth.getState().logout();
+        window.location.assign("/login");
+      }, 800);
+    },
+    onError: (e: Error) => toast(e.message, "danger"),
+  });
+
+  const submitPwd = () => {
+    if (!oldPwd || !newPwd) {
+      setPwdErr("请填写旧密码与新密码");
+      return;
+    }
+    if (newPwd.length < 8) {
+      setPwdErr("新密码至少 8 位");
+      return;
+    }
+    if (newPwd !== confirmPwd) {
+      setPwdErr("两次输入的新密码不一致");
+      return;
+    }
+    changePwd.mutate();
+  };
 
   const save = useMutation({
     mutationFn: () =>
@@ -164,9 +215,59 @@ export function SettingsPage() {
         </CardBody>
       </Card>
 
-      {/* 账号与安全（第二批，随 M8.1e） */}
-      <Card className="opacity-60">
-        <CardHeader title="账号与安全" subtitle="修改密码（其他端登录态失效）将随后续 JWT 安全批次提供" />
+      {/* 账号与安全（M8.1e） */}
+      <Card>
+        <CardHeader title="账号与安全" />
+        <CardBody className="space-y-3">
+          <Field label="旧密码" htmlFor="old-pwd">
+            <Input
+              id="old-pwd"
+              type="password"
+              autoComplete="current-password"
+              value={oldPwd}
+              onChange={(e) => setOldPwd(e.target.value)}
+            />
+          </Field>
+          <Field label="新密码（至少 8 位）" htmlFor="new-pwd" error={pwdErr}>
+            <Input
+              id="new-pwd"
+              type="password"
+              autoComplete="new-password"
+              value={newPwd}
+              onChange={(e) => setNewPwd(e.target.value)}
+            />
+          </Field>
+          <Field label="确认新密码" htmlFor="confirm-pwd">
+            <Input
+              id="confirm-pwd"
+              type="password"
+              autoComplete="new-password"
+              value={confirmPwd}
+              onChange={(e) => setConfirmPwd(e.target.value)}
+            />
+          </Field>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              variant="primary"
+              loading={changePwd.isPending}
+              onClick={submitPwd}
+              className="flex-1"
+            >
+              修改密码
+            </Button>
+            <Button
+              variant="danger"
+              loading={revoke.isPending}
+              onClick={() => revoke.mutate()}
+              className="flex-1"
+            >
+              注销所有会话
+            </Button>
+          </div>
+          <p className="text-caption text-text-faint">
+            修改密码或注销后，其他设备/标签页（含 7 天免登录）立即失效，须重新登录
+          </p>
+        </CardBody>
       </Card>
 
       <Button

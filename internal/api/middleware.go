@@ -12,7 +12,8 @@ import (
 const ctxUserID = "uid"
 
 // JWTAuth 校验 Authorization: Bearer <access>，通过后把用户 ID 注入上下文。
-func JWTAuth(secret string) gin.HandlerFunc {
+// M8.1e：同时校验 token 的 ver epoch 与 users.token_ver 一致（改密/注销即吊销）。
+func JWTAuth(secret string, d *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		h := c.GetHeader("Authorization")
 		if !strings.HasPrefix(h, "Bearer ") {
@@ -23,6 +24,12 @@ func JWTAuth(secret string) gin.HandlerFunc {
 		tokenStr := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
 		claims, err := auth.ParseAccessToken(secret, tokenStr)
 		if err != nil {
+			Fail(c, ErrUnauthorized("访问令牌无效或已过期"))
+			c.Abort()
+			return
+		}
+		ver, err := db.GetTokenVer(d, claims.UserID)
+		if err != nil || ver != claims.Ver {
 			Fail(c, ErrUnauthorized("访问令牌无效或已过期"))
 			c.Abort()
 			return

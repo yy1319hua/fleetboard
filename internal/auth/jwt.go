@@ -12,6 +12,7 @@ import (
 type Claims struct {
 	UserID int64  `json:"uid"`
 	Type   string `json:"typ"` // "access" | "refresh"
+	Ver    int64  `json:"ver"` // token epoch：与 users.token_ver 比对，不匹配即吊销（M8.1e）
 	jwt.RegisteredClaims
 }
 
@@ -30,11 +31,12 @@ var (
 	ErrWrongTokenType = errors.New("wrong token type")
 )
 
-func sign(secret string, userID int64, typ string, ttl time.Duration) (string, error) {
+func sign(secret string, userID, ver int64, typ string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		UserID: userID,
 		Type:   typ,
+		Ver:    ver,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.FormatInt(userID, 10),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -45,13 +47,13 @@ func sign(secret string, userID int64, typ string, ttl time.Duration) (string, e
 }
 
 // GenerateAccessToken 生成短时效访问令牌（15 分钟）。
-func GenerateAccessToken(secret string, userID int64) (string, error) {
-	return sign(secret, userID, TypeAccess, AccessTTL)
+func GenerateAccessToken(secret string, userID, ver int64) (string, error) {
+	return sign(secret, userID, ver, TypeAccess, AccessTTL)
 }
 
 // GenerateRefreshToken 生成刷新令牌（7 天）。
-func GenerateRefreshToken(secret string, userID int64) (string, error) {
-	return sign(secret, userID, TypeRefresh, RefreshTTL)
+func GenerateRefreshToken(secret string, userID, ver int64) (string, error) {
+	return sign(secret, userID, ver, TypeRefresh, RefreshTTL)
 }
 
 // ParseToken 校验签名与有效期并返回载荷（不校验类型）。

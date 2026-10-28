@@ -47,7 +47,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 		OK(c, data)
 	})
 	r.POST("/api/login", loginHandler(opts.DB, opts.JWTSecret))
-	r.POST("/api/refresh", refreshHandler(opts.JWTSecret))
+	r.POST("/api/refresh", refreshHandler(opts.DB, opts.JWTSecret))
 
 	// WebSocket 日志流：浏览器无法自带 Authorization 头，改由 handler 内
 	// 校验「Authorization 或一次性 ticket」。故该路由不放入鉴权组。
@@ -55,7 +55,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 		containerLogsHandler(opts.DB, opts.MasterKey, opts.JWTSecret, opts.Pool))
 
 	// 需鉴权端点
-	authed := r.Group("/api", JWTAuth(opts.JWTSecret), AuditMiddleware(opts.DB))
+	authed := r.Group("/api", JWTAuth(opts.JWTSecret, opts.DB), AuditMiddleware(opts.DB))
 	authed.GET("/me", meHandler())
 	authed.GET("/audit", listAuditHandler(opts.DB))
 
@@ -81,6 +81,8 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.GET("/settings", getSettingsHandler(opts.Settings, opts.MasterKey, opts.Port))
 	authed.PUT("/settings", putSettingsHandler(opts.Settings, opts.MasterKey, opts.Port))
 	authed.POST("/settings/test-channel", testChannelHandler(opts.Settings))
+	authed.POST("/settings/actions/revoke-sessions", revokeSessionsHandler(opts.DB))
+	authed.POST("/auth/change-password", changePasswordHandler(opts.DB, opts.JWTSecret))
 
 	// 监控
 	authed.GET("/servers/:id/metrics", metricsHandler(opts.DB))

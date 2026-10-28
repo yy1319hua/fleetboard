@@ -49,6 +49,8 @@ interface AuthState extends Persisted {
   logout: () => void;
   /** 由 api 层在自动刷新成功后回写 */
   setAccess: (access: string) => void;
+  /** 改密后回写新 token 对（M8.1e） */
+  setTokens: (access: string, refresh: string) => void;
   clearError: () => void;
 }
 
@@ -90,6 +92,11 @@ export const useAuth = create<AuthState>((set, get) => ({
     const { refresh, username } = get();
     persist({ access, refresh, username });
     set({ access });
+  },
+  setTokens(access, refresh) {
+    const { username } = get();
+    persist({ access, refresh, username });
+    set({ access, refresh });
   },
 
   clearError() {
