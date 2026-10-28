@@ -51,12 +51,10 @@ ThemeData buildAppTheme() {
     onSecondary: AppColors.textInverse,
     surface: AppColors.s1,
     onSurface: AppColors.text,
-    background: AppColors.bg,
-    onBackground: AppColors.text,
     error: AppColors.danger,
     onError: Color(0xFFFFFFFF),
     outline: AppColors.border,
-    surfaceVariant: AppColors.s2,
+    surfaceContainerHighest: AppColors.s2,
     onSurfaceVariant: AppColors.muted,
     inverseSurface: AppColors.s2,
     onInverseSurface: AppColors.text,
@@ -74,7 +72,7 @@ ThemeData buildAppTheme() {
       elevation: 0,
     ),
     // 底部导航栏沿用令牌：s1 底、accent 选中指示、muted 未选中。
-    navigationBarTheme: NavigationBarThemeData(
+    navigationBarTheme: const NavigationBarThemeData(
       backgroundColor: AppColors.s1,
       indicatorColor: AppColors.accentSoft,
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
@@ -93,7 +91,7 @@ ThemeData buildAppTheme() {
       style: ElevatedButton.styleFrom(
         backgroundColor: AppColors.accent,
         foregroundColor: AppColors.textInverse,
-        minimumSize: Size(0, touchMin),
+        minimumSize: const Size(0, touchMin),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.sm),
         ),
