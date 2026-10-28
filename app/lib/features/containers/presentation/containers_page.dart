@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/widgets/status_dot.dart';
 import '../application/containers_notifier.dart';
 import '../domain/container.dart';
+import 'container_actions_sheet.dart';
 
 /// 容器状态 -> 语义色（对齐 DESIGN.md 状态色，仅表达状态）。
 StatusKind _kindFromState(String state) => switch (state) {
@@ -14,7 +15,8 @@ StatusKind _kindFromState(String state) => switch (state) {
       _ => StatusKind.idle,
     };
 
-/// 容器列表页（M9.3 步1）：消费 GET /api/servers/:serverId/containers。
+/// 容器列表页（M9.3）：消费 GET /api/servers/:serverId/containers，
+/// 点按容器打开操作弹层（启停/重启/删）。
 class ContainersPage extends ConsumerWidget {
   const ContainersPage({super.key, required this.serverId});
   final String serverId;
@@ -69,12 +71,21 @@ class ContainersPage extends ConsumerWidget {
                           style: Theme.of(context).textTheme.bodySmall,
                         )
                       : null,
+                  onTap: () => _openActions(context, sid, c),
                 );
               },
             ),
           );
         },
       ),
+    );
+  }
+
+  Future<void> _openActions(BuildContext context, int sid, Container c) {
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => ContainerActionsSheet(serverId: sid, container: c),
     );
   }
 }
