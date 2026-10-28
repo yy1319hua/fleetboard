@@ -9,6 +9,16 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import { App } from "@/App";
+
+// PWA 已剥离（v2 裁决）：老安装端的 service worker 反注册 + 缓存清理，防止旧 SW 继续劫持静态资源
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then((rs) => {
+    for (const r of rs) void r.unregister();
+  });
+  void caches.keys().then((keys) => {
+    for (const k of keys) void caches.delete(k);
+  });
+}
 import { ToastHost } from "@/components/ui/Toast";
 import { useAuth } from "@/store/auth";
 
