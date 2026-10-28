@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider 对外暴露的路径白名单（自分发更新）。
+     仅放开内部存储 filesDir/updates（即 MainActivity.updateDir），避免把整个私有
+     目录以 content:// 形式授权给外部安装器。 -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="updates" path="updates/" />
+</paths>

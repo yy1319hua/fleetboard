@@ -15,6 +15,7 @@ import 'features/overview/application/overview_notifier.dart';
 import 'features/overview/presentation/overview_page.dart';
 import 'features/overview/presentation/server_detail_page.dart';
 import 'features/settings/presentation/settings_page.dart';
+import 'features/updater/presentation/about_page.dart';
 
 /// 全局 ScaffoldMessenger 键：供 App 生命周期层在 onResumed 弹 Toast（7 天硬墙预警）。
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
@@ -146,6 +147,13 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/settings',
             builder: (context, state) => const SettingsPage(),
+            routes: <RouteBase>[
+              // 关于页：版本号 / 构建号 + 自分发 APK 的检查更新闭环（M9.5b）。
+              GoRoute(
+                path: 'about',
+                builder: (context, state) => const AboutPage(),
+              ),
+            ],
           ),
           GoRoute(
             path: '/servers/:serverId',

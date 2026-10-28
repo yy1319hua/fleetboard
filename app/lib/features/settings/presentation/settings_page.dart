@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants.dart';
 import '../../../core/theme/app_theme.dart';
@@ -71,6 +72,16 @@ class SettingsPage extends ConsumerWidget {
                       ?.copyWith(color: AppColors.danger)),
             ),
             data: (data) => _SettingsList(data: data),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('关于'),
+              subtitle: const Text('版本信息与自分发更新'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.go('/settings/about'),
+            ),
           ),
           const SizedBox(height: AppSpacing.xl),
           FilledButton.tonal(

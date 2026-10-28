@@ -91,4 +91,7 @@ flutter {
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    // FileProvider：自分发更新安装 APK 所需（MainActivity 用它把内部存储的 APK
+    // 以 content:// 授权给系统安装器）。显式声明，避免依赖:flutter embedding 的传递版本。
+    implementation "androidx.core:core:1.13.1"
 }
