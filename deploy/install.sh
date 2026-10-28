@@ -8,7 +8,7 @@
 #   /etc/systemd/system/fleetboard.service
 set -euo pipefail
 
-BASE=/opt/fleetboard
+BASE=${FLEETBOARD_BASE:-/opt/fleetboard}
 DATA=/var/lib/fleetboard
 UNIT=/etc/systemd/system/fleetboard.service
 SRC="$(cd "$(dirname "$0")" && pwd)"
@@ -16,6 +16,14 @@ SRC="$(cd "$(dirname "$0")" && pwd)"
 [ "$(id -u)" = 0 ] || { echo "请用 root 运行"; exit 1; }
 [ -x "$SRC/fleetboard" ] || { echo "缺二进制 fleetboard"; exit 1; }
 [ -f "$SRC/web-dist/index.html" ] || { echo "缺 web-dist/"; exit 1; }
+
+# 防误装：已安装则拒绝——重跑安装会重新生成 KEY，已纳管凭据将全部无法解密
+if [ -f "$BASE/.env" ]; then
+  echo "❌ 检测到已安装（$BASE/.env 已存在）。"
+  echo "   重跑安装会刷新 KEY，已存凭据将无法解密。"
+  echo "   升级请用发布包内 upgrade.sh：sudo ./upgrade.sh"
+  exit 1
+fi
 
 ARCH=$(uname -m); case "$ARCH" in x86_64) a=amd64;; aarch64) a=arm64;; *) echo "不支持的架构 $ARCH"; exit 1;; esac
 # 架构校验：直接读 ELF 头 e_machine（62=amd64, 183=arm64），不依赖 file 等外部命令

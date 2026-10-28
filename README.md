@@ -33,6 +33,21 @@ curl -fsSL https://raw.githubusercontent.com/yy1319hua/fleetboard/main/deploy/in
 sudo ./install.sh
 ```
 
+### 升级
+
+> ⚠️ 已安装的机器**严禁重跑 `install.sh`**（会刷新 KEY，已纳管凭据将无法解密）——重跑会被脚本拒绝。
+> 升级一律走 `upgrade.sh`：自动备份 `.env`（不动）与数据库快照，旧二进制留 `fleetboard.prev`，health 校验失败自动回滚。
+
+```bash
+# 方式一：在线升级（下载最新 Release + SHA256 校验）
+sudo ./upgrade.sh          # 也可指定版本：sudo ./upgrade.sh v0.1.3
+
+# 方式二：离线升级（无外网机器，用已解包的新版发布目录）
+sudo ./upgrade.sh /path/to/fleetboard-vX.Y.Z
+```
+
+远程一条命令在已安装机器上会自动改走升级流程。
+
 ### 布局与卸载
 
 | 路径 | 内容 |

@@ -39,4 +39,10 @@ fi
 echo "==> 解包"
 tar xzf "$TMP/pkg.tar.gz" -C "$TMP"
 cd "$TMP/fleetboard-$VER"
+
+# 已安装机器禁止重跑 install.sh（会刷新 KEY 致凭据全废）→ 改走升级脚本
+if [ -f /opt/fleetboard/.env ]; then
+  echo "==> 检测到已安装，改走升级流程"
+  exec ./upgrade.sh "$VER"
+fi
 exec ./install.sh

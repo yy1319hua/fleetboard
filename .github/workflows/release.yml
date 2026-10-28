@@ -49,7 +49,7 @@ jobs:
             mkdir -p "pkg/fleetboard-$VER/web-dist"
             cp "bin/fleetboard-linux-$a" "pkg/fleetboard-$VER/fleetboard"
             cp -r web/dist/. "pkg/fleetboard-$VER/web-dist/"
-            cp deploy/fleetboard.service deploy/install.sh deploy/uninstall.sh deploy/.env.example "pkg/fleetboard-$VER/"
+            cp deploy/fleetboard.service deploy/install.sh deploy/uninstall.sh deploy/upgrade.sh deploy/.env.example "pkg/fleetboard-$VER/"
             tar czf "fleetboard-$VER-linux-$a.tar.gz" -C pkg "fleetboard-$VER"
           done
           sha256sum fleetboard-*-linux-*.tar.gz > sums.txt
