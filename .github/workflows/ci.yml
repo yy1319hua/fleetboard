@@ -1,9 +1,11 @@
-# fleetboard CI 质量门禁（M7.3b / M9.0a）
-# 触发：手动（Actions 页 workflow_dispatch）+ PR；push 不自动跑（用户要求低频）
-# contract job（TestContract 契约比对）随 M9.0a 落地补入，与 go/web 并行
+# fleetboard CI 质量门禁（M7.3b / M9.0a / M9 补 flutter）
+# 触发：push main 自动验证 + 手动（Actions 页 workflow_dispatch）+ PR
+# contract job（TestContract 契约比对）随 M9.0a 落地补入，与 go/web/flutter 并行
 name: ci
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -69,3 +71,31 @@ jobs:
 
       - name: contract (TestContract)
         run: make contract
+
+  flutter:
+    name: Flutter (pub get / build_runner / analyze / test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # 显式 pin，避免 floating latest 导致 CI 漂移
+          flutter-version: '3.24.5'
+
+      - name: pub get
+        working-directory: app
+        run: flutter pub get
+
+      - name: generate (freezed / json_serializable)
+        # M9.2 引入 freezed + json_serializable DTO，须先生成 *.freezed.dart / *.g.dart
+        working-directory: app
+        run: flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: analyze
+        working-directory: app
+        run: flutter analyze
+
+      - name: test
+        working-directory: app
+        run: flutter test
