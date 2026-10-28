@@ -114,8 +114,16 @@ jobs:
           ls -l "$APK"
           BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
           "${BT}apksigner" verify --print-certs "$APK" | tee /tmp/apk.txt
-          grep -qi "3E:CD:40:A6:2C:BF:9B:BE:0C:3F:E3:6E:6B:A1:0A:96:75:4B:BF:FB:EB:1C:8C:BB:E7:C8:37:9E:54:6C:63:42" /tmp/apk.txt \
-            || { echo "::error::APK 签名证书指纹与记录不符"; exit 1; }
+          # apksigner 输出的是「无冒号、小写」的 SHA-256，需规范化后再比对
+          FP=$(grep -i "certificate SHA-256 digest" /tmp/apk.txt | head -1 \
+               | sed 's/.*digest: *//' | tr -d ':' | tr 'a-f' 'A-F')
+          EXPECT=3ECD40A62CBF9BBE0C3FE36E6BA10A96754BBFFBEB1C8CBBE7C8379E546C6342
+          echo "APK 证书 SHA-256：$FP"
+          if [ "$FP" != "$EXPECT" ]; then
+            echo "::error::APK 签名证书指纹与记录不符（期望 $EXPECT）"
+            exit 1
+          fi
+          echo "✅ APK 已用发布 keystore 正确签名"
           sha256sum "$APK" > sums-android.txt
           cat sums-android.txt
 
