@@ -14,11 +14,12 @@ func TestLoadMissingKey(t *testing.T) {
 	}
 }
 
-func TestLoadMissingJWT(t *testing.T) {
+// JWT_SECRET 已入库 settings（M8.1b）：缺失不再报错，启动时自动生成并入库。
+func TestLoadMissingJWTOk(t *testing.T) {
 	t.Setenv("KEY", "k")
 	t.Setenv("JWT_SECRET", "")
-	if _, err := Load(); err == nil {
-		t.Fatal("缺 JWT_SECRET 应报错")
+	if _, err := Load(); err != nil {
+		t.Fatalf("缺 JWT_SECRET 不应报错: %v", err)
 	}
 }
 

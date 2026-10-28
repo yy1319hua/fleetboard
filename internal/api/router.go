@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/yy1319hua/fleetboard/internal/settings"
 	"github.com/yy1319hua/fleetboard/internal/sshpool"
 )
 
@@ -16,8 +17,9 @@ type RouterOptions struct {
 	JWTSecret    string
 	MasterKey    string // 凭据加密主密钥（KEY）
 	Pool         *sshpool.Pool
-	ComposeRoots []string // compose 文件可读写根目录白名单（空=内置默认）
-	WebDir       string   // 前端构建产物目录（web/dist）；空或不存在则不托管静态资源
+	Settings     *settings.Store // 运行期设置（M8.1b；nil 时设置端点返回 500）
+	ComposeRoots []string        // compose 文件可读写根目录白名单（空=内置默认）
+	WebDir       string          // 前端构建产物目录（web/dist）；空或不存在则不托管静态资源
 }
 
 // NewRouter 构建 HTTP 路由。
@@ -32,11 +34,15 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 
 	// 公开端点
 	r.GET("/api/health", func(c *gin.Context) {
-		OK(c, gin.H{
+		data := gin.H{
 			"status":  "ok",
 			"version": opts.Version,
 			"schema":  opts.Schema,
-		})
+		}
+		if opts.Settings != nil {
+			data["config_rev"] = opts.Settings.Rev()
+		}
+		OK(c, data)
 	})
 	r.POST("/api/login", loginHandler(opts.DB, opts.JWTSecret))
 	r.POST("/api/refresh", refreshHandler(opts.JWTSecret))
@@ -68,6 +74,10 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.GET("/servers/:id/networks", listNetworksHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.GET("/servers/:id/volumes", listVolumesHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.GET("/servers/:id/container-stats", containerStatsHandler(opts.DB, opts.MasterKey, opts.Pool))
+
+	// 设置面（M8.1b）
+	authed.GET("/settings", getSettingsHandler(opts.Settings))
+	authed.PUT("/settings", putSettingsHandler(opts.Settings))
 
 	// 监控
 	authed.GET("/servers/:id/metrics", metricsHandler(opts.DB))

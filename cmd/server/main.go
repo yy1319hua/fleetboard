@@ -18,6 +18,7 @@ import (
 	"github.com/yy1319hua/fleetboard/internal/db"
 	"github.com/yy1319hua/fleetboard/internal/model"
 	"github.com/yy1319hua/fleetboard/internal/monitor"
+	"github.com/yy1319hua/fleetboard/internal/settings"
 	"github.com/yy1319hua/fleetboard/internal/sshpool"
 )
 
@@ -164,6 +165,20 @@ func main() {
 		}
 	}()
 
+	// 设置面（M8.1b）：settings.Load 吸收 env（含 JWT_SECRET）→ 无则自动生成 jwt.secret
+	store, err := settings.Load(d, cfg.Key)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "加载设置失败: %v\n", err)
+		os.Exit(1)
+	}
+	// 优先级 DB > env：DB 里的 jwt.secret 恒生效（env 值已在 Load 时吸收）
+	if jwtSecret, ok, err := store.Get("jwt.secret"); err != nil {
+		fmt.Fprintf(os.Stderr, "读取 jwt.secret 失败: %v\n", err)
+		os.Exit(1)
+	} else if ok {
+		cfg.JWTSecret = jwtSecret
+	}
+
 	if created, err := db.EnsureAdmin(d, cfg.BootstrapUser, cfg.BootstrapPass); err != nil {
 		fmt.Fprintf(os.Stderr, "初始化管理员失败: %v\n", err)
 		os.Exit(1)
@@ -184,6 +199,7 @@ func main() {
 		JWTSecret: cfg.JWTSecret,
 		MasterKey: cfg.Key,
 		Pool:      pool,
+		Settings:  store,
 
 		ComposeRoots: cfg.ComposeRoots,
 		WebDir:       os.Getenv("WEB_DIR"),

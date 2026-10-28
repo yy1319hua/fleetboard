@@ -51,10 +51,8 @@ else
   ask "管理员用户名 [admin]: " BU; BU=${BU:-admin}
   ask "管理员密码 [随机生成]: " BP; BP=${BP:-$(openssl rand -hex 8)}
   KEY=${KEY:-$(openssl rand -hex 32)}
-  JWT=${JWT:-$(openssl rand -hex 32)}
-  cat > "$ENV_SRC" <<EOF
+    cat > "$ENV_SRC" <<EOF
 KEY=$KEY
-JWT_SECRET=$JWT
 BOOTSTRAP_USER=$BU
 BOOTSTRAP_PASS=$BP
 LISTEN_ADDR=127.0.0.1

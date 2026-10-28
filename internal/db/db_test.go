@@ -33,8 +33,8 @@ func TestOpenAndMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Version: %v", err)
 	}
-	if v != "0002_monitor.sql" {
-		t.Errorf("Version=%q, want 0001_init.sql", v)
+	if v != "0003_settings.sql" {
+		t.Errorf("Version=%q, want 0003_settings.sql", v)
 	}
 }
 
@@ -57,8 +57,8 @@ func TestOpenIdempotent(t *testing.T) {
 	if err := d2.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Errorf("迁移记录数=%d, want 2（重复打开不应重复应用）", n)
+	if n != 3 {
+		t.Errorf("迁移记录数=%d, want 3（重复打开不应重复应用）", n)
 	}
 }
 
@@ -71,7 +71,7 @@ func TestOpenCreatesParentDir(t *testing.T) {
 	}
 	defer d.Close()
 
-	if v, err := Version(d); err != nil || v != "0002_monitor.sql" {
+	if v, err := Version(d); err != nil || v != "0003_settings.sql" {
 		t.Errorf("Version=%q err=%v", v, err)
 	}
 }

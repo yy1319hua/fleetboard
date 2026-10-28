@@ -71,9 +71,7 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.Key) == "" {
 		return errors.New("缺少 KEY（凭据加密主密钥），请通过环境变量或 .env 提供")
 	}
-	if strings.TrimSpace(c.JWTSecret) == "" {
-		return errors.New("缺少 JWT_SECRET，请通过环境变量或 .env 提供")
-	}
+	// JWT_SECRET 已入库 settings（M8.1b）：env 有值则首启吸收，无值自动生成，此处不再强校验
 	if c.Port <= 0 || c.Port > 65535 {
 		return fmt.Errorf("PORT 超出范围: %d", c.Port)
 	}
