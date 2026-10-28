@@ -43,6 +43,21 @@ func main() {
 	}
 	defer d.Close()
 
+	// 设置面（M8.1b/M8.1d）：settings.Load 吸收 env（含 JWT_SECRET）→ 无则自动生成 jwt.secret。
+	// 必须先于监控 goroutine 加载，采集/告警/prune 每轮从 store 取值实现热生效。
+	store, err := settings.Load(d, cfg.Key)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "加载设置失败: %v\n", err)
+		os.Exit(1)
+	}
+	// 优先级 DB > env：DB 里的 jwt.secret 恒生效（env 值已在 Load 时吸收）
+	if jwtSecret, ok, err := store.Get("jwt.secret"); err != nil {
+		fmt.Fprintf(os.Stderr, "读取 jwt.secret 失败: %v\n", err)
+		os.Exit(1)
+	} else if ok {
+		cfg.JWTSecret = jwtSecret
+	}
+
 	pool := sshpool.NewPool(10 * time.Minute)
 	defer pool.CloseAll()
 	stopReap := make(chan struct{})
@@ -89,7 +104,7 @@ func main() {
 				if err != nil {
 					cancel()
 					failCount[s.ID]++
-					if failCount[s.ID] >= cfg.OfflineThreshold {
+					if failCount[s.ID] >= store.Int("monitor.offline_threshold", 2) {
 						_ = db.UpdateServerStatus(d, s.ID, "offline")
 					}
 					continue
@@ -99,7 +114,7 @@ func main() {
 				cancel()
 				if err != nil {
 					failCount[s.ID]++
-					if failCount[s.ID] >= cfg.OfflineThreshold {
+					if failCount[s.ID] >= store.Int("monitor.offline_threshold", 2) {
 						_ = db.UpdateServerStatus(d, s.ID, "offline")
 					}
 					continue
@@ -116,7 +131,7 @@ func main() {
 					MemPct:  snap.MemPct,
 					DiskPct: snap.DiskPct,
 					Load1:   snap.Load1,
-				}, cfg.PushPlusToken)
+				}, store.GetOr("pushplus.token", cfg.PushPlusToken))
 				if err != nil {
 					log.Printf("告警评估 #%d 失败: %v", s.ID, err)
 				} else if hits > 0 {
@@ -126,12 +141,19 @@ func main() {
 		}
 
 		collect()
-		t := time.NewTicker(time.Duration(cfg.MonitorIntervalSec) * time.Second)
+		interval := store.Int("monitor.interval", 30)
+		t := time.NewTicker(time.Duration(interval) * time.Second)
 		defer t.Stop()
 		for {
 			select {
 			case <-t.C:
 				collect()
+				// M8.1d 热生效：每轮读 settings，间隔变化即 Reset
+				if iv := store.Int("monitor.interval", 30); iv != interval {
+					interval = iv
+					t.Reset(time.Duration(iv) * time.Second)
+					log.Printf("采集间隔热更新为 %ds", iv)
+				}
 			case <-stopMonitor:
 				return
 			}
@@ -142,7 +164,7 @@ func main() {
 	defer close(stopPrune)
 	go func() {
 		prune := func() {
-			cutoff := time.Now().AddDate(0, 0, -cfg.MetricsRetentionDays)
+			cutoff := time.Now().AddDate(0, 0, -store.Int("metrics.retention_days", 30))
 			n, err := db.PruneMetrics(d, cutoff)
 			if err != nil {
 				log.Printf("指标清理失败: %v", err)
@@ -164,20 +186,6 @@ func main() {
 			}
 		}
 	}()
-
-	// 设置面（M8.1b）：settings.Load 吸收 env（含 JWT_SECRET）→ 无则自动生成 jwt.secret
-	store, err := settings.Load(d, cfg.Key)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "加载设置失败: %v\n", err)
-		os.Exit(1)
-	}
-	// 优先级 DB > env：DB 里的 jwt.secret 恒生效（env 值已在 Load 时吸收）
-	if jwtSecret, ok, err := store.Get("jwt.secret"); err != nil {
-		fmt.Fprintf(os.Stderr, "读取 jwt.secret 失败: %v\n", err)
-		os.Exit(1)
-	} else if ok {
-		cfg.JWTSecret = jwtSecret
-	}
 
 	if created, err := db.EnsureAdmin(d, cfg.BootstrapUser, cfg.BootstrapPass); err != nil {
 		fmt.Fprintf(os.Stderr, "初始化管理员失败: %v\n", err)

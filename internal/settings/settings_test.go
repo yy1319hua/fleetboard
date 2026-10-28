@@ -153,3 +153,36 @@ func TestHotReload(t *testing.T) {
 		t.Errorf("热生效未观测到外部变更: %q", v)
 	}
 }
+
+// GetOr：已设置取真值；未设置回落；空串回落。
+func TestGetOr(t *testing.T) {
+	t.Setenv("PUSHPLUS_TOKEN", "real-token")
+	s := newStore(t)
+	if v := s.GetOr("pushplus.token", "fallback"); v != "real-token" {
+		t.Errorf("GetOr = %q, want real-token", v)
+	}
+	if v := s.GetOr("compose.roots", "fallback"); v != "fallback" {
+		t.Errorf("未设置项应回落: %q", v)
+	}
+}
+
+// Int：吸收 env；非法值/未设置回落默认；热更新后立即生效。
+func TestInt(t *testing.T) {
+	t.Setenv("MONITOR_INTERVAL", "60")
+	s := newStore(t)
+	if v := s.Int("monitor.interval", 30); v != 60 {
+		t.Errorf("Int = %d, want 60", v)
+	}
+	if v := s.Int("compose.roots", 7); v != 7 {
+		t.Errorf("非整数项应回落: %d", v)
+	}
+	if v := s.Int("metrics.retention_days", 30); v != 30 {
+		t.Errorf("未设置项回落默认: %d", v)
+	}
+	if err := s.Set(map[string]string{"metrics.retention_days": "7"}); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if v := s.Int("metrics.retention_days", 30); v != 7 {
+		t.Errorf("Set 后应热生效: %d", v)
+	}
+}

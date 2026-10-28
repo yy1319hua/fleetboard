@@ -95,10 +95,10 @@ curl http://127.0.0.1:8080/api/health
 | `JWT_SECRET` | 否 | 自动生成 | JWT 签名密钥；已入库 settings（首启吸收 env 原值，缺失自动生成），优先级 DB > env |
 | `BOOTSTRAP_USER` | 否 | — | 首次启动管理员用户名 |
 | `BOOTSTRAP_PASS` | 否 | — | 首次启动管理员密码 |
-| `MONITOR_INTERVAL` | 否 | `30` | 指标采集间隔（秒） |
-| `METRICS_RETENTION_DAYS` | 否 | `30` | 指标保留天数 |
-| `OFFLINE_THRESHOLD` | 否 | `2` | 连续失败判定离线次数 |
-| `PUSHPLUS_TOKEN` | 否 | — | PushPlus 告警 token |
+| `MONITOR_INTERVAL` | 否 | `30` | 指标采集间隔（秒）；已入库 settings，运行期热生效 |
+| `METRICS_RETENTION_DAYS` | 否 | `30` | 指标保留天数；已入库 settings，运行期热生效 |
+| `OFFLINE_THRESHOLD` | 否 | `2` | 连续失败判定离线次数；已入库 settings，运行期热生效 |
+| `PUSHPLUS_TOKEN` | 否 | — | PushPlus 告警 token；**已废弃为启动吸收值**——运行期改 token 请用设置面（M8.1b API / M8.1c UI），热生效 |
 
 ## 发布
 

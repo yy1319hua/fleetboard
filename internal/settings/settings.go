@@ -293,6 +293,24 @@ func Lookup(key string) (Spec, bool) {
 // DB 暴露底层连接（测试与审计用）。
 func (s *Store) DB() *sql.DB { return s.db }
 
+// GetOr 取明文值；未设置、为空或读取出错时回落 def。
+func (s *Store) GetOr(key, def string) string {
+	if v, ok, err := s.Get(key); err == nil && ok && strings.TrimSpace(v) != "" {
+		return v
+	}
+	return def
+}
+
+// Int 取整数设置项；未设置、非法或 <=0 时回落 def。
+func (s *Store) Int(key string, def int) int {
+	if v, ok, err := s.Get(key); err == nil && ok {
+		if n, perr := strconv.Atoi(strings.TrimSpace(v)); perr == nil && n > 0 {
+			return n
+		}
+	}
+	return def
+}
+
 // Set 批量写入（逐项校验 + secret 加密），整批一个事务、revision 只自增一次。
 func (s *Store) Set(updates map[string]string) error {
 	specs := specs()
