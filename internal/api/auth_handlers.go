@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yy1319hua/fleetboard/internal/auth"
@@ -18,9 +19,10 @@ type refreshRequest struct {
 }
 
 type tokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	ExpiresIn    int    `json:"expires_in"`
+	AccessToken      string `json:"access_token"`
+	RefreshToken     string `json:"refresh_token,omitempty"`
+	ExpiresIn        int    `json:"expires_in"`
+	RefreshExpiresAt int64  `json:"refresh_expires_at,omitempty"` // M9.0b：派生自 refresh token 既有 ExpiresAt，向后兼容（omitempty）
 }
 
 // loginHandler 用户名密码登录，返回 access + refresh。
@@ -54,9 +56,10 @@ func loginHandler(d *sql.DB, secret string) gin.HandlerFunc {
 			return
 		}
 		OK(c, tokenResponse{
-			AccessToken:  access,
-			RefreshToken: refresh,
-			ExpiresIn:    int(auth.AccessTTL.Seconds()),
+			AccessToken:      access,
+			RefreshToken:     refresh,
+			ExpiresIn:        int(auth.AccessTTL.Seconds()),
+			RefreshExpiresAt: time.Now().Add(auth.RefreshTTL).Unix(),
 		})
 	}
 }
@@ -77,7 +80,7 @@ func refreshHandler(d *sql.DB, secret string) gin.HandlerFunc {
 		// M8.1e：ver epoch 校验——改密/注销后旧 refresh 即便未过期也吊销
 		ver, err := db.GetTokenVer(d, claims.UserID)
 		if err != nil || ver != claims.Ver {
-			Fail(c, ErrUnauthorized("刷新令牌无效或已过期"))
+			Fail(c, ErrUnauthorized("token revoked"))
 			return
 		}
 		access, err := auth.GenerateAccessToken(secret, claims.UserID, ver)
@@ -86,8 +89,9 @@ func refreshHandler(d *sql.DB, secret string) gin.HandlerFunc {
 			return
 		}
 		OK(c, tokenResponse{
-			AccessToken: access,
-			ExpiresIn:   int(auth.AccessTTL.Seconds()),
+			AccessToken:      access,
+			ExpiresIn:        int(auth.AccessTTL.Seconds()),
+			RefreshExpiresAt: claims.ExpiresAt.Unix(),
 		})
 	}
 }
@@ -158,9 +162,10 @@ func changePasswordHandler(d *sql.DB, secret string) gin.HandlerFunc {
 			return
 		}
 		OK(c, tokenResponse{
-			AccessToken:  access,
-			RefreshToken: refresh,
-			ExpiresIn:    int(auth.AccessTTL.Seconds()),
+			AccessToken:      access,
+			RefreshToken:     refresh,
+			ExpiresIn:        int(auth.AccessTTL.Seconds()),
+			RefreshExpiresAt: time.Now().Add(auth.RefreshTTL).Unix(),
 		})
 	}
 }

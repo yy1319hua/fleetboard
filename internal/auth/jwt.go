@@ -25,6 +25,11 @@ const (
 	RefreshTTL = 7 * 24 * time.Hour
 )
 
+// JWT_EPOCH 是全局部署 epoch（M9.0b「ver 协同」）。
+// 初始 0：升级不踢现有会话（既有 token 的 Ver 取自各自 users.token_ver，互不影响）。
+// 仅在需要强制全局重登时由服务端显式 bump；bootstrap 将其作为 data.ver 下发给 App 做协同判定。
+const JWT_EPOCH = 0
+
 var (
 	ErrInvalidToken   = errors.New("invalid token")
 	ErrExpiredToken   = errors.New("token expired")

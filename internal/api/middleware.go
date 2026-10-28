@@ -13,6 +13,7 @@ const ctxUserID = "uid"
 
 // JWTAuth 校验 Authorization: Bearer <access>，通过后把用户 ID 注入上下文。
 // M8.1e：同时校验 token 的 ver epoch 与 users.token_ver 一致（改密/注销即吊销）。
+// M9.0b：ver 不匹配（解析成功但 epoch 不符）返回 401 msg:"token revoked"，App 据此 clearAll 重登。
 func JWTAuth(secret string, d *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		h := c.GetHeader("Authorization")
@@ -30,7 +31,7 @@ func JWTAuth(secret string, d *sql.DB) gin.HandlerFunc {
 		}
 		ver, err := db.GetTokenVer(d, claims.UserID)
 		if err != nil || ver != claims.Ver {
-			Fail(c, ErrUnauthorized("访问令牌无效或已过期"))
+			Fail(c, ErrUnauthorized("token revoked"))
 			c.Abort()
 			return
 		}

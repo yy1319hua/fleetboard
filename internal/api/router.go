@@ -59,6 +59,9 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.GET("/me", meHandler())
 	authed.GET("/audit", listAuditHandler(opts.DB))
 
+	// 首屏聚合（M9.0b）：服务器列表 + 各机最新指标 + 未读告警 + 版本/schema/ver
+	authed.GET("/bootstrap", bootstrapHandler(opts))
+
 	// 服务器管理
 	authed.GET("/servers", listServersHandler(opts.DB))
 	authed.POST("/servers", createServerHandler(opts.DB, opts.MasterKey))
@@ -123,7 +126,11 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.PUT("/servers/:id/compose/content", putComposeContentHandler(opts.DB, opts.MasterKey, opts.Pool, composeRoots))
 	authed.POST("/servers/:id/compose/actions", composeActionHandler(opts.DB, opts.MasterKey, opts.Pool, composeRoots))
 
-	// 软件包更新（SSE 流式）
+	// 后台任务（M9.0b）：查询 / 取消软件包升级等异步任务
+	authed.GET("/jobs/:id", jobGetHandler())
+	authed.DELETE("/jobs/:id", jobDeleteHandler())
+
+	// 软件包更新（SSE 流式 + 202 双通道，M9.0b）
 	authed.POST("/servers/:id/packages/update", packageUpdateHandler(opts.DB, opts.MasterKey, opts.Pool))
 
 	// 前端静态资源（web/dist），SPA 回退；目录缺失时静默跳过

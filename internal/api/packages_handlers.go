@@ -1,13 +1,14 @@
 package api
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yy1319hua/fleetboard/internal/db"
@@ -27,12 +28,14 @@ func sseFrame(payload gin.H) (string, error) {
 	return fmt.Sprintf("data: %s\n\n", b), nil
 }
 
-// packageUpdateHandler 以 SSE 流式回传 apt 更新进度，支持取消。
-// POST /api/servers/:id/packages/update
+// packageUpdateHandler 以「双通道」方式触发软件包升级：
+//   - 立即返回 202 Accepted + Location: /api/jobs/:id + body {jobId, status:"running"}；
+//   - 同时本请求保持 SSE 实时输出随本次连接流式推进（现状 SSE 不变）。
 //
-// 取消方式：客户端直接 abort 请求（浏览器 fetch AbortController）→ 请求上下文取消
-// → 向远端 apt 发送 SIGINT 并关闭会话。前端用 fetch + ReadableStream 读取，
-// 因此可携带 Authorization 头，token 不必进 URL。
+// 后台 goroutine 跑既有 pkg.Upgrade，其 ctx 以 context.Background() 派生（非请求 ctx），
+// 因此 App 断连后升级仍可跑完，供 GET /api/jobs/:id 续接。SSE 断连仅 detach（不取消底层升级）；
+// 显式取消走 DELETE /api/jobs/:id。
+// POST /api/servers/:id/packages/update
 func packageUpdateHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := parseID(c)
@@ -40,65 +43,97 @@ func packageUpdateHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.H
 			return
 		}
 
-		// 连接失败属于"流开始前"的错误，仍用统一 JSON 响应（502）
+		// 流开始前连接失败：返回 JSON 502（保持原有契约，TestPackageUpdateConnectionError）
 		cli, err := openSSH(c, d, masterKey, pool, id)
 		if err != nil {
 			Fail(c, err)
 			return
 		}
 
-		ctx, cancel := context.WithCancel(c.Request.Context())
-		defer cancel()
+		uid := CurrentUserID(c)
+		opID := c.GetHeader("X-Client-Op-Id")
+		job := jobStore.CreateWithOp(opID, "packages.update", id, uid)
 
+		// 双通道：立即 202 + Location，同时本请求保持 SSE 随进度流式推进。
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
 		c.Header("X-Accel-Buffering", "no") // 关闭反代缓冲，保证逐行可见
-		c.Status(http.StatusOK)
+		c.Header("Location", "/api/jobs/"+job.JobID)
+		c.Status(http.StatusAccepted) // 202
 
 		flusher, _ := c.Writer.(http.Flusher)
 		var writeFailed atomic.Bool
+		var detached atomic.Bool
+		var writeMu sync.Mutex
 
+		// send 向本请求的 SSE 写一帧；客户端断开或 detach 后变为 no-op。
 		send := func(payload gin.H) {
-			if writeFailed.Load() {
+			if writeFailed.Load() || detached.Load() {
 				return
 			}
 			frame, mErr := sseFrame(payload)
 			if mErr != nil {
 				return
 			}
+			writeMu.Lock()
 			if _, wErr := c.Writer.WriteString(frame); wErr != nil {
-				// 客户端已断开：标记并取消，尽快停掉远端 apt
 				writeFailed.Store(true)
-				cancel()
+				writeMu.Unlock()
 				return
 			}
 			if flusher != nil {
 				flusher.Flush()
 			}
+			writeMu.Unlock()
 		}
 
-		send(gin.H{"event": "started", "message": "开始更新软件包"})
-
-		runErr := pkg.Upgrade(ctx, cli, func(line string) {
-			send(gin.H{"event": "line", "line": line})
-		})
-
-		result := "ok"
-		switch {
-		case runErr == nil:
-			send(gin.H{"event": "done", "ok": true})
-		case ctx.Err() != nil:
-			// 客户端断开或上下文取消 → 视为已取消
-			result = "canceled"
-			send(gin.H{"event": "done", "ok": false, "canceled": true})
-		default:
-			result = "fail"
-			log.Printf("apt 更新（server #%d）失败: %v", id, runErr)
-			send(gin.H{"event": "done", "ok": false, "error": errPackageUpdate})
+		// 发送 202 响应头 + 首帧（先于后台 goroutine，避免与后续 send 竞争）
+		c.Writer.WriteHeaderNow()
+		if flusher != nil {
+			flusher.Flush()
 		}
+		send(gin.H{"event": "started", "message": "开始更新软件包", "jobId": job.JobID})
 
-		sid := id
-		_ = db.InsertAudit(d, CurrentUserID(c), &sid, "packages.update", "apt-get update && upgrade -y", result)
+		// 后台跑升级：job ctx 独立于请求 ctx（context.Background 派生）。
+		go func() {
+			runErr := pkg.Upgrade(job.Context(), cli, func(line string) {
+				job.AppendLine(line)
+				send(gin.H{"event": "line", "line": line})
+			})
+
+			switch {
+			case runErr == nil:
+				job.finish(JobDone, "")
+				send(gin.H{"event": "done", "ok": true})
+			case job.Context().Err() != nil:
+				// 显式取消（DELETE /api/jobs/:id）→ SIGINT 中断远端 apt
+				job.finish(JobCancelled, "已取消")
+				send(gin.H{"event": "done", "ok": false, "canceled": true})
+			default:
+				job.finish(JobFailed, errPackageUpdate)
+				log.Printf("apt 更新（server #%d）失败: %v", id, runErr)
+				send(gin.H{"event": "done", "ok": false, "error": errPackageUpdate})
+			}
+
+			sid := id
+			_ = db.InsertAudit(d, uid, &sid, "packages.update", "apt-get update && upgrade -y", string(job.Snapshot().Status))
+		}()
+
+		// SSE 主循环：等待 job 终态；客户端断开则仅 detach（不取消 job ctx）。
+		ticker := time.NewTicker(300 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-c.Request.Context().Done():
+				// 客户端断连：仅 detach，底层升级继续（job ctx 独立）
+				detached.Store(true)
+				return
+			case <-ticker.C:
+				if job.isTerminal() {
+					return
+				}
+			}
+		}
 	}
 }
