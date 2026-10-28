@@ -41,6 +41,7 @@ dependencies:
   # DTO：freezed（不可变模型 + 联合类型）+ freezed_annotation
   freezed: ^2.5.0
   freezed_annotation: ^2.4.0
+  json_annotation: ^4.9.0
   # 网络：手写 dio 薄封装（拦截器 + 信封解包）
   dio: ^5.4.0
   # 令牌存储：Android Keystore（flutter_secure_storage）
