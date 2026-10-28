@@ -187,11 +187,16 @@ func main() {
 		}
 	}()
 
-	if created, err := db.EnsureAdmin(d, cfg.BootstrapUser, cfg.BootstrapPass); err != nil {
+	if user, pass, generated, created, err := db.EnsureBootstrapAdmin(d, cfg.BootstrapUser, cfg.BootstrapPass); err != nil {
 		fmt.Fprintf(os.Stderr, "初始化管理员失败: %v\n", err)
 		os.Exit(1)
 	} else if created {
-		log.Printf("已创建初始管理员: %s", cfg.BootstrapUser)
+		if generated {
+			// M8.1a 自举兜底：仅显示这一次，安装脚本会从日志提取展示
+			log.Printf("首次启动自举：已生成管理员账密 %s / %s（仅显示这一次，请立即记录）", user, pass)
+		} else {
+			log.Printf("已创建初始管理员: %s", user)
+		}
 	}
 
 	schema, err := db.Version(d)

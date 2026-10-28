@@ -83,3 +83,50 @@ func TestGetUserNotFound(t *testing.T) {
 		t.Errorf("err=%v, want ErrUserNotFound", err)
 	}
 }
+
+// M8.1a 自举兜底：users 空 + BOOTSTRAP_* 缺 → 生成随机账密；齐全则用之；已有用户跳过。
+func TestEnsureBootstrapAdmin(t *testing.T) {
+	open := func(t *testing.T) *sql.DB {
+		t.Helper()
+		d, err := Open(filepath.Join(t.TempDir(), "t.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { d.Close() })
+		return d
+	}
+
+	t.Run("随机生成", func(t *testing.T) {
+		d := open(t)
+		user, pass, generated, created, err := EnsureBootstrapAdmin(d, "", "")
+		if err != nil || !created || !generated {
+			t.Fatalf("err=%v created=%v generated=%v", err, created, generated)
+		}
+		if user != "admin" || len(pass) < 12 {
+			t.Errorf("user=%q pass长度=%d", user, len(pass))
+		}
+		usr, err := GetUserByUsername(d, "admin")
+		if err != nil || !auth.VerifyPassword(usr.PasswordHash, pass) {
+			t.Errorf("生成的账密应可登录: %v", err)
+		}
+	})
+
+	t.Run("BOOTSTRAP齐全用之", func(t *testing.T) {
+		d := open(t)
+		user, pass, generated, created, err := EnsureBootstrapAdmin(d, "ops", "secret99")
+		if err != nil || !created || generated || user != "ops" || pass != "secret99" {
+			t.Fatalf("err=%v created=%v generated=%v user=%q", err, created, generated, user)
+		}
+	})
+
+	t.Run("已有用户跳过", func(t *testing.T) {
+		d := open(t)
+		if _, _, _, _, err := EnsureBootstrapAdmin(d, "a", "aaaa1111"); err != nil {
+			t.Fatal(err)
+		}
+		_, _, _, created, err := EnsureBootstrapAdmin(d, "b", "bbbb2222")
+		if err != nil || created {
+			t.Errorf("已有用户应跳过: created=%v err=%v", created, err)
+		}
+	})
+}

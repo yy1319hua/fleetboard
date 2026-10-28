@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # fleetboard 安装脚本（root 运行）
-# 用法：sudo ./install.sh              交互式（管道安装时自动改走 /dev/tty，无终端则全自动生成）
-#       预填配置：在同目录放 .env.filled（参考 .env.example）则跳过交互
+# 用法：sudo ./install.sh
+# 管理员账密：首次启动自举（M8.1a）——BOOTSTRAP_* 缺省时服务自动生成随机账密并打印到日志（仅一次），
+#             安装完成处会自动提取展示；也可 journalctl -u fleetboard | grep 自举 查看
 # 布局（卸载时按此回收，无散落文件）：
 #   /opt/fleetboard/            二进制 + web-dist + .env
 #   /var/lib/fleetboard/        SQLite 数据
@@ -9,8 +10,8 @@
 set -euo pipefail
 
 BASE=${FLEETBOARD_BASE:-/opt/fleetboard}
-DATA=/var/lib/fleetboard
-UNIT=/etc/systemd/system/fleetboard.service
+DATA=${FLEETBOARD_DATA:-/var/lib/fleetboard}
+UNIT=${FLEETBOARD_UNIT:-/etc/systemd/system/fleetboard.service}
 SRC="$(cd "$(dirname "$0")" && pwd)"
 
 [ "$(id -u)" = 0 ] || { echo "请用 root 运行"; exit 1; }
@@ -34,33 +35,17 @@ case "$elf_machine" in
 esac
 [ "$built" = "$a" ] || { echo "二进制架构($built)与本机($a)不符，请换对应发布包"; exit 1; }
 
-# ---- 收集必填配置 ----
-# 优先级：已有 .env.filled > 交互输入（/dev/tty，兼容 curl|bash 管道安装）> 全自动生成
-# 自动生成时账密会在安装完成处打印一次。
+# ---- 生成 .env（M8.1a：收敛到 KEY + 不可热生效路径项；账密由首启自举）----
 ENV_SRC="$SRC/.env.filled"
-AUTOGEN=1
-if [ -f "$ENV_SRC" ]; then
-  echo "==> 检测到 .env.filled，使用其配置"
-  AUTOGEN=0
-else
-  echo "==> 交互式填写配置（直接回车=自动生成/默认）"
-  ask() { # ask <提示> <变量名>：提示写 /dev/tty（read -p 走 stderr，重定向下会被吞），输入也从终端读
-    local v=""
-    if { printf "%s" "$1" >/dev/tty && read -r v </dev/tty; } 2>/dev/null; then printf -v "$2" "%s" "$v"; else printf -v "$2" ""; fi
-  }
-  ask "管理员用户名 [admin]: " BU; BU=${BU:-admin}
-  ask "管理员密码 [随机生成]: " BP; BP=${BP:-$(openssl rand -hex 8)}
+if [ ! -f "$ENV_SRC" ]; then
   KEY=${KEY:-$(openssl rand -hex 32)}
-    cat > "$ENV_SRC" <<EOF
+  cat > "$ENV_SRC" <<ENVEOF
 KEY=$KEY
-BOOTSTRAP_USER=$BU
-BOOTSTRAP_PASS=$BP
 LISTEN_ADDR=127.0.0.1
 PORT=8080
 DATA_DIR=$DATA
 WEB_DIR=$BASE/web-dist
-EOF
-  [ -t 0 ] || [ -e /dev/tty ] || echo "⚠️ 未检测到终端：已自动生成管理员账密，安装完成后会打印（只显示一次）"
+ENVEOF
 fi
 
 echo "==> 安装文件到 $BASE"
@@ -91,9 +76,12 @@ else
   exit 1
 fi
 
-if [ "$AUTOGEN" = 1 ]; then
-  echo "==> 自动生成的管理员账密（只显示这一次，请立即记录）："
-  echo "    用户名: $BU"
-  echo "    密  码: $BP"
+echo "==> 提取首次启动自举账密（仅显示这一次，请立即记录）："
+sleep 1
+BOOT_LOG=$(journalctl -u fleetboard -n 50 --no-pager 2>/dev/null | grep "首次启动自举" | tail -1 || true)
+if [ -n "$BOOT_LOG" ]; then
+  echo "    ${BOOT_LOG#*首次启动自举：}"
+else
+  echo "    （未从日志提取到，请手动执行：journalctl -u fleetboard | grep 自举）"
 fi
 echo "==> 安装完成。卸载：sudo /opt/fleetboard/uninstall.sh"

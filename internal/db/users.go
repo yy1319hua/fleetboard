@@ -1,7 +1,9 @@
 package db
 
 import (
+	crand "crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 
 	"github.com/yy1319hua/fleetboard/internal/auth"
@@ -116,4 +118,38 @@ func UpdatePasswordAndBumpVer(d *sql.DB, id int64, passwordHash string) (int64, 
 // BumpTokenVer 仅自增 token_ver（注销其他会话用），不动密码。返回新版本号。
 func BumpTokenVer(d *sql.DB, id int64) (int64, error) {
 	return bumpVer(d, id, "")
+}
+
+// EnsureBootstrapAdmin 首启自举兜底（M8.1a）：users 表为空时，
+// BOOTSTRAP_* 齐全则用之；缺任一则生成随机密码（用户名固定 admin）。
+// 返回 (创建的用户名, 密码, 是否随机生成, 是否新建)。
+func EnsureBootstrapAdmin(d *sql.DB, bootstrapUser, bootstrapPass string) (string, string, bool, bool, error) {
+	var n int
+	if err := d.QueryRow(`SELECT COUNT(1) FROM users`).Scan(&n); err != nil {
+		return "", "", false, false, err
+	}
+	if n > 0 {
+		return "", "", false, false, nil
+	}
+	user, pass := bootstrapUser, bootstrapPass
+	if user == "" {
+		user = "admin"
+	}
+	generated := false
+	if pass == "" {
+		b := make([]byte, 9)
+		if _, err := crand.Read(b); err != nil {
+			return "", "", false, false, err
+		}
+		pass = hex.EncodeToString(b)
+		generated = true
+	}
+	hash, err := auth.HashPassword(pass)
+	if err != nil {
+		return "", "", false, false, err
+	}
+	if _, err := d.Exec(`INSERT INTO users(username, password_hash) VALUES (?, ?)`, user, hash); err != nil {
+		return "", "", false, false, err
+	}
+	return user, pass, generated, true, nil
 }

@@ -93,8 +93,8 @@ curl http://127.0.0.1:8080/api/health
 | `DB_PATH` | 否 | `$DATA_DIR/fleetboard.db` | SQLite 路径 |
 | `KEY` | **是** | — | 凭据加密主密钥（AES-256-GCM） |
 | `JWT_SECRET` | 否 | 自动生成 | JWT 签名密钥；已入库 settings（首启吸收 env 原值，缺失自动生成），优先级 DB > env |
-| `BOOTSTRAP_USER` | 否 | — | 首次启动管理员用户名 |
-| `BOOTSTRAP_PASS` | 否 | — | 首次启动管理员密码 |
+| `BOOTSTRAP_USER` | 否 | `admin` | 首次启动管理员用户名（users 空时生效） |
+| `BOOTSTRAP_PASS` | 否 | 随机生成 | 首次启动管理员密码；缺省自动生成并打印日志（仅一次） |
 | `MONITOR_INTERVAL` | 否 | `30` | 指标采集间隔（秒）；已入库 settings，运行期热生效 |
 | `METRICS_RETENTION_DAYS` | 否 | `30` | 指标保留天数；已入库 settings，运行期热生效 |
 | `OFFLINE_THRESHOLD` | 否 | `2` | 连续失败判定离线次数；已入库 settings，运行期热生效 |
