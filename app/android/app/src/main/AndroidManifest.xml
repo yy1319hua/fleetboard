@@ -1,5 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="io.github.yy1319hua.app">
+    <!-- INTERNET：Flutter 模板只在 debug / profile 变体注入，release 变体必须由
+         业务方在 main 清单显式声明，否则装机会后所有网络请求静默失败。 -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- REQUEST_INSTALL_PACKAGES：自分发更新，允许本 App 请求"未知来源安装"授权（Android 8.0+）。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+
    <application
         android:label="app"
         android:name="${applicationName}"
@@ -30,5 +36,17 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- 自分发更新：把内部存储里已校验的 APK 以 content:// 临时授权给系统安装器。
+             Android 7.0+ 禁止跨应用传递 file:// URI，故必须经 FileProvider。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/provider_paths" />
+        </provider>
     </application>
 </manifest>

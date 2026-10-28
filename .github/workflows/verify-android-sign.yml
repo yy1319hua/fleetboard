@@ -127,6 +127,43 @@ jobs:
           sha256sum "$APK" > sums-android.txt
           cat sums-android.txt
 
+      - name: 校验 APK 权限清单
+        # Flutter 模板只在 debug / profile 变体注入 INTERNET，release 变体必须由 main 清单声明。
+        # 少了 INTERNET 的 APK 能编译能安装能签名（指纹照样对），但装到手机上所有请求失败 ——
+        # 这是"签名全绿 ≠ 包可用"的典型盲区，故在此显式卡一道。
+        #
+        # 取值两条路：优先 aapt 直接读 APK；aapt 在部分 build-tools 里已被移除，
+        # 此时退回 Gradle 产出的合并后明文清单（AGP 一定会生成，内容等价）。
+        run: |
+          APK=app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ 2>/dev/null | sort -V | tail -1)
+          if [ -n "$BT" ] && [ -x "${BT}aapt" ]; then
+            echo "来源：aapt ${BT}"
+            "${BT}aapt" dump permissions "$APK" > /tmp/perms.txt
+          else
+            echo "来源：AGP 合并清单（aapt 不可用）"
+            MANIFEST=$(find app/build -path '*merged_manifest*' \
+                       -name AndroidManifest.xml | grep -i release | head -1)
+            if [ -z "$MANIFEST" ]; then
+              echo "::warning::aapt 与合并清单均不可用，跳过权限校验"
+              exit 0
+            fi
+            echo "  $MANIFEST"
+            cat "$MANIFEST" > /tmp/perms.txt
+          fi
+          cat /tmp/perms.txt
+          MISSING=0
+          for p in android.permission.INTERNET android.permission.REQUEST_INSTALL_PACKAGES; do
+            if grep -q "$p" /tmp/perms.txt; then
+              echo "OK   $p"
+            else
+              echo "::error::APK 权限清单缺少 $p"
+              MISSING=1
+            fi
+          done
+          if [ "$MISSING" -ne 0 ]; then exit 1; fi
+          echo "✅ APK 权限清单含 INTERNET / REQUEST_INSTALL_PACKAGES"
+
       - uses: actions/upload-artifact@v4
         with:
           name: apk-signed-${{ github.run_id }}
