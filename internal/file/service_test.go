@@ -168,3 +168,19 @@ func TestWriteAtomicNewFile(t *testing.T) {
 		t.Fatalf("内容不符，实际 %q", string(got))
 	}
 }
+
+// M7.4/A6：路径校验——绝对规范化路径放行，穿越/相对形态全拒。
+func TestValidatePath(t *testing.T) {
+	good := []string{"/", "/etc", "/opt/app/compose", "/etc/shadow"}
+	for _, p := range good {
+		if err := ValidatePath(p); err != nil {
+			t.Errorf("合法路径 %q 被拒: %v", p, err)
+		}
+	}
+	bad := []string{"etc", "/etc/../../etc/shadow", "/opt/../..", "a/b", "/a//b", "/a/./b", "", "/a/../b"}
+	for _, p := range bad {
+		if err := ValidatePath(p); err == nil {
+			t.Errorf("非法路径 %q 未被拒绝", p)
+		}
+	}
+}

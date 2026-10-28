@@ -2,6 +2,7 @@
 package file
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,21 @@ import (
 
 	"github.com/pkg/sftp"
 )
+
+// ErrPathDenied 表示路径非法（M7.4/A6）：非绝对路径或含 ".." 相对段。
+// 文件管理器虽为全盘浏览，但客户端一律使用规范化绝对路径，杜绝穿越形态。
+var ErrPathDenied = errors.New("路径非法：须为绝对路径且不含 .. 段")
+
+// ValidatePath 校验路径为规范化绝对路径（M7.4/A6）。
+func ValidatePath(p string) error {
+	if !strings.HasPrefix(p, "/") {
+		return ErrPathDenied
+	}
+	if path.Clean(p) != p {
+		return ErrPathDenied // Clean 后变化 = 含 ".."/"./"/"//" 等相对段
+	}
+	return nil
+}
 
 // Entry 是目录项（含权限与属主信息）。
 type Entry struct {

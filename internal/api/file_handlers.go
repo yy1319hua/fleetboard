@@ -74,6 +74,10 @@ func listFilesHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Handl
 			return
 		}
 		dir := c.DefaultQuery("path", "/")
+		if err := file.ValidatePath(dir); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
 
 		sc, err := openSFTP(c, d, masterKey, pool, id)
 		if err != nil {
@@ -113,6 +117,10 @@ func downloadFileHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Ha
 			return
 		}
 		p := c.Query("path")
+		if err := file.ValidatePath(p); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
 		if p == "" {
 			Fail(c, ErrBadRequest("path 不能为空"))
 			return
@@ -154,6 +162,10 @@ func uploadFileHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Hand
 			return
 		}
 		p := c.Query("path")
+		if err := file.ValidatePath(p); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
 		if p == "" {
 			Fail(c, ErrBadRequest("path 不能为空"))
 			return
@@ -207,6 +219,10 @@ func getContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Hand
 			return
 		}
 		p := c.Query("path")
+		if err := file.ValidatePath(p); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
 		if p == "" {
 			Fail(c, ErrBadRequest("path 不能为空"))
 			return
@@ -241,6 +257,10 @@ func putContentHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Hand
 			return
 		}
 		p := c.Query("path")
+		if err := file.ValidatePath(p); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
 		if p == "" {
 			Fail(c, ErrBadRequest("path 不能为空"))
 			return
@@ -297,6 +317,14 @@ func renameFileHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Hand
 		}
 		defer func() { _ = sc.Close() }()
 
+		if err := file.ValidatePath(req.From); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
+		if err := file.ValidatePath(req.To); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
 		if err := file.Rename(sc, req.From, req.To); err != nil {
 			Fail(c, ErrBadGateway("重命名失败: "+err.Error()))
 			return
@@ -326,6 +354,14 @@ func copyFileHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Handle
 		}
 		defer func() { _ = sc.Close() }()
 
+		if err := file.ValidatePath(req.From); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
+		if err := file.ValidatePath(req.To); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
 		if err := file.Copy(sc, req.From, req.To); err != nil {
 			Fail(c, ErrBadGateway("复制失败: "+err.Error()))
 			return
@@ -343,6 +379,10 @@ func deleteFileHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Hand
 			return
 		}
 		p := c.Query("path")
+		if err := file.ValidatePath(p); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
 		if p == "" {
 			Fail(c, ErrBadRequest("path 不能为空"))
 			return
@@ -372,6 +412,10 @@ func statFileHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Handle
 			return
 		}
 		p := c.Query("path")
+		if err := file.ValidatePath(p); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
 		if p == "" {
 			Fail(c, ErrBadRequest("path 不能为空"))
 			return
