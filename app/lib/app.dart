@@ -159,11 +159,13 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                   serverId: state.pathParameters['serverId'] ?? '',
                 ),
               ),
+              GoRoute(
+                path: 'update',
+                builder: (context, state) => UpdateTaskPage(
+                  serverId: state.pathParameters['serverId'] ?? '',
+                ),
+              ),
             ],
-          ),
-          GoRoute(
-            path: '/tasks/update',
-            builder: (context, state) => const UpdateTaskPage(),
           ),
         ],
       ),
