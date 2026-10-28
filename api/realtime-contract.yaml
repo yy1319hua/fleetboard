@@ -1,0 +1,61 @@
+# fleetboard 实时传输契约（M9.0a 附属）
+# 与 api/openapi.yaml 互补：描述非普通 request/response 的传输通道。
+# contract_test.go 解析本文件所有带 x-transport 的路径，确认其在 engine.Routes() 中存在（路径级哨兵）。
+openapi: 3.0.3
+info:
+  title: fleetboard Realtime Contract
+  version: M9.0b
+
+components:
+  schemas:
+    LogChunk:
+      type: object
+      properties:
+        ts: { type: string, format: date-time, description: 日志时间戳 }
+        stream: { type: string, enum: [stdout, stderr], description: 输出流 }
+        text: { type: string, description: 日志文本行 }
+    SseEvent:
+      type: object
+      properties:
+        type: { type: string, description: 事件类型，如 progress/done/error }
+        payload: { type: object, description: 事件载荷，与 Job 状态对齐 }
+
+paths:
+  # ===== 容器日志：WebSocket（App 可直连带 Authorization: Bearer 绕过 logs-ticket）=====
+  /api/servers/{id}/containers/{cid}/logs:
+    get:
+      operationId: containerLogsWS
+      x-transport: websocket
+      summary: >
+        容器日志实时流。握手带 `Authorization: Bearer <token>`（App 直连场景）；
+        浏览器经 logs-ticket 换一次性票据亦可。对应 gin 路由 GET /api/servers/:id/containers/:cid/logs。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: cid, in: path, required: true, schema: { type: string } }
+      messages:
+        - $ref: '#/components/schemas/LogChunk'
+
+  # ===== 软件包更新：SSE（text/event-stream，M9.0b 双通道之一）=====
+  /api/servers/{id}/packages/update:
+    post:
+      operationId: packageUpdateSSE
+      x-transport: sse
+      summary: >
+        Server-Sent Events 实时流，Content-Type: text/event-stream。
+        本请求同时触发后台任务并立即 202 + Location:/api/jobs/{id}（见 openapi.yaml）。
+        对应 gin 路由 POST /api/servers/:id/packages/update。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      messages:
+        - $ref: '#/components/schemas/SseEvent'
+
+  # ===== 文件分片上传：HTTP multipart（App 首版不用，仍入哨兵）=====
+  /api/servers/{id}/files/upload:
+    post:
+      operationId: uploadFileChunked
+      x-transport: http
+      x-upload-protocol: multipart-chunked
+      summary: >
+        分片上传协议（App 首版不消费）。对应 gin 路由 POST /api/servers/:id/files/upload。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }

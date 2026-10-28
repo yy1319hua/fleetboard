@@ -1,0 +1,739 @@
+# fleetboard OpenAPI 契约（M9.0a）
+# 作用：CI 路由比对哨兵的事实源（internal/api/contract_test.go 读取本文件与 engine.Routes() 双向比对）。
+# 覆盖全部后端端点（含 M9.0b 新增：/api/bootstrap、/api/jobs/{id}、/api/servers/{id}/packages/update）。
+# 约定：x-app-consumed=true 表示 App 首版消费；files/compose 域为 false（仍入哨兵）。
+# 不生成 Dart（仅作 CI 比对与文档）。
+openapi: 3.0.3
+info:
+  title: fleetboard API
+  version: M9.0b
+  description: 单机/多服务器 Docker 运维面板后端契约。
+servers:
+  - url: /api
+tags:
+  - name: system
+  - name: auth
+  - name: servers
+  - name: containers
+  - name: images
+  - name: networks
+  - name: volumes
+  - name: metrics
+  - name: alerts
+  - name: settings
+  - name: packages
+  - name: files
+  - name: compose
+  - name: jobs
+
+components:
+  schemas:
+    ApiEnvelope:
+      type: object
+      required: [code, msg]
+      properties:
+        code:
+          type: integer
+          description: 业务码，0=成功，非0与 HTTP 状态对齐
+        msg:
+          type: string
+        data:
+          type: object
+          nullable: true
+          description: 业务载荷，失败时可能省略
+    Server:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        host: { type: string }
+        port: { type: integer }
+        ssh_user: { type: string }
+        auth_method: { type: string, enum: [password, key] }
+        connection_status: { type: string, enum: [online, offline, unknown] }
+        last_heartbeat: { type: string, format: date-time, nullable: true }
+        tags: { type: string }
+        created_at: { type: string, format: date-time }
+    ServerMetric:
+      type: object
+      properties:
+        id: { type: integer }
+        server_id: { type: integer }
+        ts: { type: string, format: date-time }
+        cpu_pct: { type: number }
+        mem_pct: { type: number }
+        disk_pct: { type: number }
+        load1: { type: number }
+        net_in_kbps: { type: number }
+        net_out_kbps: { type: number }
+    Container:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        image: { type: string }
+        state: { type: string }
+        status: { type: string }
+        created_at: { type: string }
+        ports: { type: string }
+    AlertRule:
+      type: object
+      properties:
+        id: { type: integer }
+        server_id: { type: integer, nullable: true }
+        metric: { type: string }
+        operator: { type: string }
+        threshold: { type: number }
+        severity: { type: string }
+        enabled: { type: boolean }
+        notify_channels: { type: string }
+        created_at: { type: string, format: date-time }
+    AlertEvent:
+      type: object
+      properties:
+        id: { type: integer }
+        server_id: { type: integer, nullable: true }
+        rule_id: { type: integer, nullable: true }
+        severity: { type: string }
+        title: { type: string }
+        message: { type: string }
+        is_read: { type: boolean }
+        created_at: { type: string, format: date-time }
+    Job:
+      type: object
+      properties:
+        jobId: { type: string }
+        kind: { type: string }
+        status: { type: string, enum: [pending, running, done, failed, cancelled] }
+        serverId: { type: integer }
+        uid: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        lines: { type: array, items: { type: string } }
+        error: { type: string, nullable: true }
+
+paths:
+  # ===== 系统 / 公开 =====
+  /api/health:
+    get:
+      operationId: getHealth
+      tags: [system]
+      x-app-consumed: true
+      summary: 健康检查（公开）
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/bootstrap:
+    get:
+      operationId: getBootstrap
+      tags: [system]
+      x-app-consumed: true
+      summary: 首屏聚合（M9.0b）：服务器列表+最新指标+未读告警+版本/schema
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/audit:
+    get:
+      operationId: listAudit
+      tags: [system]
+      x-app-consumed: true
+      summary: 操作审计日志
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  # ===== 认证 =====
+  /api/login:
+    post:
+      operationId: login
+      tags: [auth]
+      x-app-consumed: true
+      summary: 登录（返回 token，data 含 refresh_expires_at 向后兼容）
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/refresh:
+    post:
+      operationId: refreshToken
+      tags: [auth]
+      x-app-consumed: true
+      summary: 刷新 token（data 含 refresh_expires_at 向后兼容）
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      x-app-consumed: true
+      summary: 当前用户
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/auth/change-password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      x-app-consumed: true
+      summary: 修改密码（并使旧 token 失效）
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  # ===== 服务器管理 =====
+  /api/servers:
+    get:
+      operationId: listServers
+      tags: [servers]
+      x-app-consumed: true
+      summary: 列出被管服务器
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+    post:
+      operationId: createServer
+      tags: [servers]
+      x-app-consumed: true
+      summary: 新增服务器
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/servers/{id}:
+    get:
+      operationId: getServer
+      tags: [servers]
+      x-app-consumed: true
+      summary: 服务器详情
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+    delete:
+      operationId: deleteServer
+      tags: [servers]
+      x-app-consumed: true
+      summary: 删除服务器
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/servers/{id}/test:
+    post:
+      operationId: testServer
+      tags: [servers]
+      x-app-consumed: true
+      summary: 测试 SSH 连通性
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  # ===== 容器 =====
+  /api/servers/{id}/containers:
+    get:
+      operationId: listContainers
+      tags: [containers]
+      x-app-consumed: true
+      summary: 容器列表
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/servers/{id}/containers/{cid}/actions:
+    post:
+      operationId: containerAction
+      tags: [containers]
+      x-app-consumed: true
+      summary: 容器操作（start/stop/restart/...）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: cid, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/servers/{id}/containers/{cid}/logs-ticket:
+    post:
+      operationId: logsTicket
+      tags: [containers]
+      x-app-consumed: true
+      summary: 签发日志流一次性 ticket（浏览器 WS 用）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: cid, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/servers/{id}/containers/{cid}/logs:
+    get:
+      operationId: containerLogs
+      tags: [containers]
+      x-app-consumed: true
+      summary: 容器日志流（WS，App 可直连带 Bearer 绕过 logs-ticket；详见 realtime-contract.yaml）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: cid, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 升级为 WebSocket
+  /api/servers/{id}/container-stats:
+    get:
+      operationId: containerStats
+      tags: [containers]
+      x-app-consumed: true
+      summary: 容器实时资源统计
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  # ===== 镜像 =====
+  /api/servers/{id}/images:
+    get:
+      operationId: listImages
+      tags: [images]
+      x-app-consumed: true
+      summary: 镜像列表
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/servers/{id}/images/pull:
+    post:
+      operationId: pullImage
+      tags: [images]
+      x-app-consumed: true
+      summary: 拉取镜像
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/servers/{id}/images/{imageId}:
+    delete:
+      operationId: removeImage
+      tags: [images]
+      x-app-consumed: true
+      summary: 删除镜像
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: imageId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  # ===== 网络 / 卷 =====
+  /api/servers/{id}/networks:
+    get:
+      operationId: listNetworks
+      tags: [networks]
+      x-app-consumed: true
+      summary: 网络列表
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/servers/{id}/volumes:
+    get:
+      operationId: listVolumes
+      tags: [volumes]
+      x-app-consumed: true
+      summary: 卷列表
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  # ===== 监控指标 =====
+  /api/servers/{id}/metrics:
+    get:
+      operationId: listMetrics
+      tags: [metrics]
+      x-app-consumed: true
+      summary: 时序指标采样
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/servers/{id}/metrics/latest:
+    get:
+      operationId: latestMetric
+      tags: [metrics]
+      x-app-consumed: true
+      summary: 最新指标快照
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  # ===== 告警 =====
+  /api/alert-rules:
+    get:
+      operationId: listAlertRules
+      tags: [alerts]
+      x-app-consumed: true
+      summary: 告警规则列表
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+    post:
+      operationId: createAlertRule
+      tags: [alerts]
+      x-app-consumed: true
+      summary: 新建告警规则
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/alert-rules/{id}:
+    delete:
+      operationId: deleteAlertRule
+      tags: [alerts]
+      x-app-consumed: true
+      summary: 删除告警规则
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/alerts:
+    get:
+      operationId: listAlerts
+      tags: [alerts]
+      x-app-consumed: true
+      summary: 通知中心收件箱
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/alerts/{id}/read:
+    post:
+      operationId: markAlertRead
+      tags: [alerts]
+      x-app-consumed: true
+      summary: 标记告警已读
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  # ===== 设置 =====
+  /api/settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      x-app-consumed: true
+      summary: 读取运行期设置
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+    put:
+      operationId: putSettings
+      tags: [settings]
+      x-app-consumed: true
+      summary: 更新设置
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/settings/test-channel:
+    post:
+      operationId: testChannel
+      tags: [settings]
+      x-app-consumed: true
+      summary: 测试通知通道
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/settings/actions/revoke-sessions:
+    post:
+      operationId: revokeSessions
+      tags: [settings]
+      x-app-consumed: true
+      summary: 吊销全部会话（使所有 token 失效）
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  # ===== 软件包更新（M9.0b：SSE 流式 + 202 双通道）=====
+  /api/servers/{id}/packages/update:
+    post:
+      operationId: packageUpdate
+      tags: [packages]
+      x-app-consumed: true
+      summary: 触发软件包升级（立即 202 + Location:/api/jobs/{id}，并保持 SSE 实时流；详见 realtime-contract.yaml）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '202':
+          description: 已接受，任务异步执行（Location 指向 /api/jobs/{id}）
+          headers:
+            Location:
+              description: 后台任务地址
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  # ===== 后台任务（M9.0b）=====
+  /api/jobs/{id}:
+    get:
+      operationId: getJob
+      tags: [jobs]
+      x-app-consumed: true
+      summary: 查询后台任务（如软件包升级）进度，支持断连后续接
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+    delete:
+      operationId: deleteJob
+      tags: [jobs]
+      x-app-consumed: true
+      summary: 取消后台任务（SIGINT 中断远端 apt）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  # ===== 文件管理（x-app-consumed=false，仍入哨兵）=====
+  /api/servers/{id}/files:
+    get:
+      operationId: listFiles
+      tags: [files]
+      x-app-consumed: false
+      summary: 列目录
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 成功 }
+    delete:
+      operationId: deleteFile
+      tags: [files]
+      x-app-consumed: false
+      summary: 删除文件/目录
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 成功 }
+  /api/servers/{id}/files/download:
+    get:
+      operationId: downloadFile
+      tags: [files]
+      x-app-consumed: false
+      summary: 下载文件
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 文件流 }
+  /api/servers/{id}/files/upload:
+    post:
+      operationId: uploadFile
+      tags: [files]
+      x-app-consumed: false
+      summary: 上传文件（分片协议见 realtime-contract.yaml）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 成功 }
+  /api/servers/{id}/files/content:
+    get:
+      operationId: getFileContent
+      tags: [files]
+      x-app-consumed: false
+      summary: 读取文件内容
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 成功 }
+    put:
+      operationId: putFileContent
+      tags: [files]
+      x-app-consumed: false
+      summary: 写入文件内容
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 成功 }
+  /api/servers/{id}/files/rename:
+    post:
+      operationId: renameFile
+      tags: [files]
+      x-app-consumed: false
+      summary: 重命名
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 成功 }
+  /api/servers/{id}/files/copy:
+    post:
+      operationId: copyFile
+      tags: [files]
+      x-app-consumed: false
+      summary: 复制
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 成功 }
+  /api/servers/{id}/files/stat:
+    get:
+      operationId: statFile
+      tags: [files]
+      x-app-consumed: false
+      summary: 文件/目录元信息
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 成功 }
+
+  # ===== Compose 管理（x-app-consumed=false，仍入哨兵）=====
+  /api/servers/{id}/compose:
+    get:
+      operationId: listCompose
+      tags: [compose]
+      x-app-consumed: false
+      summary: 列出 compose 工程
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 成功 }
+  /api/servers/{id}/compose/content:
+    get:
+      operationId: getComposeContent
+      tags: [compose]
+      x-app-consumed: false
+      summary: 读取 compose 文件内容
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 成功 }
+    put:
+      operationId: putComposeContent
+      tags: [compose]
+      x-app-consumed: false
+      summary: 写入 compose 文件内容
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 成功 }
+  /api/servers/{id}/compose/actions:
+    post:
+      operationId: composeAction
+      tags: [compose]
+      x-app-consumed: false
+      summary: compose 操作（up/down/restart）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 成功 }

@@ -1,6 +1,6 @@
-# fleetboard CI 质量门禁（M7.3b）
+# fleetboard CI 质量门禁（M7.3b / M9.0a）
 # 触发：手动（Actions 页 workflow_dispatch）+ PR；push 不自动跑（用户要求低频）
-# 注：contract job（TestContract 契约比对）随 M9.0a 落地后补入
+# contract job（TestContract 契约比对）随 M9.0a 落地补入，与 go/web 并行
 name: ci
 
 on:
@@ -55,3 +55,17 @@ jobs:
       - name: build
         working-directory: web
         run: npm run build
+
+  contract:
+    name: Contract (OpenAPI route sentinel)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: contract (TestContract)
+        run: make contract

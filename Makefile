@@ -4,7 +4,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all build test vet fmt lint run release web clean
+.PHONY: all build test vet fmt lint run release web clean contract
 
 all: fmt vet test build
 
@@ -25,6 +25,10 @@ lint:
 
 run:
 	$(GO) run ./cmd/server
+
+# contract: M9.0a 路由契约哨兵——比对 engine.Routes() 与 api/openapi.yaml / realtime-contract.yaml
+contract:
+	$(GO) test ./internal/api -run TestContract -count=1
 
 web:
 	cd web && npm ci && npm run build
