@@ -6,6 +6,7 @@ import { IconBell, IconGear, IconGrid, IconLogout } from "@/components/icons";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { useAuth } from "@/store/auth";
 import { listAlerts } from "@/lib/alerts";
+import { apiGet } from "@/lib/api";
 import { cn } from "@/lib/cn";
 
 interface NavItem {
@@ -39,6 +40,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     refetchInterval: 30_000,
   });
   const unreadCount = unread.data?.length ?? 0;
+
+  // 服务版本号（M8.2）：/api/health 公开端点，一次拉取长期缓存
+  const version = useQuery({
+    queryKey: ["app-version"],
+    queryFn: () => apiGet<{ version: string }>("/api/health"),
+    staleTime: Infinity,
+  });
 
   const handleLogout = () => {
     // 先清缓存再清登录态，避免下一位看到上一轮的服务端数据
@@ -94,6 +102,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <IconLogout />
             退出登录
           </button>
+          <div className="px-2.5 pb-2 pt-1 text-[10px] text-text-faint">
+            {version.data?.version ? `v${version.data.version.replace(/^v/, "")}` : "…"}
+          </div>
         </div>
       </aside>
 
@@ -116,6 +127,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* 内容区：移动端为底部 Tab 预留安全区 */}
       <main className="min-w-0 flex-1 pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0">
         <div className="mx-auto w-full max-w-[1440px] px-3 py-4 sm:px-5 sm:py-6">{children}</div>
+        <div className="pb-3 pt-2 text-center text-[10px] text-text-faint lg:hidden">
+          fleetboard {version.data?.version ? version.data.version.replace(/^v/, "") : "…"}
+        </div>
       </main>
 
       {/* 移动端底部 Tab */}
