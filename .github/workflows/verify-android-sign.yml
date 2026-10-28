@@ -1,0 +1,57 @@
+name: verify-android-sign
+
+# 手动触发：校验 ANDROID_* secrets 能否解出可用的 keystore，且证书指纹与记录一致。
+# 不构建 APK、不创建 Release，1 分钟内完成。
+# 用途：换 keystore / 改密码后先跑这个，再打 tag，避免发布流程跑到一半才失败。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 解码 keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 未配置"
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/fleetboard.jks
+          ls -l /tmp/fleetboard.jks
+
+      - name: 校验 keystore 文件哈希
+        run: |
+          # 与仓库外备份 fleetboard.jks 的哈希比对，确认 base64 往返无损
+          echo "1f79c0b1985bdbb903b89507dbe24b34303af49ddae015256a2dc29eefbef0e3  /tmp/fleetboard.jks" | sha256sum -c -
+
+      - name: 校验 alias、store 密码与证书指纹
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          keytool -list -v -keystore /tmp/fleetboard.jks \
+            -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" | tee /tmp/k.txt
+          if ! grep -qi "3E:CD:40:A6:2C:BF:9B:BE:0C:3F:E3:6E:6B:A1:0A:96:75:4B:BF:FB:EB:1C:8C:BB:E7:C8:37:9E:54:6C:63:42" /tmp/k.txt; then
+            echo "::error::证书 SHA-256 与记录不符，keystore 可能不是发布用的那一份"
+            exit 1
+          fi
+
+      - name: 校验 key 密码（能签出 CSR 即密码正确）
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          keytool -certreq -alias "$KEY_ALIAS" -keystore /tmp/fleetboard.jks \
+            -storepass "$STORE_PASSWORD" -keypass "$KEY_PASSWORD" \
+            -file /tmp/probe.csr >/dev/null
+          test -s /tmp/probe.csr && echo "key 密码正确，可正常签名"
+          rm -f /tmp/fleetboard.jks /tmp/probe.csr /tmp/k.txt
+
+      - name: 结论
+        run: echo "✅ 4 个 ANDROID_* secrets 内容正确，release.yml 的 android job 可以产出已签名 APK"
