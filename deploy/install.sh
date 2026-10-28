@@ -103,9 +103,10 @@ if command -v python3 >/dev/null 2>&1 && [ -f "$BASE/id_local" ]; then
   REG_USER=${CREDS%% /*}
   REG_PASS=${CREDS#* / }
   if [ -n "$REG_USER" ] && [ -n "$REG_PASS" ]; then
-    if python3 - "$REG_USER" "$REG_PASS" "$PORT_NUM" "$BASE/id_local" <<'REGEOF'
+    M83_PORT=${FLEETBOARD_LOCAL_SSH_PORT:-22}
+    if python3 - "$REG_USER" "$REG_PASS" "$PORT_NUM" "$BASE/id_local" "$M83_PORT" <<'REGEOF'
 import json, sys, urllib.request
-user, password, port, keypath = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+user, password, port, keypath, ssh_port = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5])
 base = "http://127.0.0.1:" + port
 def post(path, payload, token=None):
     headers = {"Content-Type": "application/json"}
@@ -116,7 +117,7 @@ def post(path, payload, token=None):
         return json.loads(r.read())
 token = post("/api/login", {"username": user, "password": password})["data"]["access_token"]
 key = open(keypath).read()
-post("/api/servers", {"name": "本机", "host": "127.0.0.1", "port": 22,
+post("/api/servers", {"name": "本机", "host": "127.0.0.1", "port": ssh_port,
                       "ssh_user": "root", "auth_method": "key",
                       "private_key": key, "tags": "local"}, token)
 print("本机已自动注册（127.0.0.1, tags=local）")
