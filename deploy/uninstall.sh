@@ -3,8 +3,8 @@
 # 数据目录删除前需确认；其余为固定布局，直接回收。
 set -euo pipefail
 
-BASE=/opt/fleetboard
-DATA=/var/lib/fleetboard
+BASE=${FLEETBOARD_BASE:-/opt/fleetboard}
+DATA=${FLEETBOARD_DATA:-/var/lib/fleetboard}
 UNIT=/etc/systemd/system/fleetboard.service
 
 [ "$(id -u)" = 0 ] || { echo "请用 root 运行"; exit 1; }
@@ -25,6 +25,13 @@ if [ -d "$DATA" ]; then
   a=""
   if { printf "确认删除？输入 DELETE 继续，其他任意键保留: " >/dev/tty && read -r a </dev/tty; } 2>/dev/null; then :; fi
   [ "$a" = "DELETE" ] && { rm -rf "$DATA"; echo "已删除 $DATA"; } || echo "已保留 $DATA（可稍后手动删除）"
+fi
+
+# 本机纳管清理（M8.3）：按 fleetboard-local 标记精准回收 authorized_keys 行
+AUTHKEYS=${FLEETBOARD_AUTHKEYS:-/root/.ssh/authorized_keys}
+if [ -f "$AUTHKEYS" ] && grep -q "fleetboard-local" "$AUTHKEYS"; then
+  sed -i '/fleetboard-local/d' "$AUTHKEYS"
+  echo "==> 已按 fleetboard-local 标记回收 authorized_keys 条目"
 fi
 
 echo "==> 残留扫描"

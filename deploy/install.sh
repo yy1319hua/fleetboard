@@ -76,6 +76,7 @@ else
   exit 1
 fi
 
+REG_HINT="手动纳管：Web 服务器页添加 127.0.0.1，私钥用 $BASE/id_local"
 echo "==> 提取首次启动自举账密（仅显示这一次，请立即记录）："
 sleep 1
 BOOT_LOG=$(journalctl -u fleetboard -n 50 --no-pager 2>/dev/null | grep "首次启动自举" | tail -1 || true)
@@ -84,4 +85,52 @@ if [ -n "$BOOT_LOG" ]; then
 else
   echo "    （未从日志提取到，请手动执行：journalctl -u fleetboard | grep 自举）"
 fi
+
+# ---- 本机自动纳管（M8.3）：id_local 密钥对 + authorized_keys 标记 + API 注册 127.0.0.1 ----
+KEY_TAG="fleetboard-local"
+AUTHKEYS=${FLEETBOARD_AUTHKEYS:-/root/.ssh/authorized_keys}
+if command -v ssh-keygen >/dev/null 2>&1 && [ ! -f "$BASE/id_local" ]; then
+  echo "==> 本机自动纳管：生成 id_local 密钥对"
+  ssh-keygen -t ed25519 -N "" -C "$KEY_TAG" -f "$BASE/id_local" -q
+  mkdir -p "$(dirname "$AUTHKEYS")" && chmod 700 "$(dirname "$AUTHKEYS")"
+  touch "$AUTHKEYS" && chmod 600 "$AUTHKEYS"
+  grep -q "$KEY_TAG" "$AUTHKEYS" || cat "$BASE/id_local.pub" >> "$AUTHKEYS"
+fi
+
+if command -v python3 >/dev/null 2>&1 && [ -f "$BASE/id_local" ]; then
+  CREDS=${BOOT_LOG#*已生成管理员账密 }
+  CREDS=${CREDS%%（*}
+  REG_USER=${CREDS%% /*}
+  REG_PASS=${CREDS#* / }
+  if [ -n "$REG_USER" ] && [ -n "$REG_PASS" ]; then
+    if python3 - "$REG_USER" "$REG_PASS" "$PORT_NUM" "$BASE/id_local" <<'REGEOF'
+import json, sys, urllib.request
+user, password, port, keypath = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+base = "http://127.0.0.1:" + port
+def post(path, payload, token=None):
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    req = urllib.request.Request(base + path, data=json.dumps(payload).encode(), headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())
+token = post("/api/login", {"username": user, "password": password})["data"]["access_token"]
+key = open(keypath).read()
+post("/api/servers", {"name": "本机", "host": "127.0.0.1", "port": 22,
+                      "ssh_user": "root", "auth_method": "key",
+                      "private_key": key, "tags": "local"}, token)
+print("本机已自动注册（127.0.0.1, tags=local）")
+REGEOF
+    then
+      echo "==> 本机自动纳管完成"
+    else
+      echo "⚠️ 本机自动注册失败（服务可能未就绪），$REG_HINT"
+    fi
+  else
+    echo "==> 本机自动纳管：账密来自 BOOTSTRAP_*，无法代登录，$REG_HINT"
+  fi
+else
+  echo "==> 本机自动纳管：缺 python3 或密钥，$REG_HINT"
+fi
+
 echo "==> 安装完成。卸载：sudo /opt/fleetboard/uninstall.sh"
