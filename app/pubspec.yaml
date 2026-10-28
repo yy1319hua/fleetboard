@@ -12,7 +12,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # build by specifying --build-name and --build-number, respectively.
 # In Android, build-name is used as versionName while build-number used as versionCode.
 # Read more about Android versioning at https://developer.android.com/studio/publish/versioning
-# In iOS, build-name is used as CFBundleShortVersionString while build-number used as CFBundleVersion.
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
 # Read more about iOS versioning at
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 version: 1.0.0+1
@@ -49,6 +49,8 @@ dependencies:
   #   理由：本步仅声明依赖，快照为小体积 JSON（服务器列表+指标+capturedAt），sp 足够；
   #   若 M9.2+ 需要结构化/大体积快照查询再评估 Isar，不在此步引入额外原生二进制依赖。）
   shared_preferences: ^2.2.0
+  # 实时日志：WebSocket 客户端（M9.3 步3；IOWebSocketChannel 支持自定义 header 带 Bearer）
+  web_socket_channel: ^3.0.0
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
