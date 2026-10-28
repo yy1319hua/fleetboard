@@ -1,4 +1,3 @@
-import 'package:app/core/http/providers.dart';
 import 'package:app/core/storage/secure_store.dart';
 import 'package:app/features/auth/presentation/login_page.dart';
 import 'package:flutter/material.dart';

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants.dart';
-import '../../../core/http/providers.dart';
 import '../../../core/storage/secure_store.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/status_dot.dart';

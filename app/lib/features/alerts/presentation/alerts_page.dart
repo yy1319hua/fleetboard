@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/status_dot.dart';
 import '../application/alerts_notifier.dart';
-import '../domain/alert_event.dart';
 
 /// 告警级别 -> 语义色。
 StatusKind _kindFromSeverity(String severity) => switch (severity) {

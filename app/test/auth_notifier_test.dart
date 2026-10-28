@@ -1,4 +1,3 @@
-import 'package:app/core/http/providers.dart';
 import 'package:app/core/storage/auth_session.dart';
 import 'package:app/core/storage/secure_store.dart';
 import 'package:app/features/auth/application/auth_notifier.dart';

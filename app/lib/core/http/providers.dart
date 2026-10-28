@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../storage/secure_store.dart';
 import '../../features/auth/application/auth_notifier.dart';
-import 'auth_interceptor.dart';
 import 'dio_client.dart';
 
 /// 鉴权 dio：注入 base_url + Bearer，401 经 AuthNotifier 单飞刷新后重放。

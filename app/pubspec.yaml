@@ -63,7 +63,6 @@ dev_dependencies:
   # ── M9.1 代码生成与 lint（本地不运行，交给 CI 的 build_runner / analyze）──
   build_runner: ^2.4.0
   riverpod_generator: ^2.4.0
-  freezed: ^2.5.0
   json_serializable: ^6.7.0
   # 可选：riverpod_lint 依赖 custom_lint；本步仅声明，未启用 analyzer plugin。
   custom_lint: ^0.6.0
