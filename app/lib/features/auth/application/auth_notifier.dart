@@ -169,7 +169,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
         refreshExpiresAt: token.refreshExpiresAt,
       );
       await secureStore.saveSession(session);
-      state = state.copyWith(loading: false, session: session, error: null);
+      state = state.copyWith(
+        loading: false,
+        session: session,
+        error: null,
+        initialized: true,
+      );
     } on Object catch (e) {
       state = state.copyWith(loading: false, error: resolveLoginError(e));
     }
