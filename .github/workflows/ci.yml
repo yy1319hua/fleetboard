@@ -1,11 +1,9 @@
 # fleetboard CI 质量门禁（M7.3b）
-# 方案来源：PLAN-NEXT.md §6.1；push(main)/PR 触发，全绿才可合并
+# 触发：手动（Actions 页 workflow_dispatch）+ PR；push 不自动跑（用户要求低频）
 # 注：contract job（TestContract 契约比对）随 M9.0a 落地后补入
 name: ci
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
