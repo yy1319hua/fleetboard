@@ -1,0 +1,96 @@
+import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/http/envelope.dart';
+import '../../../core/http/providers.dart';
+import '../domain/docker_resource.dart';
+
+/// 资源域仓储：镜像 / 网络 / 卷。
+///
+/// 契约（`internal/api/docker_handlers.go` + `router.go`）：
+///  - `GET    /api/servers/:id/images`            → `[{id, repository, tag, size, created_since}]`
+///  - `POST   /api/servers/:id/images/pull`       → `{image, output}`（**同步**，无 202/jobId）
+///  - `DELETE /api/servers/:id/images/:imageId`   → `{deleted, output}`（镜像不存在视为成功）
+///  - `GET    /api/servers/:id/networks`          → `[{id, name, driver, scope}]`
+///  - `GET    /api/servers/:id/volumes`           → `[{name, driver, mountpoint}]`
+///
+/// 网络与卷**只有 GET**：`router.go` 里没有 `/networks` 与 `/volumes` 的写路由，
+/// 所以 App 端不做创建/删除（不做灰按钮，页面上直接写清"去 Web 端"）。
+///
+/// `pull` 走 `streamDio`：`docker pull` 几分钟很常见，JSON 档 20s 的 receiveTimeout
+/// 会在拉取**正在进行**时报超时，用户重试一次就是重复拉取。
+class ResourcesRepository {
+  ResourcesRepository(this._json, this._stream);
+
+  final Dio _json;
+  final Dio _stream;
+
+  Future<List<DockerImage>> listImages(int serverId) async {
+    final resp = await _json.get<dynamic>('/api/servers/$serverId/images');
+    return unwrapList<DockerImage>(resp.data, DockerImage.fromJson);
+  }
+
+  Future<List<DockerNetwork>> listNetworks(int serverId) async {
+    final resp = await _json.get<dynamic>('/api/servers/$serverId/networks');
+    return unwrapList<DockerNetwork>(resp.data, DockerNetwork.fromJson);
+  }
+
+  Future<List<DockerVolume>> listVolumes(int serverId) async {
+    final resp = await _json.get<dynamic>('/api/servers/$serverId/volumes');
+    return unwrapList<DockerVolume>(resp.data, DockerVolume.fromJson);
+  }
+
+  /// 拉取镜像，返回 docker 的合并输出（进度行都在里面）。
+  Future<String> pullImage(
+    int serverId,
+    String reference, {
+    CancelToken? cancelToken,
+  }) async {
+    final resp = await _stream.post<dynamic>(
+      '/api/servers/$serverId/images/pull',
+      data: <String, dynamic>{'image': reference},
+      cancelToken: cancelToken,
+    );
+    final data = unwrap<Map<String, dynamic>>(resp.data, (json) => json);
+    return (data['output'] as String?) ?? '';
+  }
+
+  /// 删除镜像。必须用镜像 **ID**（见 [DockerImage.id] 注释）。
+  Future<String> removeImage(int serverId, String imageId) async {
+    final resp = await _json.delete<dynamic>(
+      // ID 可能带 `sha256:` 前缀，作为路径段必须整体编码（`:` 是保留字符）。
+      '/api/servers/$serverId/images/${Uri.encodeComponent(imageId)}',
+    );
+    final data = unwrap<Map<String, dynamic>>(resp.data, (json) => json);
+    return (data['output'] as String?) ?? '';
+  }
+}
+
+final resourcesRepositoryProvider = Provider<ResourcesRepository>(
+  (ref) => ResourcesRepository(
+    ref.watch(jsonDioProvider),
+    ref.watch(streamDioProvider),
+  ),
+);
+
+/// 三个列表各自的 provider：按 Tab 独立加载、独立重试，互不牵连。
+///
+/// 用 FutureProvider 而不是 StateNotifier：这三个列表没有轮询、没有本地变更，
+/// 只需要「拉一次 + 手动 invalidate」，多写一个 Notifier 只会多一份状态同步负担。
+final imagesProvider =
+    FutureProvider.autoDispose.family<List<DockerImage>, int>(
+  (ref, serverId) =>
+      ref.watch(resourcesRepositoryProvider).listImages(serverId),
+);
+
+final networksProvider =
+    FutureProvider.autoDispose.family<List<DockerNetwork>, int>(
+  (ref, serverId) =>
+      ref.watch(resourcesRepositoryProvider).listNetworks(serverId),
+);
+
+final volumesProvider =
+    FutureProvider.autoDispose.family<List<DockerVolume>, int>(
+  (ref, serverId) =>
+      ref.watch(resourcesRepositoryProvider).listVolumes(serverId),
+);
