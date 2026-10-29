@@ -153,11 +153,13 @@ jobs:
             --target-platform android-arm64 \
             --dart-define=FLEETBOARD_BASE_URL="$FLEETBOARD_BASE_URL"
 
-      - name: 生成 APK 校验和（独立文件，不并入服务端 sums.txt）
+      - name: 重命名 APK（fleetboard-*）并生成校验和（独立文件，不并入服务端 sums.txt）
         if: steps.guard.outputs.ready == 'true'
         run: |
           cd app/build/app/outputs/flutter-apk
-          sha256sum app-arm64-v8a-release.apk > sums-android.txt
+          # Flutter 默认产物名 app-arm64-v8a-release.apk 按产品名重命名后上传
+          mv app-arm64-v8a-release.apk fleetboard-arm64-v8a-release.apk
+          sha256sum fleetboard-arm64-v8a-release.apk > sums-android.txt
           cat sums-android.txt
 
       - name: 上传 APK 与校验和到 Release
@@ -166,5 +168,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "$GITHUB_REF_NAME" \
-            app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            app/build/app/outputs/flutter-apk/fleetboard-arm64-v8a-release.apk \
             app/build/app/outputs/flutter-apk/sums-android.txt

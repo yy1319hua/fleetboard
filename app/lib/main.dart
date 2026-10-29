@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app/app.dart';
 import 'package:app/core/config/app_config.dart';
 import 'package:app/core/storage/secure_store.dart';
@@ -7,12 +9,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 Future<void> main() async {
   // 确保原生插件（flutter_secure_storage / shared_preferences）在 runApp 前就绪。
   WidgetsFlutterBinding.ensureInitialized();
-  await _materializeBaseUrl();
+  // 基址物化不阻塞首帧：runApp 先出画面，安全存储读写放到之后执行
+  // （请求侧本就有内置兜底地址，晚一拍写入不影响任何请求）。
   runApp(
     const ProviderScope(
       child: App(),
     ),
   );
+  unawaited(_materializeBaseUrl());
 }
 
 /// 首启 / 升级后把生效地址物化进 SecureStore（M10.2）。

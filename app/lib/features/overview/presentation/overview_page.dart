@@ -20,11 +20,35 @@ class OverviewPage extends ConsumerWidget {
     final auth = ref.watch(authNotifierProvider);
     final bootstrap = ref.watch(overviewProvider);
 
-    // 冷启动恢复中：先转圈，避免未登录闪现。
+    // 冷启动恢复中：全屏深色底品牌化 splash（与启动窗口背景同色），
+    // 无 AppBar 突现、无灰白闪屏，会话恢复完再进正常页面。
     if (!auth.initialized) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('总览')),
-        body: const Center(child: CircularProgressIndicator()),
+      return const Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                'Fleetboard',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                  color: AppColors.text,
+                ),
+              ),
+              SizedBox(height: 24),
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.accent,
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
