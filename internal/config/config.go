@@ -25,6 +25,7 @@ type Config struct {
 	OfflineThreshold     int      // 连续失败多少次判定离线
 	PushPlusToken        string   // PushPlus 告警通道 token
 	ComposeRoots         []string // compose 文件可读写根目录白名单（空=用内置默认）
+	UpgradeEnabled       bool     // 面板自更新开关（FLEETBOARD_UPGRADE_ENABLED，1/true 为开，默认关）
 }
 
 // Load 先加载 .env（若存在），再读取环境变量，返回校验通过的配置。
@@ -59,6 +60,8 @@ func Load() (*Config, error) {
 
 	cfg.DBPath = getenv("DB_PATH", cfg.DataDir+"/fleetboard.db")
 	cfg.ComposeRoots = splitCSV(os.Getenv("COMPOSE_ROOTS"))
+	// 自更新是危险操作（会停服、换二进制），默认关闭，必须显式打开
+	cfg.UpgradeEnabled = getenvBool("FLEETBOARD_UPGRADE_ENABLED")
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -133,6 +136,16 @@ func getenv(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// getenvBool 解析布尔型环境变量：仅 "1"/"true" 视为开（大小写不敏感），其余一律关。
+// 严格只认这两个取值，避免 "off"/"0"/"no" 之类写法产生歧义。
+func getenvBool(k string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(k))) {
+	case "1", "true":
+		return true
+	}
+	return false
 }
 
 func getenvInt(k string, def int) (int, error) {

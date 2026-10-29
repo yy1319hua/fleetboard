@@ -4,14 +4,21 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all build test vet fmt lint run release web clean contract
+.PHONY: all build test vet fmt lint run release web clean contract sync-upgrade
 
 all: fmt vet test build
 
-build:
+# deploy/upgrade.sh 是升级脚本的**唯一源**（运维可见、release 包也直接发它）。
+# go:embed 只能嵌入包目录内的文件，所以构建前把它同步成 internal/upgrade/upgrade.sh。
+# 副本必须入库：CI 直接跑 `go test ./...`（不经 make），没有副本就编译不过。
+sync-upgrade:
+	@cp deploy/upgrade.sh internal/upgrade/upgrade.sh
+	@chmod 755 internal/upgrade/upgrade.sh
+
+build: sync-upgrade
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/server
 
-test:
+test: sync-upgrade
 	$(GO) test ./...
 
 vet:
@@ -35,7 +42,7 @@ web:
 
 # release: 双架构静态二进制 + 前端产物 + 安装/卸载脚本 → deploy/release/
 # 产物即发即用包，scp 到目标机解压跑 ./install.sh
-release: test vet web
+release: sync-upgrade test vet web
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY)-linux-amd64 ./cmd/server
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY)-linux-arm64 ./cmd/server
 	rm -rf deploy/release && mkdir -p deploy/release/$(BINARY)-$(VERSION)/web-dist
