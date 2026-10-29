@@ -1,5 +1,8 @@
 # fleetboard
 
+![Go](https://img.shields.io/badge/Go-1.21-00ADD8?logo=go\&logoColor=white) ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react\&logoColor=black) ![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite\&logoColor=white) ![PWA](https://img.shields.io/badge/PWA-ready-5A0FC8?logo=pwa\&logoColor=white) ![Flutter](https://img.shields.io/badge/Flutter-3.24-02569B?logo=flutter\&logoColor=white) ![SQLite](https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite\&logoColor=white)
+[![CI](https://github.com/yy1319hua/fleetboard/actions/workflows/ci.yml/badge.svg)](https://github.com/yy1319hua/fleetboard/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/yy1319hua/fleetboard)](https://github.com/yy1319hua/fleetboard/releases) ![License](https://img.shields.io/github/license/yy1319hua/fleetboard)
+
 个人自用的多服务器管理工具：**SSH 直连纳管**，统一管理文件、Docker 容器、主机监控与告警、Compose 配置与系统包更新；Web 与移动端（PWA）同构，共用一套后端 API。
 
 > ⚠️ **声明**：本项目为**个人自用**，未经系统性安全审计与生产验证，按现状（AS-IS）提供。
