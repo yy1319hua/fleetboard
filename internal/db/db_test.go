@@ -16,7 +16,7 @@ func TestOpenAndMigrate(t *testing.T) {
 
 	for _, table := range []string{
 		"users", "servers", "ssh_credentials", "operation_log", "settings", "file_cache",
-		"server_metrics", "alert_rules", "alert_events",
+		"server_metrics", "alert_rules", "alert_events", "system_upgrades",
 	} {
 		var n int
 		if err := d.QueryRow(
@@ -33,8 +33,8 @@ func TestOpenAndMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Version: %v", err)
 	}
-	if v != "0004_token_ver.sql" {
-		t.Errorf("Version=%q, want 0004_token_ver.sql", v)
+	if v != "0005_system_upgrades.sql" {
+		t.Errorf("Version=%q, want 0005_system_upgrades.sql", v)
 	}
 }
 
@@ -57,8 +57,8 @@ func TestOpenIdempotent(t *testing.T) {
 	if err := d2.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 4 {
-		t.Errorf("迁移记录数=%d, want 4（重复打开不应重复应用）", n)
+	if n != 5 {
+		t.Errorf("迁移记录数=%d, want 5（重复打开不应重复应用）", n)
 	}
 }
 
@@ -71,7 +71,7 @@ func TestOpenCreatesParentDir(t *testing.T) {
 	}
 	defer d.Close()
 
-	if v, err := Version(d); err != nil || v != "0004_token_ver.sql" {
+	if v, err := Version(d); err != nil || v != "0005_system_upgrades.sql" {
 		t.Errorf("Version=%q err=%v", v, err)
 	}
 }

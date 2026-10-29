@@ -29,7 +29,15 @@ var (
 
 // BuildRouter 构建完整 HTTP 引擎（含配置加载、数据库、设置、连接池与后台服务），
 // 但不调用 r.Run()/ListenAndServe，便于契约测试复用同一引擎。
-func BuildRouter() *gin.Engine {
+//
+// 面板自更新按环境变量自建装配；生产路径走 BuildRouterWithUpgrade 注入 main 装配好的管理器。
+func BuildRouter() *gin.Engine { return buildRouter(nil) }
+
+// BuildRouterWithUpgrade 同 BuildRouter，但使用外部装配好的自更新依赖
+// （main 用它注入 upgrade.NewManager 的结果；wiring 为 nil 时回退自建）。
+func BuildRouterWithUpgrade(w *UpgradeWiring) *gin.Engine { return buildRouter(w) }
+
+func buildRouter(wiring *UpgradeWiring) *gin.Engine {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("配置加载失败: %v", err)
@@ -64,6 +72,18 @@ func BuildRouter() *gin.Engine {
 		log.Fatalf("读取 schema 版本失败: %v", err)
 	}
 
+	// 自更新未注入时按环境变量自建，保证单测/最小启动也能拿到一致的开关语义。
+	if wiring == nil {
+		wiring = upgradeWiringFromEnv(BuildVersion)
+	}
+	// 启动对账：上次升级可能停在半途（进程被 systemd 重启），状态文件里的终态
+	// 要补写进历史表，否则 App 会永远看到「进行中」。
+	if wiring.Manager != nil {
+		if snap, ok := wiring.Manager.Reconcile(); ok {
+			syncTerminalUpgrade(d, snap)
+		}
+	}
+
 	stop := make(chan struct{})
 	runBackground(d, store, pool, cfg.Key, cfg.PushPlusToken, stop)
 
@@ -82,6 +102,7 @@ func BuildRouter() *gin.Engine {
 		Port:         cfg.Port,
 		ComposeRoots: cfg.ComposeRoots,
 		WebDir:       os.Getenv("WEB_DIR"),
+		Upgrade:      wiring,
 	})
 }
 

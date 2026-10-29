@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yy1319hua/fleetboard/internal/settings"
@@ -22,6 +23,7 @@ type RouterOptions struct {
 	Port         int             // 只读展示用（M8.1c）
 	ComposeRoots []string        // compose 文件可读写根目录白名单（空=内置默认）
 	WebDir       string          // 前端构建产物目录（web/dist）；空或不存在则不托管静态资源
+	Upgrade      *UpgradeWiring  // 面板自更新装配；nil=按环境变量自建（默认关闭）
 }
 
 // NewRouter 构建 HTTP 路由。
@@ -56,6 +58,10 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 
 	// 需鉴权端点
 	authed := r.Group("/api", JWTAuth(opts.JWTSecret, opts.DB), AuditMiddleware(opts.DB))
+
+	// 幂等回放（M7）：仅覆盖「一次点击 = 一次副作用」的动作接口。
+	// 刻意不挂 /packages/update：它需要复用 job 并重新接上 SSE，回放会丢掉续接能力。
+	idem := authed.Group("", Idempotency(60*time.Second))
 	authed.GET("/me", meHandler(opts.DB))
 	authed.GET("/audit", listAuditHandler(opts.DB))
 
@@ -71,7 +77,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 
 	// Docker 管理
 	authed.GET("/servers/:id/containers", listContainersHandler(opts.DB, opts.MasterKey, opts.Pool))
-	authed.POST("/servers/:id/containers/:cid/actions", containerActionHandler(opts.DB, opts.MasterKey, opts.Pool))
+	idem.POST("/servers/:id/containers/:cid/actions", containerActionHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.POST("/servers/:id/containers/:cid/logs-ticket", logsTicketHandler(opts.JWTSecret))
 	authed.GET("/servers/:id/images", listImagesHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.POST("/servers/:id/images/pull", pullImageHandler(opts.DB, opts.MasterKey, opts.Pool))
@@ -126,7 +132,14 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.GET("/servers/:id/compose", listComposeHandler(opts.DB, opts.MasterKey, opts.Pool, composeRoots))
 	authed.GET("/servers/:id/compose/content", getComposeContentHandler(opts.DB, opts.MasterKey, opts.Pool, composeRoots))
 	authed.PUT("/servers/:id/compose/content", putComposeContentHandler(opts.DB, opts.MasterKey, opts.Pool, composeRoots))
-	authed.POST("/servers/:id/compose/actions", composeActionHandler(opts.DB, opts.MasterKey, opts.Pool, composeRoots))
+	idem.POST("/servers/:id/compose/actions", composeActionHandler(opts.DB, opts.MasterKey, opts.Pool, composeRoots))
+
+	// 面板自更新（M7）：App 与 Web 共用，开关关闭时 POST/status 显式 404
+	upSvc := newUpgradeService(opts.Version, opts.Upgrade)
+	authed.GET("/system/upgrade", systemUpgradeInfoHandler(upSvc, opts.DB))
+	authed.POST("/system/upgrade", triggerUpgradeHandler(upSvc, opts.DB))
+	authed.GET("/system/upgrade/status", systemUpgradeStatusHandler(upSvc, opts.DB))
+	authed.GET("/system/upgrades", upgradeHistoryHandler(upSvc, opts.DB))
 
 	// 后台任务（M9.0b）：查询 / 取消软件包升级等异步任务
 	authed.GET("/jobs/:id", jobGetHandler())

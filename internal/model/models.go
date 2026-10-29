@@ -89,3 +89,18 @@ type AlertEvent struct {
 	IsRead    bool      `json:"is_read"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// UpgradeRecord 面板自更新历史（system_upgrades 一行）。
+// 字段与表列一一对齐：status 取值 in_progress|done|failed|rolled_back|interrupted。
+type UpgradeRecord struct {
+	ID          int64      `json:"id"`
+	FromVersion string     `json:"from_version"`
+	ToVersion   string     `json:"to_version"`
+	Status      string     `json:"status"`
+	StartedAt   time.Time  `json:"started_at"`
+	FinishedAt  *time.Time `json:"finished_at"`
+	DurationMs  int64      `json:"duration_ms"`
+	ErrorCode   string     `json:"error_code"`
+	TriggeredBy *int64     `json:"triggered_by"`
+	LogPath     string     `json:"log_path"`
+}

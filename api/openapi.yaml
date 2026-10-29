@@ -1,6 +1,7 @@
 # fleetboard OpenAPI 契约（M9.0a）
 # 作用：CI 路由比对哨兵的事实源（internal/api/contract_test.go 读取本文件与 engine.Routes() 双向比对）。
-# 覆盖全部后端端点（含 M9.0b 新增：/api/bootstrap、/api/jobs/{id}、/api/servers/{id}/packages/update）。
+# 覆盖全部后端端点（含 M9.0b 新增：/api/bootstrap、/api/jobs/{id}、/api/servers/{id}/packages/update；
+# 含 M7 新增：/api/system/upgrade、/api/system/upgrade/status 面板自更新）。
 # 约定：x-app-consumed=true 表示 App 首版消费；files/compose 域为 false（仍入哨兵）。
 # 不生成 Dart（仅作 CI 比对与文档）。
 openapi: 3.0.3
@@ -99,6 +100,45 @@ components:
         message: { type: string }
         is_read: { type: boolean }
         created_at: { type: string, format: date-time }
+    UpgradeRecord:
+      type: object
+      description: 面板自更新历史（system_upgrades 一行）
+      properties:
+        id: { type: integer }
+        from_version: { type: string }
+        to_version: { type: string }
+        status:
+          type: string
+          enum: [in_progress, done, failed, rolled_back, interrupted]
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time, nullable: true }
+        duration_ms: { type: integer }
+        error_code: { type: string }
+        triggered_by: { type: integer, nullable: true }
+        log_path: { type: string }
+    UpgradeInfo:
+      type: object
+      description: 版本与可升级性（GET /api/system/upgrade 的 data）
+      properties:
+        current_version: { type: string }
+        latest_version: { type: string }
+        upgrade_enabled: { type: boolean, description: 配置开关 SELF_UPGRADE }
+        can_upgrade: { type: boolean, description: 开关开 + 有新版 + 无在途升级 + 环境满足 }
+        reason: { type: string, description: 不可升级时的中文原因，可升级时为空串 }
+        last: { allOf: [{ $ref: '#/components/schemas/UpgradeRecord' }], nullable: true }
+    UpgradeStatus:
+      type: object
+      description: 升级阶段与日志尾（POST 202 与 GET status 共用）
+      properties:
+        state:
+          type: string
+          description: 编排层状态（verifying=取包/sha256，backing_up=备份数据库，health_check=健康检查）
+          enum: [idle, requested, verifying, stopping, backing_up, replacing, starting, health_check, done, failed, rolled_back, interrupted]
+        phase_text: { type: string }
+        from: { type: string }
+        to: { type: string }
+        error_code: { type: string }
+        log_tail: { type: array, items: { type: string }, description: 日志末 20 行 }
     Job:
       type: object
       properties:
@@ -150,6 +190,105 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  # ===== 面板自更新（M7）：App 可查询 / 触发 / 跟踪 =====
+  /api/system/upgrade:
+    get:
+      operationId: getSystemUpgrade
+      tags: [system]
+      x-app-consumed: true
+      summary: 版本与可升级性（latest 取 GitHub Releases，5s 超时 + 10min 进程内缓存，失败降级不 5xx）
+      responses:
+        '200':
+          description: 成功（开关关闭时同样 200，can_upgrade=false 并用 reason 说明）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiEnvelope' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/UpgradeInfo' }
+    post:
+      operationId: triggerSystemUpgrade
+      tags: [system]
+      x-app-consumed: true
+      summary: 触发面板自更新（密码二次确认 + 幂等头 + 审计）
+      parameters:
+        - { name: X-Client-Op-Id, in: header, required: true, schema: { type: string }, description: 客户端操作唯一 ID，用于幂等与审计关联 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, description: 当前登录用户密码，二次确认用 }
+                target_version: { type: string, description: 目标版本，省略则取 latest }
+      responses:
+        '202':
+          description: '已受理（Location: /api/system/upgrade/status）'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiEnvelope' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/UpgradeStatus' }
+        '400': { description: 缺 X-Client-Op-Id 或密码 }
+        '401': { description: 密码错误或退避中 }
+        '404': { description: 本实例未开启面板自更新 }
+        '409': { description: 已有升级在进行 / 环境不满足 / 目标版本不高于当前 }
+  /api/system/upgrades:
+    get:
+      operationId: listSystemUpgrades
+      tags: [system]
+      x-app-consumed: true
+      summary: 升级历史分页（升级历史页用；开关关闭时 404）
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 20, maximum: 200 } }
+        - { name: offset, in: query, required: false, schema: { type: integer, default: 0 } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiEnvelope' }
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          items:
+                            type: array
+                            items: { $ref: '#/components/schemas/UpgradeRecord' }
+                          total: { type: integer, description: 全量总数，用于算是否还有下一页 }
+                          limit: { type: integer }
+                          offset: { type: integer }
+        '400': { description: limit/offset 非法 }
+        '404': { description: 本实例未开启面板自更新 }
+  /api/system/upgrade/status:
+    get:
+      operationId: getSystemUpgradeStatus
+      tags: [system]
+      x-app-consumed: true
+      summary: 升级阶段与日志尾（App 轮询跟踪）
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiEnvelope' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/UpgradeStatus' }
+        '404': { description: 本实例未开启面板自更新 }
 
   # ===== 认证 =====
   /api/login:
