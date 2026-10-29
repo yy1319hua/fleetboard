@@ -22,10 +22,27 @@ rootProject.buildDir = '../build'
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
+
+// ── 构建链路防御：统一所有插件子工程的 compileSdk ────────────────────
+// 背景：任一 Flutter 插件若声明高于根工程的 compileSdk（如 flutter_plugin_android_lifecycle
+// 2.0.26 硬编码 compileSdk 35），Gradle 会加载对应 platform 的 android.jar；
+// 而本工程 AGP 7.4.2 内置 AAPT2 无法解析 Android 15 (SDK 35) 的新资源表格式，构建报
+//   RES_TABLE_TYPE_TYPE entry offsets overlap actual entry data
+// 在所有子工程评估完成后统一回落 compileSdk，消除「插件单方面抬高 SDK 打挂构建」的结构性风险。
+// 注意：必须注册在 evaluationDependsOn(':app') 之前，否则 :app 已评估，afterEvaluate 注册会抛错。
+subprojects { subproject ->
+    subproject.afterEvaluate {
+        def androidExt = subproject.extensions.findByName('android')
+        if (androidExt != null && androidExt.hasProperty('compileSdkVersion')) {
+            androidExt.compileSdkVersion 34
+        }
+    }
+}
+
 subprojects {
     project.evaluationDependsOn(':app')
 }
 
-task clean(type: Delete) {
+tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
