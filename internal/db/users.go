@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"strings"
 
 	"github.com/yy1319hua/fleetboard/internal/auth"
 	"github.com/yy1319hua/fleetboard/internal/model"
@@ -12,6 +13,9 @@ import (
 
 // ErrUserNotFound 表示按用户名查询不到用户。
 var ErrUserNotFound = errors.New("用户不存在")
+
+// ErrUsernameTaken 表示目标用户名已被占用。
+var ErrUsernameTaken = errors.New("用户名已被占用")
 
 // EnsureAdmin 若 users 表为空且提供了 bootstrap 账号，则创建管理员，返回是否新建。
 // 已有用户时直接跳过（幂等），不会覆盖既有账户。
@@ -113,6 +117,47 @@ func GetTokenVer(d *sql.DB, id int64) (int64, error) {
 // UpdatePasswordAndBumpVer 更新密码并自增 token_ver（同事务），返回新版本号。
 func UpdatePasswordAndBumpVer(d *sql.DB, id int64, passwordHash string) (int64, error) {
 	return bumpVer(d, id, passwordHash)
+}
+
+// UpdateUsername 修改用户名。返回受影响行数为 0 时说明用户不存在。
+//
+// 重名判定以 users.username 的 UNIQUE 约束为准：调用方可以先查一次以给出
+// 更友好的提示，但预查与写入之间存在并发窗口，最终必须由这里的约束兜底。
+// 错误串匹配而非错误码，是为了不绑死 modernc 驱动的内部 API；串形如
+// "constraint failed: UNIQUE constraint failed: users.username (2067)"。
+func UpdateUsername(d *sql.DB, id int64, username string) error {
+	res, err := d.Exec(`UPDATE users SET username = ? WHERE id = ?`, username, id)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return ErrUsernameTaken
+		}
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+// UsernameExistsCI 判断用户名是否已被他人占用（大小写不敏感）。
+//
+// SQLite 的 UNIQUE 是二进制比较，所以 `Admin` 与 `admin` 在库层面可以并存；
+// 但登录按名精确匹配、界面上两者看起来一样，用户会以为是同一个账号。
+// 因此重名判定在应用层做大小写不敏感的比较，excludeID 用于排除自己。
+func UsernameExistsCI(d *sql.DB, username string, excludeID int64) (bool, error) {
+	var n int
+	err := d.QueryRow(
+		`SELECT COUNT(1) FROM users WHERE lower(username) = lower(?) AND id <> ?`,
+		username, excludeID,
+	).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // BumpTokenVer 仅自增 token_ver（注销其他会话用），不动密码。返回新版本号。

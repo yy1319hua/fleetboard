@@ -200,6 +200,36 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/auth/change-username:
+    post:
+      operationId: changeUsername
+      tags: [auth]
+      x-app-consumed: true
+      summary: 修改用户名（验当前密码；不重签 token、不动 token_ver）
+      description: |
+        用户名会出现在登录页/设置页/审计里，按纯文本展示，故限制为
+        3–32 位、以字母或数字开头、只允许 `[A-Za-z0-9_.-]`。
+        重名判定大小写不敏感；并发窗口由 users.username 的 UNIQUE 约束兜底。
+        改名不影响鉴权（JWT claims 只有 uid/typ/ver），客户端显示名经 `GET /api/me` 刷新。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_username, current_password]
+              properties:
+                new_username: { type: string }
+                current_password: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+        '400': { description: 格式非法或与当前用户名相同 }
+        '401': { description: 当前密码错误 }
+        '409': { description: 用户名已被占用 }
 
   # ===== 服务器管理 =====
   /api/servers:
@@ -469,6 +499,38 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiEnvelope' }
   /api/alert-rules/{id}:
+    put:
+      operationId: updateAlertRule
+      tags: [alerts]
+      x-app-consumed: true
+      summary: 部分更新告警规则（merge 语义：未传字段保持原值）
+      description: |
+        与 `PUT /api/settings` 一致采用 merge 语义，而不是全量替换：
+        App 里「改阈值」与「开关规则」是两个独立入口，全量替换会让漏传的字段被清空。
+        `server_id` 不可修改——改归属等同删旧建新，会让历史通知指向语义已变的规则。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                metric: { type: string, enum: [cpu_pct, mem_pct, disk_pct, offline] }
+                operator: { type: string, enum: ['>', '>=', '<', '<=', '='] }
+                threshold: { type: number, minimum: 0, maximum: 100 }
+                severity: { type: string, enum: [info, warn, critical] }
+                enabled: { type: boolean }
+                notify_channels: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+        '400': { description: 字段非法或试图修改 server_id }
+        '404': { description: 规则不存在 }
     delete:
       operationId: deleteAlertRule
       tags: [alerts]

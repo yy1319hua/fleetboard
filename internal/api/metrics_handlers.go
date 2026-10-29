@@ -29,12 +29,19 @@ func metricsHandler(d *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		list, err := db.QueryMetrics(d, id, time.Now().Add(-span))
+		// 服务端分桶：24h 取 5 分钟桶（≈288 点）、7d 取 30 分钟桶（≈336 点）。
+		// 原样返回 7d × 30s ≈ 2 万行会让手机端先卡在 JSON 解析上。
+		// 客户端仍会再做一次 min-max 抽稀到绘制点数，两层各管一段。
+		step := 300
+		if rng == "7d" {
+			step = 1800
+		}
+		list, err := db.QueryMetricsDownsampled(d, id, time.Now().Add(-span), step)
 		if err != nil {
 			Fail(c, err)
 			return
 		}
-		OK(c, gin.H{"range": rng, "count": len(list), "points": list})
+		OK(c, gin.H{"range": rng, "step_sec": step, "count": len(list), "points": list})
 	}
 }
 

@@ -56,7 +56,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 
 	// 需鉴权端点
 	authed := r.Group("/api", JWTAuth(opts.JWTSecret, opts.DB), AuditMiddleware(opts.DB))
-	authed.GET("/me", meHandler())
+	authed.GET("/me", meHandler(opts.DB))
 	authed.GET("/audit", listAuditHandler(opts.DB))
 
 	// 首屏聚合（M9.0b）：服务器列表 + 各机最新指标 + 未读告警 + 版本/schema/ver
@@ -86,6 +86,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.POST("/settings/test-channel", testChannelHandler(opts.Settings))
 	authed.POST("/settings/actions/revoke-sessions", revokeSessionsHandler(opts.DB))
 	authed.POST("/auth/change-password", changePasswordHandler(opts.DB, opts.JWTSecret))
+	authed.POST("/auth/change-username", changeUsernameHandler(opts.DB))
 
 	// 监控
 	authed.GET("/servers/:id/metrics", metricsHandler(opts.DB))
@@ -94,6 +95,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	// 告警规则
 	authed.GET("/alert-rules", listAlertRulesHandler(opts.DB))
 	authed.POST("/alert-rules", createAlertRuleHandler(opts.DB))
+	authed.PUT("/alert-rules/:id", updateAlertRuleHandler(opts.DB))
 	authed.DELETE("/alert-rules/:id", deleteAlertRuleHandler(opts.DB))
 
 	// 通知中心

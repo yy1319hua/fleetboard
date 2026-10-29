@@ -2,6 +2,8 @@ package api
 
 import (
 	"database/sql"
+	"errors"
+	"regexp"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -96,15 +98,97 @@ func refreshHandler(d *sql.DB, secret string) gin.HandlerFunc {
 	}
 }
 
-// meHandler 返回当前登录用户 ID（最小可用，用于验证鉴权链路）。
-func meHandler() gin.HandlerFunc {
+// meHandler 返回当前登录用户的身份信息。
+//
+// M11 补 username：改名之后客户端需要刷新显示名，而 JWT claims 只有 uid，
+// 所以身份信息只能从库里读。App 在此之前从未调用过 /api/me，属纯增量，
+// 零向后兼容风险。
+func meHandler(d *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uid := CurrentUserID(c)
 		if uid == 0 {
 			Fail(c, ErrUnauthorized("未认证"))
 			return
 		}
-		OK(c, gin.H{"id": uid})
+		u, err := db.GetUserByID(d, uid)
+		if err != nil {
+			// 令牌有效但用户已被删掉：返回 401 让客户端回登录页，不要 500。
+			Fail(c, ErrUnauthorized("用户不存在"))
+			return
+		}
+		OK(c, gin.H{"id": u.ID, "username": u.Username})
+	}
+}
+
+type changeUsernameRequest struct {
+	NewUsername     string `json:"new_username" binding:"required"`
+	CurrentPassword string `json:"current_password" binding:"required"`
+}
+
+// usernamePattern 限制用户名可用字符。
+//
+// 只允许 ASCII 字母数字与 _ . -，首字符不能是符号：用户名会出现在登录页、
+// 设置页、审计日志里，纯文本展示，禁掉空白/全角/@: 可以免去编码与「admin 」
+// 与「admin」看起来一样这类伪装问题。
+var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,31}$`)
+
+// changeUsernameHandler 修改用户名（M11 新增，Web 端没有这个能力）。
+//
+// 不重签 token、不动 token_ver：JWT claims 只有 uid/typ/ver，都不含用户名，
+// 所以改名与鉴权无关；bump ver 等于把其他设备无故踢下线。
+// 客户端显示名通过 /api/me 刷新，不依赖登录响应里的快照。
+func changeUsernameHandler(d *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uid := CurrentUserID(c)
+		if uid == 0 {
+			Fail(c, ErrUnauthorized("未认证"))
+			return
+		}
+		var req changeUsernameRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, ErrBadRequest("新用户名与当前密码不能为空"))
+			return
+		}
+		if !usernamePattern.MatchString(req.NewUsername) {
+			Fail(c, ErrBadRequest("用户名需 3–32 位，以字母或数字开头，只允许字母、数字、下划线、点、短横线"))
+			return
+		}
+
+		u, err := db.GetUserByID(d, uid)
+		if err != nil {
+			Fail(c, ErrUnauthorized("用户不存在"))
+			return
+		}
+		if u.Username == req.NewUsername {
+			// 不静默返回 200：用户以为改了，实际没变，下次登录才发现。
+			Fail(c, ErrBadRequest("新用户名与当前用户名相同"))
+			return
+		}
+		if !auth.VerifyPassword(u.PasswordHash, req.CurrentPassword) {
+			Fail(c, ErrUnauthorized("当前密码错误"))
+			return
+		}
+
+		// 预查只为给出友商文案（大小写不同也算占用）；并发窗口由 UNIQUE 约束兜底。
+		taken, err := db.UsernameExistsCI(d, req.NewUsername, uid)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		if taken {
+			Fail(c, ErrConflict("该用户名已被占用"))
+			return
+		}
+
+		if err := db.UpdateUsername(d, uid, req.NewUsername); err != nil {
+			if errors.Is(err, db.ErrUsernameTaken) {
+				Fail(c, ErrConflict("该用户名已被占用"))
+				return
+			}
+			Fail(c, err)
+			return
+		}
+		OK(c, gin.H{"id": uid, "username": req.NewUsername})
 	}
 }
 

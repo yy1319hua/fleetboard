@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/yy1319hua/fleetboard/internal/model"
 )
@@ -107,6 +108,67 @@ func ListAlertRules(d *sql.DB) ([]model.AlertRule, error) {
 		out = append(out, *r)
 	}
 	return out, rows.Err()
+}
+
+// AlertRulePatch 是告警规则的部分更新入参：字段为 nil 表示不修改。
+//
+// 刻意不提供 server_id：改动规则归属等同于「删掉重建」，会让历史通知
+// （alert_events.rule_id）指向一个语义已变的规则；真要改归属就重建。
+type AlertRulePatch struct {
+	Metric         *string
+	Operator       *string
+	Threshold      *float64
+	Severity       *string
+	Enabled        *bool
+	NotifyChannels *string
+}
+
+// UpdateAlertRule 部分更新告警规则（merge 语义：nil 字段保持原值）。
+// 一个字段都没传时直接回读，不做无意义的 UPDATE。
+func UpdateAlertRule(d *sql.DB, id int64, p AlertRulePatch) (*model.AlertRule, error) {
+	if _, err := GetAlertRule(d, id); err != nil {
+		return nil, err
+	}
+
+	sets := make([]string, 0, 6)
+	args := make([]any, 0, 7)
+	if p.Metric != nil {
+		sets = append(sets, "metric = ?")
+		args = append(args, *p.Metric)
+	}
+	if p.Operator != nil {
+		sets = append(sets, "operator = ?")
+		args = append(args, *p.Operator)
+	}
+	if p.Threshold != nil {
+		sets = append(sets, "threshold = ?")
+		args = append(args, *p.Threshold)
+	}
+	if p.Severity != nil {
+		sets = append(sets, "severity = ?")
+		args = append(args, *p.Severity)
+	}
+	if p.Enabled != nil {
+		enabled := 0
+		if *p.Enabled {
+			enabled = 1
+		}
+		sets = append(sets, "enabled = ?")
+		args = append(args, enabled)
+	}
+	if p.NotifyChannels != nil {
+		sets = append(sets, "notify_channels = ?")
+		args = append(args, *p.NotifyChannels)
+	}
+	if len(sets) == 0 {
+		return GetAlertRule(d, id)
+	}
+
+	args = append(args, id)
+	if _, err := d.Exec(`UPDATE alert_rules SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...); err != nil {
+		return nil, err
+	}
+	return GetAlertRule(d, id)
 }
 
 // DeleteAlertRule 删除规则。
