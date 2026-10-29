@@ -286,14 +286,14 @@ webdist_install() { # $1=版本名 $2=源 web-dist 目录
   return 0
 }
 
-webdist_prune() { # 保留：当前 + 回滚目标 + 最近两代
+webdist_prune() { # 保留：当前 + 回滚目标 + 最近一代（共 3 代，2026-10-29 用户指定）
   local keep_cur="$1" keep_prev="${2:-}" d name n=0
   for d in $(ls -1dt "$WEBSTORE"/*/ 2>/dev/null || true); do
     name=$(basename "$d")
     [ "$name" = "$keep_cur" ] && continue
     if [ -n "$keep_prev" ] && [ "$name" = "$keep_prev" ]; then continue; fi
     n=$((n + 1))
-    if [ "$n" -gt 2 ]; then
+    if [ "$n" -gt 1 ]; then
       echo "   清理旧前端：web-dist.d/$name"
       rm -rf "${WEBSTORE:?}/$name"
     fi
