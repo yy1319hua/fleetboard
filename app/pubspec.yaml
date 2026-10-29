@@ -1,5 +1,5 @@
 name: app
-description: A new Flutter project.
+description: Fleetboard — 自托管多服务器运维控制台（移动端）
 
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -15,7 +15,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
 # Read more about iOS versioning at
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
-version: 0.3.0+1
+version: 0.3.1+2
 
 environment:
   # 本地 Flutter 3.0.0 仅用于生成骨架；目标构建使用较新 stable（GitHub Actions pin）。
@@ -30,6 +30,12 @@ environment:
 # versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
+    sdk: flutter
+  # ── M10.1 中文本地化 ───────────────────────────────────────────────
+  # 提供 Material/Widgets/Cupertino 的内置中文翻译表。加上后，文本选择工具栏
+  # （剪切/复制/粘贴/全选）以及日期选择器等系统级 UI 文案随 locale 变为中文。
+  # 注意：不显式声明 intl，由本包传递引入，避免与 Flutter SDK 钉死的版本冲突。
+  flutter_localizations:
     sdk: flutter
 
   # ── M9.1 工程地基依赖 ───────────────────────────────────────────────

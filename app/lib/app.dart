@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -90,7 +91,19 @@ class _AppState extends ConsumerState<App> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final router = ref.watch(goRouterProvider);
     return MaterialApp.router(
-      title: 'fleetboard',
+      title: 'Fleetboard',
+      // 默认中文：目标用户为中文用户，且能保证系统级文本选择菜单
+      // （剪切/复制/粘贴/全选）始终为中文，不随系统语言回落英文。
+      locale: const Locale('zh', 'CN'),
+      supportedLocales: const <Locale>[
+        Locale('zh', 'CN'),
+        Locale('en'),
+      ],
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: buildAppTheme(),
       routerConfig: router,
       scaffoldMessengerKey: rootScaffoldMessengerKey,
