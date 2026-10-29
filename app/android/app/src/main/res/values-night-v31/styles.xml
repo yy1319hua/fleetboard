@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- night(14) 限定符优先级高于 v31：暗色 API31+ 设备若无本目录，会命中
+         values-night（无 splash 属性）→ 回退 ?colorBackground。本 App 恒为深色
+         #0F1115，两模式配置相同，仍建齐双目录消除优先级陷阱。 -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">#0F1115</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#0E1621</item>
+    </style>
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">#0F1115</item>
+    </style>
+</resources>

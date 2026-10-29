@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 31+ 系统 SplashScreen：不设 windowSplashScreenBackground 时系统回退
+         ?android:colorBackground（浅色系统=灰），launch_background.xml 管不到这一层。
+         必须为不透明纯色（带 alpha 不生效）。 -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">#0F1115</item>
+        <!-- 与 ic_launcher_background(#0E1621) 一致，图标圆形底与启动底同色系 -->
+        <item name="android:windowSplashScreenIconBackgroundColor">#0E1621</item>
+    </style>
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">#0F1115</item>
+    </style>
+</resources>

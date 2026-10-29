@@ -83,6 +83,14 @@ android {
                     : signingConfigs.debug
         }
     }
+
+    // so 免解压打包（extractNativeLibs=false）：libflutter.so/libapp.so 以 stored
+    // 方式进包，安装后直接 mmap，冷启动免去解压 10MB+ so 的数百毫秒。
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
 }
 
 flutter {
