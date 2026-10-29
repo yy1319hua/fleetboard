@@ -6,6 +6,7 @@ import '../../../core/http/envelope.dart';
 import '../../../core/http/providers.dart';
 import '../domain/container.dart';
 import '../domain/container_action.dart';
+import '../domain/container_stat.dart';
 
 /// 容器仓储：列表与操作。
 ///
@@ -30,6 +31,30 @@ class ContainersRepository {
     if (data is! List) return const [];
     return data
         .map((e) => Container.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// 各容器当前 CPU / 内存占用（`docker stats --no-stream`）。
+  ///
+  /// 与 [list] 拆成两个请求，是为了让两者互不拖累：`docker stats` 需要遍历所有
+  /// 容器采样一次，比 `docker ps` 慢得多；合进列表接口会让「容器列表」这个
+  /// 最常用的动作被迫等采样，而且 stats 失败（老版本 docker、权限受限）
+  /// 会导致整个列表一起挂——那时用户连重启容器都做不了。
+  Future<List<ContainerStat>> stats(int serverId) async {
+    final resp =
+        await _dio.get<dynamic>('/api/servers/$serverId/container-stats');
+    final raw = resp.data as Map<String, dynamic>;
+    final code = raw['code'] as int? ?? 0;
+    if (code != 0) {
+      throw ApiException(
+        code: code,
+        message: raw['msg'] as String? ?? '获取容器资源占用失败',
+      );
+    }
+    final data = raw['data'];
+    if (data is! List) return const [];
+    return data
+        .map((e) => ContainerStat.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 

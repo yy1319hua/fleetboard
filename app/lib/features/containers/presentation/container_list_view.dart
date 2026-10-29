@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/async_state_view.dart';
 import '../../../core/widgets/status_dot.dart';
+import '../application/container_stats_notifier.dart';
 import '../application/containers_notifier.dart';
 import '../domain/container.dart';
 import 'container_actions_sheet.dart';
@@ -30,12 +31,20 @@ class ContainerListView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(containersProvider(serverId));
+    // 资源占用与列表分开监听：stats 是「锦上添花」，它的加载态不该影响列表渲染，
+    // 所以这里不 watch 它的 AsyncValue（它是 Map，失败时保持上次值或空）。
+    final stats = ref.watch(containerStatsProvider(serverId));
+    final theme = Theme.of(context);
     return AsyncStateView<List<Container>>(
       value: state,
       emptyHint: '这台服务器上还没有容器。若你刚部署了服务，稍等几秒后下拉刷新。',
       onRetry: () => ref.read(containersProvider(serverId).notifier).load(),
       builder: (list) => RefreshIndicator(
-        onRefresh: () => ref.read(containersProvider(serverId).notifier).refresh(),
+        onRefresh: () async {
+          // 下拉刷新时两件事一起做：容器状态与占用都可能是刚变的。
+          await ref.read(containersProvider(serverId).notifier).refresh();
+          await ref.read(containerStatsProvider(serverId).notifier).refresh();
+        },
         child: ListView.separated(
           // 容器多时列表要能滚到底：底部留出 FAB 与导航栏的高度。
           padding: const EdgeInsets.only(bottom: 88),
@@ -43,15 +52,41 @@ class ContainerListView extends ConsumerWidget {
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (context, i) {
             final c = list[i];
+            // 只为运行中的容器取占用：已退出/暂停的容器 `docker stats` 会报 0%，
+            // 显示出来是误导（用户会以为它在跑但没负载）。
+            final st = c.state == 'running' ? statFor(stats, c.id) : null;
             return ListTile(
               leading: StatusDot(statusKindFromState(c.state)),
               title: Text(c.name.isEmpty ? c.id : c.name),
-              subtitle: Text(
-                c.ports.isEmpty
-                    ? '${c.image} · ${c.status}'
-                    : '${c.image} · ${c.status} · ${c.ports}',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              isThreeLine: st != null,
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    c.ports.isEmpty
+                        ? '${c.image} · ${c.status}'
+                        : '${c.image} · ${c.status} · ${c.ports}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (st != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'CPU ${st.cpuPerc} · 内存 ${st.memPerc}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          // 数字列对齐：CPU 从 0.1% 跳到 100% 时宽度变化会让整行抖动。
+                          fontFeatures: const <FontFeature>[
+                            FontFeature.tabularFigures(),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
               trailing: IconButton(
                 icon: const Icon(Icons.article_outlined),
