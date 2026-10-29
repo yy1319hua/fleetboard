@@ -16,6 +16,7 @@ import {
   parentPath,
   renameFile,
   saveBlob,
+  statFile,
 } from "@/lib/files";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { uploadFileChunked, type UploadProgress } from "@/lib/upload";
@@ -34,7 +35,14 @@ interface UploadItem {
   id: number;
   name: string;
   progress: UploadProgress;
-  status: "uploading" | "done" | "error";
+  /**
+   * `verifying` 是「分片全发完了，正在比对服务端字节数」的中间态。
+   *
+   * 必须有这个态，不能发完就报「完成」：后端 `/files/upload` 在只写入一部分时
+   * 同样返回 200（磁盘满、连接中断都会这样），所以 HTTP 成功不等于文件完整。
+   * 如果直接置 done，用户会以为传好了，等到某天要用这个文件时才发现是残缺的。
+   */
+  status: "uploading" | "verifying" | "done" | "error";
   error?: string;
   abort: AbortController;
 }
@@ -150,19 +158,51 @@ export function ServerFilesTab() {
       const update = (patch: Partial<UploadItem>) =>
         setUploads((prev) => prev.map((u) => (u.id === item.id ? { ...u, ...patch } : u)));
 
+      const remotePath = joinPath(dir, file.name);
+
       try {
         await uploadFileChunked({
           serverID: server.id,
           file,
-          remotePath: joinPath(dir, file.name),
+          remotePath,
           signal: abort.signal,
           onProgress: (p) => update({ progress: p }),
         });
-        update({ status: "done" });
+
+        // 分片全部发完 ≠ 文件写全。后端上传接口在只写入一部分时也返回 200，
+        // 唯一可信的判据是服务端 stat 出来的字节数（与 App 侧同一套判据）。
+        update({ status: "verifying" });
+        let remoteSize: number;
+        try {
+          const st = await statFile(server.id, remotePath);
+          remoteSize = st.size;
+        } catch {
+          // 校验本身失败时不能当成功：宁可让用户回列表里自己确认，
+          // 也不能报「完成」——猜错的代价是用户以为文件好好的。
+          update({ status: "error", error: "已发送，但无法校验完整性" });
+          invalidate();
+          continue;
+        }
+
+        if (remoteSize === file.size) {
+          update({ status: "done" });
+        } else {
+          const short = remoteSize < file.size;
+          update({
+            status: "error",
+            error: `服务端 ${formatBytes(remoteSize)} ≠ 本地 ${formatBytes(file.size)}${
+              short ? "，可能磁盘已满" : ""
+            }`,
+          });
+        }
+        // 无论成没成都要刷新列表：失败的文件已经躺在远端了，
+        // 不刷出来用户就看不到、也没法手动删掉这个残缺文件。
         invalidate();
       } catch (e) {
         const aborted = e instanceof DOMException && e.name === "AbortError";
         update({ status: "error", error: aborted ? "已取消" : e instanceof Error ? e.message : "上传失败" });
+        // 取消/中断同样会留下已写入的部分，列表要刷新才能看见。
+        if (aborted) invalidate();
       }
     }
 
@@ -235,7 +275,13 @@ export function ServerFilesTab() {
               <div key={u.id} className="flex items-center gap-3">
                 <span className="min-w-0 flex-1 truncate font-mono text-mono-sm text-text-muted">{u.name}</span>
                 <span className="tabular text-caption text-text-faint">
-                  {u.status === "done" ? "完成" : u.status === "error" ? (u.error ?? "失败") : `${pct}%`}
+                  {u.status === "done"
+                    ? "完成"
+                    : u.status === "verifying"
+                      ? "校验中…"
+                      : u.status === "error"
+                        ? (u.error ?? "失败")
+                        : `${pct}%`}
                 </span>
                 {u.status === "uploading" ? (
                   <button
