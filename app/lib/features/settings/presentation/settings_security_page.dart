@@ -67,16 +67,12 @@ class _SettingsSecurityPageState extends ConsumerState<SettingsSecurityPage> {
                       Expanded(
                         child: Text(
                           auth.session?.username ?? '-',
-                          style: theme.textTheme.bodyMedium,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontFamily: 'JetBrains Mono',
+                          ),
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    '用户名暂不支持在 App 内修改（服务端尚无对应接口）。',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: AppColors.faint),
                   ),
                 ],
               ),

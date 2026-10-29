@@ -166,8 +166,8 @@ class _ServersPageState extends ConsumerState<ServersPage> {
     try {
       await ref.read(serversRepositoryProvider).remove(s.id);
       if (!mounted) return;
-      // 详情页可能正开着这台机器：回到列表，避免停在已删除对象上继续发请求。
-      if (context.canPop()) context.pop();
+      // 只刷新列表：删除动作发生在列表页本身，不能 pop ——
+      // 那会把整个纳管页弹回设置，用户会以为自己被踢出去了。
       ref.invalidate(serversProvider);
       ref.invalidate(overviewProvider);
       showToast(context, '已删除 ${s.name}');
