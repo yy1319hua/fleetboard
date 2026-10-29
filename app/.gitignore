@@ -45,3 +45,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# 代码生成物（CI 与 release 流程都会跑 build_runner，生成物不入库，避免每次构建产生 diff 噪音）
+*.g.dart
+*.freezed.dart

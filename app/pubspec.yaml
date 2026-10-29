@@ -64,6 +64,25 @@ dependencies:
   # APK 的 SHA-256 校验（与 Release 里的 sums-android.txt 比对后才允许安装）
   crypto: ^3.0.3
 
+  # ── M11+M12 对等 Web 控制台依赖 ─────────────────────────────────────
+  # 监控曲线。否决 syncfusion（商业许可 + 包体大）与自绘 CustomPainter
+  # （坐标轴/十字线/刻度抽稀约 350 行，收益不抵风险）。
+  fl_chart: ^0.69.0
+  # Compose 就地编辑：yaml 负责解析取结构，yaml_edit 负责把改动**打在原文上**。
+  # 绝不做 Map↔YAML 整体序列化（会丢注释、锚点、引号风格、键顺序）。
+  yaml: ^3.1.2
+  yaml_edit: ^2.2.0
+  # Compose 改动预览：行级 diff。
+  diff_match_patch: ^0.4.1
+  # 文件上传来源：文档选择器（SAF，无需存储权限）+ 相册。
+  file_picker: ^8.1.2
+  image_picker: ^1.1.2
+  # 临时目录（下载中转、编辑缓冲）。
+  path_provider: ^2.1.4
+  # 下载落盘后的「打开 / 分享」出口。
+  share_plus: ^10.0.2
+  open_filex: ^4.5.0
+
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.2

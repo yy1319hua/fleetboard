@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 
 import '../errors/api_exception.dart';
@@ -59,12 +61,41 @@ List<T> unwrapList<T>(
 /// - 2xx 且 code==0：放行（resp.data 仍为完整信封，由 [unwrap] 取 data）。
 /// - 2xx 但 code!=0 或非 2xx：reject 为携带 [ApiException] 的 DioException。
 /// - 无响应（网络层失败）：放行给 onError，由调用方按网络错误提示。
+///
+/// [isStream] 为 true 时（上传/下载/SSE 实例），成功响应体是字节流，**不解包**直接放行；
+/// 但失败响应体同样是字节，若不解码就只剩「服务异常」，用户看不到后端的真实原因
+/// （例如「文件已被他人修改，请重新加载」）。所以失败分支会把字节按 UTF-8 解出信封。
 class EnvelopeInterceptor extends Interceptor {
+  EnvelopeInterceptor({this.isStream = false});
+
+  final bool isStream;
+
+  /// 把流式响应体按 UTF-8 解成信封（仅用于错误分支，正常数据不走这里）。
+  static Map<String, dynamic>? _decodeBytes(dynamic body) {
+    if (body is Map<String, dynamic>) return body;
+    try {
+      if (body is List<int>) {
+        return jsonDecode(utf8.decode(body)) as Map<String, dynamic>;
+      }
+      if (body is String && body.isNotEmpty) {
+        return jsonDecode(body) as Map<String, dynamic>;
+      }
+    } on Object {
+      // 不是 JSON（例如网关的 HTML 错误页）：交给调用方按状态码兜底。
+      return null;
+    }
+    return null;
+  }
+
   @override
   void onResponse(
       Response<dynamic> response, ResponseInterceptorHandler handler) {
     final status = response.statusCode ?? 0;
     if (status >= 200 && status < 300) {
+      if (isStream) {
+        handler.next(response);
+        return;
+      }
       final body = response.data;
       if (body is Map<String, dynamic>) {
         final code = body['code'] as int? ?? 0;
@@ -87,7 +118,7 @@ class EnvelopeInterceptor extends Interceptor {
       return;
     }
     // 非 2xx：解析信封文案后 reject。
-    final body = response.data;
+    final body = isStream ? _decodeBytes(response.data) : response.data;
     var code = status;
     var msg = '服务异常';
     if (body is Map<String, dynamic>) {

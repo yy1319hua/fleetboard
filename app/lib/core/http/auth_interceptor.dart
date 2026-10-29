@@ -16,13 +16,22 @@ class AuthInterceptor extends Interceptor {
     this._dio,
     this._getToken,
     this._getBaseUrl,
-    this._onUnauthorized,
-  );
+    this._onUnauthorized, {
+    this.allowReplay = true,
+  });
 
   final Dio _dio;
   final Future<String?> Function() _getToken;
   final Future<String?> Function() _getBaseUrl;
   final Future<void> Function() _onUnauthorized;
+
+  /// 是否允许「刷新后重放」。
+  ///
+  /// 流式实例（上传/下载/SSE）必须为 false：原请求的 body 已被消费，
+  /// 重放会发出一个空 body 或半包，结果是文件损坏而不是错误提示。
+  /// 这类请求遇到 401 时仍会触发一次刷新（让后续请求用上新令牌），
+  /// 但**不重放**，把 401 原样抛给调用方由用户重试。
+  final bool allowReplay;
 
   @override
   Future<void> onRequest(
@@ -63,6 +72,11 @@ class AuthInterceptor extends Interceptor {
       await _onUnauthorized();
     } catch (_) {
       // 刷新失败：传播原始 401，不重放。onUnauthorized 内部已负责清令牌/回登录。
+      handler.next(err);
+      return;
+    }
+    // 流式请求：令牌已刷新，但不重放（body 已消费，重放会得到半包）。
+    if (!allowReplay) {
       handler.next(err);
       return;
     }

@@ -6,7 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/theme/app_theme.dart';
+import 'features/account/presentation/account_page.dart';
+import 'features/alert_rules/presentation/alert_rules_page.dart';
 import 'features/alerts/presentation/alert_detail_page.dart';
+import 'features/audit/presentation/audit_page.dart';
+import 'features/compose/presentation/compose_page.dart';
+import 'features/resources/presentation/resources_tab.dart';
+import 'features/system/presentation/panel_upgrade_page.dart';
+import 'features/system/presentation/upgrade_history_page.dart';
 import 'features/alerts/presentation/alerts_page.dart';
 import 'features/auth/application/auth_notifier.dart';
 import 'features/auth/presentation/login_page.dart';
@@ -184,6 +191,37 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                 parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) => const SettingsSecurityPage(),
               ),
+              // 账户：改用户名与改密码是两个心智模型（一个是登录名，一个是凭据），
+              // 但都属「我是谁」，所以挂同一入口下分两页。
+              GoRoute(
+                path: 'account',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => const AccountPage(),
+              ),
+              GoRoute(
+                path: 'alert-rules',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => const AlertRulesPage(),
+              ),
+              GoRoute(
+                path: 'audit',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => const AuditPage(),
+              ),
+              // 面板自更新：只作用于「当前连接的那台面板」。
+              // 纳管机器上没有面板，别把这两个入口做成按服务器维度。
+              GoRoute(
+                path: 'upgrade',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => const PanelUpgradePage(),
+                routes: <RouteBase>[
+                  GoRoute(
+                    path: 'history',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const UpgradeHistoryPage(),
+                  ),
+                ],
+              ),
               GoRoute(
                 path: 'servers',
                 parentNavigatorKey: _rootNavigatorKey,
@@ -208,6 +246,8 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             path: '/servers/:serverId',
             builder: (context, state) => ServerDetailPage(
               serverId: state.pathParameters['serverId'] ?? '',
+              // 段位直达：/servers/3?tab=监控
+              initialTab: state.uri.queryParameters['tab'],
             ),
             routes: <RouteBase>[
               GoRoute(
@@ -220,6 +260,32 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                 path: 'update',
                 builder: (context, state) => UpdateTaskPage(
                   serverId: state.pathParameters['serverId'] ?? '',
+                ),
+              ),
+              GoRoute(
+                path: 'compose',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => ComposePage(
+                  serverId: int.tryParse(
+                        state.pathParameters['serverId'] ?? '',
+                      ) ??
+                      0,
+                ),
+              ),
+              // 资源（镜像/网络/卷）原本设计为详情页内的段，但它和
+              // 「文件」「容器」不同：不需要频繁在段之间来回切，
+              // 且镜像列表条目长，独立全屏能多显示两行。故做成子路由。
+              GoRoute(
+                path: 'resources',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => Scaffold(
+                  appBar: AppBar(title: const Text('资源')),
+                  body: ResourcesTab(
+                    serverId: int.tryParse(
+                          state.pathParameters['serverId'] ?? '',
+                        ) ??
+                        0,
+                  ),
                 ),
               ),
             ],

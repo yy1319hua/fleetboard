@@ -34,7 +34,8 @@ class AppColors {
 
 /// 字体（M9.1 仅放常量；字体文件后续引入，M9.2+ 接 Geist Sans / JetBrains Mono）。
 ///
-/// TODO(M9.2): 引入字体文件后于 [ThemeData.fontFamily] = [ui] 与等宽场景接 [mono] 落地；
+/// 字体策略：现用系统默认字体（不打包字体文件，省 2–4MB 包体）。
+/// 若将来引入自定义字体，需同时覆盖 UI 与等宽两套，否则代码编辑区会退化成比例字体。
 /// 并设 fontFamilyFallback 回退链（-apple-system, "Segoe UI", "Noto Sans SC", sans-serif）。
 class AppFonts {
   const AppFonts._();
