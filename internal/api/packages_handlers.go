@@ -67,6 +67,26 @@ func packageUpdateHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.H
 		var detached atomic.Bool
 		var writeMu sync.Mutex
 
+		// writeRaw 向 SSE 通道写一段原始文本（已含换行），统一走 detached / writeFailed 门闩。
+		//
+		// 心跳注释帧与数据帧必须共用同一把锁：绕过它并发写会在连接里产生
+		// 交错的半帧，客户端解析直接坏掉。
+		writeRaw := func(s string) bool {
+			if writeFailed.Load() || detached.Load() {
+				return false
+			}
+			writeMu.Lock()
+			defer writeMu.Unlock()
+			if _, wErr := c.Writer.WriteString(s); wErr != nil {
+				writeFailed.Store(true)
+				return false
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+			return true
+		}
+
 		// send 向本请求的 SSE 写一帧；客户端断开或 detach 后变为 no-op。
 		send := func(payload gin.H) {
 			if writeFailed.Load() || detached.Load() {
@@ -76,16 +96,7 @@ func packageUpdateHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.H
 			if mErr != nil {
 				return
 			}
-			writeMu.Lock()
-			if _, wErr := c.Writer.WriteString(frame); wErr != nil {
-				writeFailed.Store(true)
-				writeMu.Unlock()
-				return
-			}
-			if flusher != nil {
-				flusher.Flush()
-			}
-			writeMu.Unlock()
+			writeRaw(frame)
 		}
 
 		// 发送 202 响应头 + 首帧（先于后台 goroutine，避免与后续 send 竞争）
@@ -123,12 +134,22 @@ func packageUpdateHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.H
 		// SSE 主循环：等待 job 终态；客户端断开则仅 detach（不取消 job ctx）。
 		ticker := time.NewTicker(300 * time.Millisecond)
 		defer ticker.Stop()
+
+		// 心跳：Cloudflare 对源站有约 100 秒的空闲超时。apt 在等 dpkg 锁、
+		// 解压大包时可能长时间一行输出都没有，没有心跳连接会被中间层切断，
+		// 客户端表现为「升级流毫无征兆地结束」。注释帧以 ":" 开头，按 SSE
+		// 规范会被客户端忽略（App 的解析器只认 "data:" 开头的行）。
+		keepalive := time.NewTicker(15 * time.Second)
+		defer keepalive.Stop()
+
 		for {
 			select {
 			case <-c.Request.Context().Done():
 				// 客户端断连：仅 detach，底层升级继续（job ctx 独立）
 				detached.Store(true)
 				return
+			case <-keepalive.C:
+				writeRaw(": keepalive\n\n")
 			case <-ticker.C:
 				if job.isTerminal() {
 					return

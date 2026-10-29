@@ -5,12 +5,20 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/yy1319hua/fleetboard/internal/docker"
 	"github.com/yy1319hua/fleetboard/internal/sshpool"
 	"golang.org/x/crypto/ssh"
+)
+
+// WS 日志流的心跳参数：30s 主动 ping，90s 收不到 pong 判定对端已死。
+// 90s 取 ping 间隔的三倍，允许丢两次不误杀。
+const (
+	wsPingInterval = 30 * time.Second
+	wsReadTimeout  = 90 * time.Second
 )
 
 var logsUpgrader = websocket.Upgrader{
@@ -83,6 +91,22 @@ func containerLogsHandler(d *sql.DB, masterKey, secret string, pool *sshpool.Poo
 
 		insertLogsAudit(d, uid, id, cid)
 
+		var writeMu sync.Mutex
+		write := func(p []byte) error {
+			writeMu.Lock()
+			defer writeMu.Unlock()
+			return conn.WriteMessage(websocket.TextMessage, p)
+		}
+
+		// 心跳：手机切网、进后台、进程被杀都会留下半开的 TCP。服务端原本只在
+		// 下一次写日志时才发现对端已走，期间一直占着一条 SSH exec 不释放。
+		// 改为服务端主动 ping，客户端（浏览器与 dart:io WebSocket）自动回 pong；
+		// 超过 wsReadTimeout 没有 pong 就让 ReadMessage 报错，从而关连接、收 SSH。
+		_ = conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
+		conn.SetPongHandler(func(string) error {
+			return conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
+		})
+
 		// 客户端断开检测：读循环出错即取消
 		done := make(chan struct{})
 		go func() {
@@ -94,12 +118,25 @@ func containerLogsHandler(d *sql.DB, masterKey, secret string, pool *sshpool.Poo
 			}
 		}()
 
-		var writeMu sync.Mutex
-		write := func(p []byte) error {
-			writeMu.Lock()
-			defer writeMu.Unlock()
-			return conn.WriteMessage(websocket.TextMessage, p)
-		}
+		go func() {
+			t := time.NewTicker(wsPingInterval)
+			defer t.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-t.C:
+					// gorilla 禁止 WriteControl 与 WriteMessage 并发（会 panic
+					// "concurrent write to websocket connection"），必须共用 writeMu。
+					writeMu.Lock()
+					err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second))
+					writeMu.Unlock()
+					if err != nil {
+						return
+					}
+				}
+			}
+		}()
 
 		lines := make(chan []byte, 64)
 		var wg sync.WaitGroup
