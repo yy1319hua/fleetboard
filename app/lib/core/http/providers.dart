@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/app_config.dart';
 import '../storage/secure_store.dart';
 import '../../features/auth/application/auth_notifier.dart';
 import 'dio_client.dart';
@@ -14,7 +15,14 @@ final dioProvider = Provider<Dio>((ref) {
   final auth = ref.watch(authNotifierProvider.notifier);
   final dio = createDio(
     getToken: store.readAccessToken,
-    getBaseUrl: store.readBaseUrl,
+    // 兜底内置默认地址：首启 bootstrap 尚未物化、或老版本残留空值时，
+    // 请求也不会打到空基址（M10.2）。
+    getBaseUrl: () async {
+      final stored = await store.readBaseUrl();
+      return (stored == null || stored.isEmpty)
+          ? AppConfig.defaultBaseUrl
+          : stored;
+    },
     onUnauthorized: () async {
       try {
         await auth.ensureFresh();

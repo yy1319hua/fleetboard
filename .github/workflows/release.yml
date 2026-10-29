@@ -144,7 +144,14 @@ jobs:
 
       - name: 构建 arm64 APK
         if: steps.guard.outputs.ready == 'true'
-        run: cd app && flutter build apk --release --split-per-abi --target-platform android-arm64
+        # M10.2：客户端内置默认服务器地址（登录页不再手填）。
+        # 仓库不保存真实地址，由 secret 注入；未配置时注入空串，App 会提示「未配置服务器地址」。
+        env:
+          FLEETBOARD_BASE_URL: ${{ secrets.FLEETBOARD_BASE_URL }}
+        run: |
+          cd app && flutter build apk --release --split-per-abi \
+            --target-platform android-arm64 \
+            --dart-define=FLEETBOARD_BASE_URL="$FLEETBOARD_BASE_URL"
 
       - name: 生成 APK 校验和（独立文件，不并入服务端 sums.txt）
         if: steps.guard.outputs.ready == 'true'

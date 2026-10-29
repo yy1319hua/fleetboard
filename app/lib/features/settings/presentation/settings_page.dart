@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/config/app_config.dart';
 import '../../../core/constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/application/auth_notifier.dart';
@@ -49,7 +50,9 @@ class SettingsPage extends ConsumerWidget {
                   Text('账户',
                       style: Theme.of(context).textTheme.titleSmall),
                   const SizedBox(height: AppSpacing.sm),
-                  _InfoRow(label: '服务器', value: auth.session?.baseUrl ?? '-'),
+                  _InfoRow(
+                      label: '服务器',
+                      value: auth.session?.baseUrl ?? AppConfig.defaultBaseUrl),
                   _InfoRow(label: '用户名', value: auth.session?.username ?? '-'),
                 ],
               ),

@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../../core/config/app_config.dart';
 import '../../../core/errors/api_exception.dart';
 import '../../../core/http/envelope.dart';
 import '../../../core/http/refresh_gate.dart';
@@ -57,16 +58,24 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// 单飞刷新；三触发点统一入口。
   Future<void> ensureFresh() => _gate.run(_refreshNow);
 
+  /// 生效基址（M10.2）：已存值 > dart-define > 内置常量，统一在此规范化。
+  ///
+  /// 已存值优先是硬要求：refresh 续期绑死签发时的域名，若被编译期注入值反向覆盖，
+  /// 老用户会拿旧 token 去新域名换新 token，必然 401 掉登录。
+  Future<String> effectiveBaseUrl() async {
+    final stored = await secureStore.readBaseUrl();
+    return AppConfig.normalize(
+      (stored != null && stored.isNotEmpty) ? stored : AppConfig.defaultBaseUrl,
+    );
+  }
+
   /// 实际刷新：凭 refresh_token 换新 access，写入 SecureStore。
   Future<void> _refreshNow() async {
     final refreshToken = await secureStore.readRefreshToken();
-    final baseUrl = await secureStore.readBaseUrl();
-    if (refreshToken == null || baseUrl == null) {
+    if (refreshToken == null) {
       throw const ApiException(message: '缺少刷新令牌');
     }
-    final normalized = baseUrl.endsWith('/')
-        ? baseUrl.substring(0, baseUrl.length - 1)
-        : baseUrl;
+    final normalized = await effectiveBaseUrl();
     final resp = await _refreshDio.post(
       '$normalized/api/refresh',
       data: {'refresh_token': refreshToken},
@@ -147,14 +156,24 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return RefreshWallStatus.ok;
   }
 
-  /// 登录：自分发 base_url + 用户名 + 密码。成功后写入会话并跳总览（路由重定向）。
+  /// 登录：用户名 + 密码（M10.2 起登录页不再手填地址）。
+  ///
+  /// 基址取自 [effectiveBaseUrl]（已存值 > 内置默认）。成功后写入会话并跳总览（路由重定向）。
   Future<void> login({
-    required String baseUrl,
     required String username,
     required String password,
   }) async {
     state = state.copyWith(loading: true, error: null);
     try {
+      final baseUrl = await effectiveBaseUrl();
+      // 未配置地址（本地调试未传 --dart-define、或包构建异常）时不发必败请求。
+      if (baseUrl.isEmpty) {
+        state = state.copyWith(
+          loading: false,
+          error: '客户端未配置服务器地址，请安装正式发布版本',
+        );
+        return;
+      }
       final token = await authRepository.login(
         baseUrl: baseUrl,
         username: username,

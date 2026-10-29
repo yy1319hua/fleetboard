@@ -40,5 +40,6 @@ String resolveLoginError(Object error) {
     return '登录失败，请重试';
   }
   if (error is TypeError) return '服务器响应异常，请确认服务端版本';
-  return '网络连接失败，请检查网络与服务器地址';
+  // M10.2：登录页已不再暴露地址输入，文案不再引导用户"检查服务器地址"。
+  return '无法连接服务器，请检查网络或联系管理员';
 }

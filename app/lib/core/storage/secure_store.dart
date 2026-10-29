@@ -87,6 +87,13 @@ class SecureStore {
   Future<String?> readBaseUrl() => _storage.read(key: _kBaseUrl);
   Future<String?> readUsername() => _storage.read(key: _kUsername);
 
+  /// 单独写 base_url（M10.2：bootstrap 物化默认地址、隐藏入口改址）。
+  ///
+  /// 不触碰令牌与用户名：改址后若 token 仍在，[loadSession] 语义不变，
+  /// 但 refresh 续期会指向新域名（因此改址入口内置 /api/health 探测把关）。
+  Future<void> writeBaseUrl(String baseUrl) =>
+      _storage.write(key: _kBaseUrl, value: baseUrl);
+
   /// 完全清除（登出 / 刷新失败 / ver 吊销）。
   Future<void> clearAll() => _storage.deleteAll();
 

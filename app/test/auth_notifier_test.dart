@@ -39,6 +39,8 @@ class FakeSecureStore extends SecureStore {
   @override
   Future<String?> readBaseUrl() async => _m['base_url'];
   @override
+  Future<void> writeBaseUrl(String baseUrl) async => _m['base_url'] = baseUrl;
+  @override
   Future<String?> readUsername() async => _m['username'];
   @override
   Future<void> clearAll() async => _m.clear();
@@ -75,16 +77,18 @@ void main() {
   });
 
   test('login 成功：写入会话并标记已初始化', () async {
+    final store = FakeSecureStore();
+    // M10.2：登录页不再传 baseUrl，改由 SecureStore / 内置默认值解析。
+    await store.writeBaseUrl('https://fb.example.com');
     final container = ProviderContainer(
       overrides: [
-        secureStoreProvider.overrideWithValue(FakeSecureStore()),
+        secureStoreProvider.overrideWithValue(store),
         authRepositoryProvider
             .overrideWithValue(FakeAuthRepositorySuccess()),
       ],
     );
     final notifier = container.read(authNotifierProvider.notifier);
     await notifier.login(
-      baseUrl: 'https://fb.example.com',
       username: 'admin',
       password: 'secret',
     );
