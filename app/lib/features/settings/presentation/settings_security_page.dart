@@ -5,6 +5,7 @@ import '../../../core/constants.dart';
 import '../../../core/errors/api_exception.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/application/auth_notifier.dart';
+import '../../auth/application/saved_credentials.dart';
 import '../data/settings_repository.dart';
 import 'settings_common.dart';
 
@@ -229,6 +230,12 @@ class _SettingsSecurityPageState extends ConsumerState<SettingsSecurityPage> {
       // 关键：立刻把新 token 对写进本地，否则旧 refresh 已被吊销，
       // 下一次续期会被判无效 → 用户被踢，却以为「改密码导致掉线」。
       await ref.read(authNotifierProvider.notifier).applyTokenPair(token);
+      // 免密登录存的是密码原文：改密后不同步，下次自动填充填的就是错的密码。
+      if (ref.read(savedCredentialsProvider).rememberEnabled) {
+        await ref
+            .read(savedCredentialsProvider.notifier)
+            .syncPasswordAfterChange(newPwd);
+      }
       if (!mounted) return;
       _old.clear();
       _new.clear();

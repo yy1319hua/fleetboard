@@ -43,6 +43,18 @@ class SettingsPage extends ConsumerWidget {
                 subtitle: '采集间隔 / 保留天数 / 离线阈值 / Compose 根目录',
                 onTap: () => context.push('/settings/monitor'),
               ),
+              _EntryTile(
+                icon: Icons.rule_outlined,
+                title: '告警规则',
+                subtitle: 'CPU / 内存 / 磁盘阈值与通知开关',
+                onTap: () => context.push('/settings/alert-rules'),
+              ),
+              _EntryTile(
+                icon: Icons.history_outlined,
+                title: '操作审计',
+                subtitle: '谁在什么时候对哪台机器做了什么',
+                onTap: () => context.push('/settings/audit'),
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
@@ -64,8 +76,26 @@ class SettingsPage extends ConsumerWidget {
               _EntryTile(
                 icon: Icons.shield_outlined,
                 title: '账户与安全',
-                subtitle: '修改密码 / 注销所有会话',
-                onTap: () => context.push('/settings/security'),
+                subtitle: '修改用户名 / 修改密码 / 注销所有会话',
+                onTap: () => context.push('/settings/account'),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _Group(
+            title: '面板维护',
+            children: <Widget>[
+              _EntryTile(
+                icon: Icons.system_update_outlined,
+                title: '面板更新',
+                subtitle: '检查并升级当前连接的面板本体',
+                onTap: () => context.push('/settings/upgrade'),
+              ),
+              _EntryTile(
+                icon: Icons.upgrade_outlined,
+                title: '升级历史',
+                subtitle: '每次升级的版本、耗时与结果',
+                onTap: () => context.push('/settings/upgrade/history'),
               ),
             ],
           ),

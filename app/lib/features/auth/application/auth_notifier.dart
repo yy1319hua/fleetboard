@@ -57,6 +57,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final RefreshGate _gate = RefreshGate();
   final Dio _refreshDio = createPlainDio();
 
+  /// 最近一次登录失败是否是「凭据被服务端拒绝」（HTTP 401）。
+  ///
+  /// 免密登录的「连续失败 3 次就清密码」只认这一类：断网时连点三次就把本机密码
+  /// 删掉，等于让用户在飞机上丢掉自动填充——那不是密码失效，只是网络不可达。
+  bool lastLoginFailureWasCredentialRejection = false;
+
   /// 单飞刷新；三触发点统一入口。
   Future<void> ensureFresh() => _gate.run(_refreshNow);
 
@@ -165,6 +171,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String username,
     required String password,
   }) async {
+    lastLoginFailureWasCredentialRejection = false;
     state = state.copyWith(loading: true, error: null);
     try {
       final baseUrl = await effectiveBaseUrl();
@@ -196,9 +203,26 @@ class AuthNotifier extends StateNotifier<AuthState> {
         error: null,
         initialized: true,
       );
-    } on Object catch (e) {
-      state = state.copyWith(loading: false, error: resolveLoginError(e));
+    } on Object catch (raw) {
+      final error = _unwrapEnvelope(raw);
+      lastLoginFailureWasCredentialRejection =
+          error is ApiException && error.code == 401;
+      state = state.copyWith(loading: false, error: resolveLoginError(error));
     }
+  }
+
+  /// 把 `DioException(error: ApiException)` 里的信封错误取出来。
+  ///
+  /// 为什么必须拆这一层：plain dio 的 [EnvelopeInterceptor] 把业务失败 reject 成
+  /// `DioException`，而 [resolveLoginError] 只认 [ApiException]。少了这一步，
+  /// 输错密码会显示「无法连接服务器，请检查网络」——把一次明确的凭据错误说成
+  /// 网络问题，用户会去重装 App、换网络，而真正该做的是核对密码。
+  static Object _unwrapEnvelope(Object error) {
+    if (error is DioException) {
+      final inner = error.error;
+      if (inner is ApiException) return inner;
+    }
+    return error;
   }
 
   /// 用服务端新签发的 token 对替换本地会话（M11：改密后调用）。
@@ -218,6 +242,27 @@ class AuthNotifier extends StateNotifier<AuthState> {
     );
     await secureStore.saveSession(next);
     state = state.copyWith(session: next);
+  }
+
+  /// 改名成功后刷新本地显示名（M11）。
+  ///
+  /// 只同步 `username` 这一项：JWT claims 里只有 uid/typ/ver，不包含用户名，
+  /// 所以改名与鉴权无关——**不重签 token、不 bump ver、不重新登录**。
+  /// 令牌原样保留，顺手用同一份快照重写一遍 SecureStore，让冷启动也能显示新名字。
+  Future<void> applyUsername(String username) async {
+    final current = state.session;
+    final next = username.trim();
+    if (current == null || next.isEmpty || current.username == next) return;
+    final updated = AuthSession(
+      baseUrl: current.baseUrl,
+      username: next,
+      accessToken: current.accessToken,
+      accessExpiresAt: current.accessExpiresAt,
+      refreshToken: current.refreshToken,
+      refreshExpiresAt: current.refreshExpiresAt,
+    );
+    await secureStore.saveSession(updated);
+    state = state.copyWith(session: updated);
   }
 
   /// 登出：清全部令牌与身份，路由重定向回登录。
