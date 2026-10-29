@@ -26,8 +26,10 @@ class AuthState with _$AuthState {
   const factory AuthState({
     /// 冷启动 tryRestore 是否已完成。
     @Default(false) bool initialized,
+
     /// 当前会话；null = 未登录。
     AuthSession? session,
+
     /// 最近一次登录错误文案（中文）。
     String? error,
     @Default(false) bool loading,
@@ -197,6 +199,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } on Object catch (e) {
       state = state.copyWith(loading: false, error: resolveLoginError(e));
     }
+  }
+
+  /// 用服务端新签发的 token 对替换本地会话（M11：改密后调用）。
+  ///
+  /// 改密会让 `ver` 自增，旧 refresh 立即失效；若不同步落盘，下一次静默续期
+  /// 必然失败 → 用户被踢回登录页，而他会以为「改完密码就被强制下线」。
+  Future<void> applyTokenPair(TokenResponse token) async {
+    final current = state.session;
+    if (current == null) return;
+    final next = AuthSession(
+      baseUrl: current.baseUrl,
+      username: current.username,
+      accessToken: token.accessToken,
+      accessExpiresAt: AuthSession.computeAccessExpiresAt(token.expiresIn),
+      refreshToken: token.refreshToken ?? '',
+      refreshExpiresAt: token.refreshExpiresAt,
+    );
+    await secureStore.saveSession(next);
+    state = state.copyWith(session: next);
   }
 
   /// 登出：清全部令牌与身份，路由重定向回登录。

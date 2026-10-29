@@ -25,6 +25,35 @@ T unwrap<T>(
   return data as T;
 }
 
+/// 列表型信封解包：`data` 为数组时逐项反序列化。
+///
+/// 与 [unwrap] 分开是因为 `data` 既可能是对象也可能是数组，用同一个泛型
+/// 强转会得到运行时类型错误，而不是可读的失败信息。
+List<T> unwrapList<T>(
+  dynamic raw,
+  T Function(Map<String, dynamic>) fromJson,
+) {
+  if (raw is! Map<String, dynamic>) {
+    throw const ApiException(message: '响应格式异常');
+  }
+  final code = raw['code'] as int? ?? 0;
+  if (code != 0) {
+    throw ApiException(
+      code: code,
+      message: raw['msg'] as String? ?? '请求失败',
+    );
+  }
+  final data = raw['data'];
+  if (data == null) return <T>[];
+  if (data is! List<dynamic>) {
+    throw const ApiException(message: '响应格式异常：期望列表');
+  }
+  return data
+      .whereType<Map<String, dynamic>>()
+      .map(fromJson)
+      .toList(growable: false);
+}
+
 /// 响应拦截器：统一处理信封与 HTTP 状态。
 ///
 /// - 2xx 且 code==0：放行（resp.data 仍为完整信封，由 [unwrap] 取 data）。
@@ -32,7 +61,8 @@ T unwrap<T>(
 /// - 无响应（网络层失败）：放行给 onError，由调用方按网络错误提示。
 class EnvelopeInterceptor extends Interceptor {
   @override
-  void onResponse(Response<dynamic> response, ResponseInterceptorHandler handler) {
+  void onResponse(
+      Response<dynamic> response, ResponseInterceptorHandler handler) {
     final status = response.statusCode ?? 0;
     if (status >= 200 && status < 300) {
       final body = response.data;

@@ -15,7 +15,12 @@ import 'features/emergency/presentation/update_task_page.dart';
 import 'features/overview/application/overview_notifier.dart';
 import 'features/overview/presentation/overview_page.dart';
 import 'features/overview/presentation/server_detail_page.dart';
+import 'features/servers/presentation/server_wizard_page.dart';
+import 'features/servers/presentation/servers_page.dart';
+import 'features/settings/presentation/settings_monitor_page.dart';
 import 'features/settings/presentation/settings_page.dart';
+import 'features/settings/presentation/settings_push_page.dart';
+import 'features/settings/presentation/settings_security_page.dart';
 import 'features/updater/presentation/about_page.dart';
 
 /// 全局 ScaffoldMessenger 键：供 App 生命周期层在 onResumed 弹 Toast（7 天硬墙预警）。
@@ -161,9 +166,40 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             path: '/settings',
             builder: (context, state) => const SettingsPage(),
             routes: <RouteBase>[
+              // M11：设置子页统一全屏 push。
+              // 留在 Shell 内的话底部导航栏会占掉 80dp，360dp 宽屏幕软键盘弹起后
+              // 只剩约 316dp 可视高度，「表单 + 保存条」会被压到看不见输入内容。
+              GoRoute(
+                path: 'push',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => const SettingsPushPage(),
+              ),
+              GoRoute(
+                path: 'monitor',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => const SettingsMonitorPage(),
+              ),
+              GoRoute(
+                path: 'security',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => const SettingsSecurityPage(),
+              ),
+              GoRoute(
+                path: 'servers',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => const ServersPage(),
+                routes: <RouteBase>[
+                  GoRoute(
+                    path: 'new',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const ServerWizardPage(),
+                  ),
+                ],
+              ),
               // 关于页：版本号 / 构建号 + 自分发 APK 的检查更新闭环（M9.5b）。
               GoRoute(
                 path: 'about',
+                parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) => const AboutPage(),
               ),
             ],

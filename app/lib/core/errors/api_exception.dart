@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 /// 统一错误信封与中文案解包（M9.2 落地）。
 ///
 /// 后端契约：所有响应统一信封 `{ code, msg, data }`（见 internal/api/response.go）。
@@ -29,6 +31,44 @@ String resolveErrorMessage(Object error) {
   if (error is ApiException) return error.message;
   if (error is TypeError) return '数据解析异常，请升级客户端或联系管理员';
   // DioException 由调用方在更具体的位置处理；此处兜底。
+  return '请求失败，请稍后重试';
+}
+
+/// 非登录类请求的完整解包（M11）：把 DioException 内层信封与网络层分开。
+///
+/// 拦截器 reject 时把 [ApiException] 塞进 `DioException.error`，所以调用方
+/// catch 到的是 DioException 而不是 ApiException —— 直接对 e 做类型判断会
+/// 把「令牌无效」这类服务端明确文案误报成「请求失败」。
+String describeApiError(Object error) {
+  if (error is DioException) {
+    final inner = error.error;
+    if (inner is ApiException && inner.message.trim().isNotEmpty) {
+      return inner.message;
+    }
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return '请求超时，请检查网络后重试';
+      case DioExceptionType.connectionError:
+        return '无法连接服务器，请检查网络或确认面板正在运行';
+      case DioExceptionType.badCertificate:
+        return '服务器证书校验失败，无法安全连接';
+      case DioExceptionType.cancel:
+        return '请求已取消';
+      case DioExceptionType.badResponse:
+        final code = error.response?.statusCode ?? 0;
+        return '服务端返回异常状态（$code）';
+      default:
+        // 含 unknown / transformTimeout 等未单列的传输层失败。
+        return '无法连接服务器，请检查网络后重试';
+    }
+  }
+  if (error is ApiException) {
+    final msg = error.message.trim();
+    return msg.isEmpty ? '请求失败（code=${error.code}）' : msg;
+  }
+  if (error is TypeError) return '数据解析异常，请升级客户端或联系管理员';
   return '请求失败，请稍后重试';
 }
 
