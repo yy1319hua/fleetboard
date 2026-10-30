@@ -583,6 +583,68 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiEnvelope' }
 
+  /api/servers/{id}/volumes/{name}:
+    delete:
+      operationId: removeVolume
+      tags: [volumes]
+      x-app-consumed: true
+      summary: 删除数据卷（卷内数据一并删除；被容器占用时返回 409）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+        '409':
+          description: 卷仍被容器占用
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  /api/servers/{id}/docker/df:
+    get:
+      operationId: dockerDiskUsage
+      tags: [volumes]
+      x-app-consumed: true
+      summary: Docker 空间占用与可回收量（docker system df）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
+  /api/servers/{id}/docker/prune:
+    post:
+      operationId: pruneDocker
+      tags: [volumes]
+      x-app-consumed: true
+      summary: 回收 Docker 磁盘空间（悬空镜像 / 未使用卷 / 构建缓存）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targets]
+              properties:
+                targets:
+                  type: array
+                  items: { type: string, enum: [images, volumes, build_cache] }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
   # ===== 监控指标 =====
   /api/servers/{id}/metrics:
     get:

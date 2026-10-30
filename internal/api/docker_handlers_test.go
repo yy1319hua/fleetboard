@@ -240,3 +240,62 @@ func TestContainerStatsRequiresAuth(t *testing.T) {
 		t.Errorf("status=%d, want 401", w.Code)
 	}
 }
+
+// 卷删除：卷名先校验再连 SSH，非法名必须 400 而不是打到远端。
+func TestRemoveVolumeRejectsBadName(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodDelete, "/api/servers/1/volumes/-bad-name", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400 body=%s", w.Code, w.Body)
+	}
+}
+
+func TestRemoveVolumeRequiresAuth(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+
+	w := authReq(r, http.MethodDelete, "/api/servers/1/volumes/vol1", "", nil)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status=%d, want 401", w.Code)
+	}
+}
+
+// 空间回收：targets 必须显式给出，空数组与未知目标都必须在连远端前拒绝。
+func TestPruneRejectsEmptyTargets(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPost, "/api/servers/1/docker/prune", tokens.AccessToken, map[string]any{})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400 body=%s", w.Code, w.Body)
+	}
+}
+
+func TestPruneRejectsUnknownTarget(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodPost, "/api/servers/1/docker/prune", tokens.AccessToken, map[string]any{
+		"targets": []string{"all"},
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400 body=%s", w.Code, w.Body)
+	}
+}
+
+func TestPruneRequiresAuth(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+
+	w := authReq(r, http.MethodPost, "/api/servers/1/docker/prune", "", map[string]any{
+		"targets": []string{"images"},
+	})
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status=%d, want 401", w.Code)
+	}
+}

@@ -6,16 +6,20 @@ import '../../../core/widgets/async_state_view.dart';
 import '../data/resources_repository.dart';
 import '../domain/docker_resource.dart';
 import 'image_actions.dart';
+import 'volume_actions.dart';
 
-/// 服务器详情 · 只读资源域（镜像 / 网络 / 卷）。
+/// 服务器详情 · 资源域（镜像 / 网络 / 卷）。
 ///
 /// 三个子 Tab 而不是三个页面：它们回答的是同一类问题——「这台机器上有什么
 /// 可回收/占空间的东西」，来回切换比进出三个页面快得多。
 ///
 /// 「能做什么」严格对齐后端能力，不做灰按钮：
 ///  - 镜像：列表 / 拉取 / 删除（`docker_handlers.go` 有 POST pull 与 DELETE image）；
-///  - 网络、卷：**只有 GET**（`router.go` 里没有写路由），所以页面上用一句话
+///  - 卷：列表 / 删除（DELETE /volumes/:name，被容器占用时后端 409 并给出容器名）；
+///  - 网络：**只有 GET**（`router.go` 里没有写路由），所以页面上用一句话
 ///    说明「去 Web 端或命令行创建/删除」，而不是摆一个禁用按钮让人反复点。
+///  - 顶部「清理空间」：docker system df 展示可回收量，按目标清理（悬空镜像 /
+///    未使用卷 / 构建缓存），只清没有容器引用的资源。
 class ResourcesTab extends ConsumerStatefulWidget {
   const ResourcesTab({super.key, required this.serverId});
 
@@ -47,6 +51,7 @@ class _ResourcesTabState extends ConsumerState<ResourcesTab>
             Tab(text: '卷'),
           ],
         ),
+        _CleanupEntry(serverId: widget.serverId),
         Expanded(
           child: TabBarView(
             controller: _controller,
@@ -295,7 +300,7 @@ class _NetworksView extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// 卷（只读）
+// 卷（可删除）
 // ---------------------------------------------------------------------------
 
 class _VolumesView extends ConsumerWidget {
@@ -307,19 +312,29 @@ class _VolumesView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final provider = volumesProvider(serverId);
     final state = ref.watch(provider);
+    final theme = Theme.of(context);
 
     return Column(
       children: [
-        const _ReadOnlyNotice(
-          text: '数据卷只能查看：面板没有提供创建/删除卷的接口。'
-              '需要清理请在 Web 端或命令行执行 docker volume rm（卷里的数据会一起删掉）。',
-        ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: IconButton(
-            tooltip: '刷新列表',
-            onPressed: () => ref.invalidate(provider),
-            icon: const Icon(Icons.refresh),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '长按一行可删除该卷（卷内数据会一起删除）。'
+                  '仍在被容器引用的卷会被拒绝，并提示是哪个容器。',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: '刷新列表',
+                onPressed: () => ref.invalidate(provider),
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -337,6 +352,15 @@ class _VolumesView extends ConsumerWidget {
                 separatorBuilder: (_, __) => const Divider(height: 1),
                 itemBuilder: (context, index) {
                   final volume = volumes[index];
+                  Future<void> askDelete() async {
+                    final deleted = await showDeleteVolumeSheet(
+                      context,
+                      serverId: serverId,
+                      volume: volume,
+                    );
+                    if (deleted) ref.invalidate(provider);
+                  }
+
                   return ListTile(
                     leading: const Icon(Icons.storage_outlined),
                     title: Text(
@@ -350,9 +374,12 @@ class _VolumesView extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     isThreeLine: volume.mountpoint.isNotEmpty,
-                    trailing: volume.mountpoint.isEmpty
-                        ? null
-                        : IconButton(
+                    onLongPress: askDelete,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (volume.mountpoint.isNotEmpty)
+                          IconButton(
                             tooltip: '复制挂载点',
                             icon: const Icon(Icons.copy, size: 18),
                             onPressed: () async {
@@ -366,6 +393,13 @@ class _VolumesView extends ConsumerWidget {
                               );
                             },
                           ),
+                        IconButton(
+                          tooltip: '删除卷',
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          onPressed: askDelete,
+                        ),
+                      ],
+                    ),
                   );
                 },
               ),
@@ -374,6 +408,95 @@ class _VolumesView extends ConsumerWidget {
         ),
       ],
     );
+  }
+}
+
+/// 顶部「清理空间」入口：先展示可回收量，点开才是勾选与长按确认。
+///
+/// 单独拉 `docker system df`：它比列表轻（一次 docker CLI 调用），
+/// 但失败不影响镜像/卷列表本身，所以不使用列表的 AsyncValue。
+class _CleanupEntry extends ConsumerWidget {
+  const _CleanupEntry({required this.serverId});
+
+  final int serverId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final usage = ref.watch(diskUsageProvider(serverId));
+    final reclaimable = usage.maybeWhen(
+      data: (rows) => _summarizeReclaimable(rows),
+      orElse: () => '',
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
+      child: Row(
+        children: [
+          Icon(Icons.cleaning_services_outlined,
+              size: 16, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              reclaimable.isEmpty
+                  ? 'Docker 占用与可回收空间'
+                  : 'Docker 可回收 $reclaimable',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () => showDockerCleanupSheet(
+              context,
+              serverId: serverId,
+            ),
+            icon: const Icon(Icons.auto_delete_outlined, size: 18),
+            label: const Text('清理空间'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 把各行「可回收」容量换算成 MB 求和，输出人类可读串。
+///
+/// docker 给的是 `1.2GB` / `800MB (66%)` 这类串，不做换算就没法合计；
+/// 解析失败的项直接跳过（宁可少算，不编造数字）。
+String _summarizeReclaimable(List<DockerDiskUsage> rows) {
+  double totalMB = 0;
+  for (final row in rows) {
+    final mb = _parseSizeToMB(row.reclaimableSize);
+    if (mb != null) totalMB += mb;
+  }
+  if (totalMB <= 0) return '';
+  if (totalMB >= 1024) {
+    return '${(totalMB / 1024).toStringAsFixed(1)}GB';
+  }
+  return '${totalMB.toStringAsFixed(totalMB >= 10 ? 0 : 1)}MB';
+}
+
+double? _parseSizeToMB(String raw) {
+  final text = raw.trim();
+  if (text.isEmpty) return null;
+  final match = RegExp(r'^([0-9]+(?:\.[0-9]+)?)\s*([kKmMgGtT]?[bB])$').firstMatch(text);
+  if (match == null) return null;
+  final value = double.tryParse(match.group(1)!);
+  if (value == null) return null;
+  switch (match.group(2)!.toUpperCase()) {
+    case 'B':
+      return value / (1024 * 1024);
+    case 'KB':
+      return value / 1024;
+    case 'MB':
+      return value;
+    case 'GB':
+      return value * 1024;
+    case 'TB':
+      return value * 1024 * 1024;
+    default:
+      return null;
   }
 }
 

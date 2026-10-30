@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants.dart';
+import '../../../core/storage/bootstrap_cache.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/application/auth_notifier.dart';
 import '../application/overview_notifier.dart';
@@ -72,7 +73,19 @@ class OverviewPage extends ConsumerWidget {
         ],
       ),
       body: bootstrap.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text(
+                '正在连接面板…',
+                style: TextStyle(fontSize: 13, color: AppColors.muted),
+              ),
+            ],
+          ),
+        ),
         error: (e, _) => _ErrorState(message: e.toString()),
         data: (data) => _OverviewContent(data: data),
       ),
@@ -86,10 +99,40 @@ class _OverviewContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cacheAt = ref.watch(overviewCacheAtProvider);
     return RefreshIndicator(
       onRefresh: () => ref.read(overviewProvider.notifier).refresh(),
       child: CustomScrollView(
         slivers: <Widget>[
+          if (cacheAt != null)
+            SliverToBoxAdapter(
+              child: Container(
+                width: double.infinity,
+                color: AppColors.accentSoft,
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    const Icon(Icons.history,
+                        size: 14, color: AppColors.accent),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '显示缓存数据（${_hhmm(cacheAt)}）· 正在刷新…',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: AppColors.accent),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(
@@ -158,4 +201,10 @@ class _ErrorState extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// `HH:mm` 两位补零，避免为一行时间引入 intl 依赖。
+String _hhmm(DateTime t) {
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${two(t.hour)}:${two(t.minute)}';
 }

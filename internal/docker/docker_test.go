@@ -185,3 +185,123 @@ func TestParseStatsLine(t *testing.T) {
 		t.Error("非法 JSON 应报错")
 	}
 }
+
+func TestValidateVolumeName(t *testing.T) {
+	valid := []string{
+		"dockdeck_dockdeck-hub-data",
+		"a",
+		"vol.1",
+		"9lives",
+	}
+	for _, name := range valid {
+		if err := ValidateVolumeName(name); err != nil {
+			t.Errorf("%q 应合法，却报错: %v", name, err)
+		}
+	}
+
+	invalid := []string{
+		"",
+		"-leading",
+		".hidden",
+		"has space",
+		"a; rm -rf /",
+		"a$(id)",
+		"a`id`",
+		"路径/斜杠",
+	}
+	for _, name := range invalid {
+		if err := ValidateVolumeName(name); err == nil {
+			t.Errorf("%q 应判为非法，却通过了（有命令注入风险）", name)
+		}
+	}
+}
+
+func TestParseVolumeUsers(t *testing.T) {
+	got := ParseVolumeUsers("web\napi\n\n  db  \n")
+	want := []string{"web", "api", "db"}
+	if len(got) != len(want) {
+		t.Fatalf("数量不符: got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("第 %d 项: got %q want %q", i, got[i], want[i])
+		}
+	}
+
+	// 无引用时必须是空切片而不是 nil，保证 JSON 序列化成 []
+	empty := ParseVolumeUsers("\n  \n")
+	if empty == nil {
+		t.Error("空输入应返回空切片而非 nil")
+	}
+	if len(empty) != 0 {
+		t.Errorf("空输入应返回 0 项，got %v", empty)
+	}
+}
+
+func TestParseReclaimed(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "常规输出",
+			in:   "Deleted Volumes:\nvol1\nvol2\n\nTotal reclaimed space: 1.234GB\n",
+			want: "1.234GB",
+		},
+		{
+			name: "无回收",
+			in:   "Total reclaimed space: 0B\n",
+			want: "0B",
+		},
+		{
+			name: "没有该行",
+			in:   "Deleted Images:\nuntagged: nginx:old\n",
+			want: "",
+		},
+		{
+			name: "大小写混排",
+			in:   "TOTAL RECLAIMED SPACE:   512MB\n",
+			want: "512MB",
+		},
+	}
+	for _, c := range cases {
+		if got := ParseReclaimed(c.in); got != c.want {
+			t.Errorf("%s: got %q want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestValidPruneTarget(t *testing.T) {
+	for _, ok := range []string{"images", "volumes", "build_cache"} {
+		if !ValidPruneTarget(ok) {
+			t.Errorf("%q 应受支持", ok)
+		}
+	}
+	for _, bad := range []string{"", "all", "containers", "IMAGES", "images; rm -rf /"} {
+		if ValidPruneTarget(bad) {
+			t.Errorf("%q 不应受支持", bad)
+		}
+	}
+}
+
+func TestParseDiskUsageLine(t *testing.T) {
+	line := `{"Type":"Images","TotalCount":"12","Active":"3","Size":"1.2GB","Reclaimable":"800MB (66%)"}`
+	d, err := ParseDiskUsageLine(line)
+	if err != nil {
+		t.Fatalf("ParseDiskUsageLine: %v", err)
+	}
+	if d.Type != "Images" || d.TotalCount != "12" || d.Active != "3" {
+		t.Errorf("字段错误: %+v", d)
+	}
+	if d.Size != "1.2GB" || d.Reclaimable != "800MB (66%)" {
+		t.Errorf("容量字段错误: %+v", d)
+	}
+
+	if v, err := ParseDiskUsageLine("  "); err != nil || v != nil {
+		t.Errorf("空行应返回 (nil,nil)，got (%v,%v)", v, err)
+	}
+	if _, err := ParseDiskUsageLine("not json"); err == nil {
+		t.Error("非法 JSON 应报错")
+	}
+}

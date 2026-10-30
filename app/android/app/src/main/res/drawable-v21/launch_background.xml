@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 启动窗口背景：与 App 深色底 AppColors.bg(#0F1115) 对齐，
-     消除浅色系统下 Theme.Light 灰底到 Flutter 首帧之间的「灰屏」割裂感 -->
+<!-- 启动窗口背景（API≤30 的 starting window）：
+     深色底与 App 底色 AppColors.bg(#0F1115) 对齐，中间放 Fleetboard 字标。
+     字标是静态位图——Flutter 首帧之前无法渲染任何动态内容，所以"启动期显示文字"
+     只能用图片实现；版本号等动态信息由首帧后的品牌 splash 承担。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="rectangle">
             <solid android:color="#0F1115" />
         </shape>
+    </item>
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/launch_logo" />
     </item>
 </layer-list>

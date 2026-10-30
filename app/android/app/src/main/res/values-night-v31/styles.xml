@@ -7,6 +7,9 @@
         <item name="android:windowBackground">@drawable/launch_background</item>
         <item name="android:windowSplashScreenBackground">#0F1115</item>
         <item name="android:windowSplashScreenIconBackgroundColor">#0E1621</item>
+        <!-- 底部品牌条：系统 splash 无法放自定义文本，用字标位图（200dp 内自适应宽度）。
+             与 windowBackground 里的居中字标互补：一个在底部，一个在窗口层。 -->
+        <item name="android:windowSplashScreenBrandingImage">@drawable/launch_logo</item>
     </style>
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">#0F1115</item>

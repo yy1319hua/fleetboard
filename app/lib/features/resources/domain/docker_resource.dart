@@ -90,6 +90,94 @@ class DockerVolume {
       );
 }
 
+/// Docker 空间占用的一行（对齐 `docker.DiskUsage`，来自 `docker system df`）。
+class DockerDiskUsage {
+  const DockerDiskUsage({
+    required this.type,
+    required this.totalCount,
+    required this.active,
+    required this.size,
+    required this.reclaimable,
+  });
+
+  /// 类型名由 docker 给出（Images / Containers / Local Volumes / Build Cache）。
+  final String type;
+  final String totalCount;
+  final String active;
+
+  /// 人类可读容量串（如 `1.2GB`），后端不换算字节。
+  final String size;
+
+  /// 形如 `800MB (66%)`；后端原样透传，不做拆分。
+  final String reclaimable;
+
+  /// 去掉百分比后的可回收容量，用于摘要展示。
+  String get reclaimableSize {
+    final idx = reclaimable.indexOf(' (');
+    return idx < 0 ? reclaimable : reclaimable.substring(0, idx);
+  }
+
+  factory DockerDiskUsage.fromJson(Map<String, dynamic> json) => DockerDiskUsage(
+        type: (json['type'] as String?) ?? '',
+        totalCount: (json['total_count'] as String?) ?? '',
+        active: (json['active'] as String?) ?? '',
+        size: (json['size'] as String?) ?? '',
+        reclaimable: (json['reclaimable'] as String?) ?? '',
+      );
+}
+
+/// 单个清理目标的回收结果（对齐 `docker.PruneResult`）。
+class DockerPruneOutcome {
+  const DockerPruneOutcome({
+    required this.target,
+    required this.output,
+    required this.reclaimed,
+  });
+
+  /// images / volumes / build_cache。
+  final String target;
+  final String output;
+
+  /// 形如 `1.234GB`；docker 未输出该行时为空串。
+  final String reclaimed;
+
+  /// 目标的中文名，用于结果展示。
+  String get label {
+    switch (target) {
+      case 'images':
+        return '悬空镜像';
+      case 'volumes':
+        return '未使用卷';
+      case 'build_cache':
+        return '构建缓存';
+      default:
+        return target;
+    }
+  }
+
+  factory DockerPruneOutcome.fromJson(Map<String, dynamic> json) =>
+      DockerPruneOutcome(
+        target: (json['target'] as String?) ?? '',
+        output: (json['output'] as String?) ?? '',
+        reclaimed: (json['reclaimed'] as String?) ?? '',
+      );
+}
+
+/// 卷名本地校验，规则与后端 `docker.ValidateVolumeName` 一致。
+///
+/// 后端的白名单是防命令注入的硬约束（卷名会拼进 `docker volume rm`），
+/// 客户端镜像一份只是为了提前给出可读提示，不能放宽。
+String? validateVolumeName(String raw) {
+  final name = raw.trim();
+  if (name.isEmpty) return '卷名不能为空';
+  if (name.length > 255) return '卷名过长（上限 255 个字符）';
+  final pattern = RegExp(r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,254}$');
+  if (!pattern.hasMatch(name)) {
+    return '卷名只能包含字母、数字和 _ - .，且必须以字母或数字开头';
+  }
+  return null;
+}
+
 /// 镜像引用本地校验，规则与后端 `docker.ValidateImageRef` 逐条对齐。
 ///
 /// 为什么要在客户端先校验一遍：拉取镜像是个长达几十秒的操作，用户敲错一个字符

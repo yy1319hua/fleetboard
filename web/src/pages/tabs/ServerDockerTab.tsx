@@ -10,12 +10,15 @@ import { toast } from "@/components/ui/Toast";
 import {
   containerAction,
   containerStats,
+  dockerDiskUsage,
   listContainers,
   listImages,
   listNetworks,
   listVolumes,
+  pruneDocker,
   pullImage,
   removeImage,
+  removeVolume,
   type ContainerAction,
 } from "@/lib/docker";
 import { cn } from "@/lib/cn";
@@ -106,6 +109,29 @@ export function ServerDockerTab() {
     onError: (e) => toast(e instanceof Error ? e.message : "删除失败", "danger"),
   });
 
+  const rmv = useMutation({
+    mutationFn: (name: string) => removeVolume(server.id, name),
+    onSuccess: () => {
+      toast("数据卷已删除", "ok");
+      void qc.invalidateQueries({ queryKey: ["docker", server.id] });
+    },
+    // 409 的 message 里带容器名，原样展示——用户需要知道是哪个容器在占用。
+    onError: (e) => toast(e instanceof Error ? e.message : "删除失败", "danger"),
+  });
+
+  const prune = useMutation({
+    // 只清「没有容器引用」的三类：悬空镜像 / 未使用卷 / 构建缓存。
+    mutationFn: () => pruneDocker(server.id, ["images", "volumes", "build_cache"]),
+    onSuccess: (data) => {
+      const detail = data.results
+        .map((r) => `${r.target}${r.reclaimed ? ` ${r.reclaimed}` : ""}`)
+        .join("，");
+      toast(detail ? `清理完成：${detail}` : "清理完成", "ok");
+      void qc.invalidateQueries({ queryKey: ["docker", server.id] });
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "清理失败", "danger"),
+  });
+
   const statsMap = new Map((stats.data ?? []).map((s) => [s.container.slice(0, 12), s]));
 
   const handleAction = (cid: string, name: string, action: ContainerAction) => {
@@ -128,6 +154,32 @@ export function ServerDockerTab() {
     const ok = window.confirm(`删除镜像「${repo}」？`);
     if (!ok) return;
     rmi.mutate(id);
+  };
+
+  const handleRmv = (name: string) => {
+    const ok = window.confirm(
+      `删除数据卷「${name}」？\n\n卷里的数据会一起删除，无法恢复。\n` +
+        `仍被容器引用（含已停止容器）时会拒绝删除，并提示是哪个容器。`,
+    );
+    if (!ok) return;
+    rmv.mutate(name);
+  };
+
+  const handlePrune = async () => {
+    try {
+      const rows = await dockerDiskUsage(server.id);
+      const summary = rows
+        .map((r) => `${r.type}：占 ${r.size}，可回收 ${r.reclaimable || "—"}`)
+        .join("\n");
+      const ok = window.confirm(
+        `清理 Docker 空间（只清没有容器引用的资源）\n\n${summary}\n\n` +
+          `将清理：悬空镜像、未使用卷、构建缓存。这些数据删除后无法恢复，继续？`,
+      );
+      if (!ok) return;
+      prune.mutate();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "读取占用失败", "danger");
+    }
   };
 
   return (
@@ -159,6 +211,16 @@ export function ServerDockerTab() {
             <Button size="sm" variant="primary" onClick={handlePull} loading={pull.isPending}>
               拉取镜像
             </Button>
+          ) : null}
+          {sub === "volumes" ? (
+            <>
+              <Button size="sm" variant="secondary" onClick={() => void volumes.refetch()} disabled={volumes.isFetching}>
+                刷新
+              </Button>
+              <Button size="sm" variant="primary" onClick={() => void handlePrune()} loading={prune.isPending}>
+                清理空间
+              </Button>
+            </>
           ) : null}
         </div>
       </div>
@@ -332,11 +394,16 @@ export function ServerDockerTab() {
           ) : (
             <ul className="divide-y divide-border">
               {(volumes.data ?? []).map((v) => (
-                <li key={v.name} className="px-3 py-2">
-                  <div className="truncate font-mono text-mono text-text">{v.name}</div>
-                  <div className="truncate font-mono text-caption text-text-faint">
-                    {v.driver} · {v.mountpoint}
+                <li key={v.name} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="truncate font-mono text-mono text-text">{v.name}</div>
+                    <div className="truncate font-mono text-caption text-text-faint">
+                      {v.driver} · {v.mountpoint}
+                    </div>
                   </div>
+                  <Button size="sm" variant="ghost" onClick={() => handleRmv(v.name)}>
+                    删除
+                  </Button>
                 </li>
               ))}
             </ul>

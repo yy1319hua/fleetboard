@@ -2,6 +2,8 @@ package api
 
 import (
 	"database/sql"
+	"errors"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yy1319hua/fleetboard/internal/docker"
@@ -181,6 +183,107 @@ func listVolumesHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Han
 		list, err := docker.ListVolumes(cli)
 		if err != nil {
 			Fail(c, ErrBadGateway("获取卷列表失败: "+err.Error()))
+			return
+		}
+		OK(c, list)
+	}
+}
+
+// removeVolumeHandler 删除数据卷（卷内数据一并删除）。
+// DELETE /api/servers/:id/volumes/:name
+func removeVolumeHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		name := c.Param("name")
+		if err := docker.ValidateVolumeName(name); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
+			return
+		}
+		cli, err := openSSH(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		out, err := docker.RemoveVolume(cli, name)
+		if err != nil {
+			// 被容器引用是「用户可自行解决」的冲突，给 409 并带上容器名；
+			// 其余（SSH 断链、docker 报错）按网关错误处理。
+			if errors.Is(err, docker.ErrVolumeInUse) {
+				msg := strings.TrimPrefix(err.Error(), docker.ErrVolumeInUse.Error()+": ")
+				Fail(c, ErrConflict("卷仍被容器占用："+msg+"（先删除或改造这些容器再清理）"))
+				return
+			}
+			Fail(c, ErrBadGateway(err.Error()))
+			return
+		}
+		OK(c, gin.H{"deleted": name, "output": out})
+	}
+}
+
+// dockerPruneRequest 是空间回收请求体。
+//
+// targets 取 images / volumes / build_cache 的任意组合；必须显式给出，
+// 不做「省略即全清」的默认值——破坏性操作不接受隐式扩大范围。
+type dockerPruneRequest struct {
+	Targets []string `json:"targets"`
+}
+
+// pruneDockerHandler 回收 Docker 占用的磁盘空间。
+// POST /api/servers/:id/docker/prune
+func pruneDockerHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		var req dockerPruneRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, ErrBadRequest(`请求体需为 {"targets":["images","volumes","build_cache"]}`))
+			return
+		}
+		if len(req.Targets) == 0 {
+			Fail(c, ErrBadRequest("targets 不能为空：请显式指定 images / volumes / build_cache"))
+			return
+		}
+		for _, t := range req.Targets {
+			if !docker.ValidPruneTarget(t) {
+				Fail(c, ErrBadRequest("不支持的清理目标: "+t+"（可选 images / volumes / build_cache）"))
+				return
+			}
+		}
+		cli, err := openSSH(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		results, err := docker.Prune(cli, req.Targets)
+		if err != nil {
+			Fail(c, ErrBadGateway(err.Error()))
+			return
+		}
+		OK(c, gin.H{"results": results})
+	}
+}
+
+// dockerDFHandler 返回 Docker 各类型资源的空间占用与可回收量。
+// GET /api/servers/:id/docker/df
+func dockerDFHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		cli, err := openSSH(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		list, err := docker.SystemDF(cli)
+		if err != nil {
+			Fail(c, ErrBadGateway("获取磁盘占用失败: "+err.Error()))
 			return
 		}
 		OK(c, list)

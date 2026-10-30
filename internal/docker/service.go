@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -448,6 +449,199 @@ func ContainerStats(cli *ssh.Client) ([]Stats, error) {
 		}
 		if s != nil {
 			list = append(list, *s)
+		}
+	}
+	return list, nil
+}
+
+// ─────────────────────── 卷删除与磁盘空间回收 ───────────────────────
+
+// ErrVolumeInUse 表示卷仍被容器（含已停止容器）引用，不能删除。
+var ErrVolumeInUse = errors.New("卷仍被容器占用")
+
+// Docker 卷名规则：字母或数字开头，其后可含字母、数字、下划线、点、连字符。
+var volumeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,254}$`)
+
+// ValidateVolumeName 校验卷名，避免把任意字符串拼进 shell 命令。
+func ValidateVolumeName(name string) error {
+	if !volumeNamePattern.MatchString(name) {
+		return fmt.Errorf("非法的卷名: %q", name)
+	}
+	return nil
+}
+
+// ParseVolumeUsers 解析 `docker ps -a --filter volume=<name> --format '{{.Names}}'` 输出。
+// 空行忽略；无引用时返回空切片（非 nil，便于 JSON 序列化为 []）。
+func ParseVolumeUsers(out string) []string {
+	users := []string{}
+	for _, line := range strings.Split(out, "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			users = append(users, s)
+		}
+	}
+	return users
+}
+
+// VolumeUsers 返回引用该卷的容器名（含已停止容器，因为停止的容器恢复后仍会用该卷）。
+func VolumeUsers(cli *ssh.Client, name string) ([]string, error) {
+	if err := ValidateVolumeName(name); err != nil {
+		return nil, err
+	}
+	out, err := runErr(cli, "docker ps -a --filter volume="+name+" --format '{{.Names}}'")
+	if err != nil {
+		return nil, fmt.Errorf("查询卷占用失败: %w", err)
+	}
+	return ParseVolumeUsers(out), nil
+}
+
+// RemoveVolume 删除数据卷（卷内数据一并删除）。
+// 被容器引用时返回包裹 ErrVolumeInUse 的错误，消息里带容器名，供前端直接展示。
+func RemoveVolume(cli *ssh.Client, name string) (string, error) {
+	if err := ValidateVolumeName(name); err != nil {
+		return "", err
+	}
+	users, err := VolumeUsers(cli, name)
+	if err != nil {
+		return "", err
+	}
+	if len(users) > 0 {
+		return "", fmt.Errorf("%w: %s", ErrVolumeInUse, strings.Join(users, "、"))
+	}
+	out, err := runErr(cli, "docker volume rm "+name)
+	if err != nil {
+		if strings.Contains(strings.ToLower(out), "no such volume") {
+			return out, nil // 已不存在，按成功处理（幂等）
+		}
+		return out, fmt.Errorf("docker volume rm 失败: %w", err)
+	}
+	return out, nil
+}
+
+// PruneTarget 是受支持的回收目标。
+type PruneTarget string
+
+const (
+	PruneImages     PruneTarget = "images"      // 悬空镜像（无 tag、无容器引用）
+	PruneVolumes    PruneTarget = "volumes"     // 无容器引用的卷
+	PruneBuildCache PruneTarget = "build_cache" // 构建缓存
+)
+
+// ValidPruneTarget 判断目标是否受支持。
+func ValidPruneTarget(t string) bool {
+	switch PruneTarget(t) {
+	case PruneImages, PruneVolumes, PruneBuildCache:
+		return true
+	}
+	return false
+}
+
+// PruneResult 是单个目标的回收结果。
+type PruneResult struct {
+	Target    string `json:"target"`
+	Output    string `json:"output"`
+	Reclaimed string `json:"reclaimed"` // 如 "1.234GB"；解析不到时为空串
+}
+
+// ParseReclaimed 从 prune 输出里解析 "Total reclaimed space: 1.234GB"。
+func ParseReclaimed(out string) string {
+	const marker = "total reclaimed space:"
+	best := ""
+	for _, line := range strings.Split(out, "\n") {
+		idx := strings.Index(strings.ToLower(line), marker)
+		if idx < 0 {
+			continue
+		}
+		if v := strings.TrimSpace(line[idx+len(marker):]); v != "" {
+			best = v
+		}
+	}
+	return best
+}
+
+// Prune 按目标逐项回收空间。任一目标失败即返回已完成的项与错误。
+//
+// 安全边界：images 只清悬空镜像（不带 -a），volumes 只清无容器引用的卷，
+// 因此不会删掉仍在使用的资源。
+func Prune(cli *ssh.Client, targets []string) ([]PruneResult, error) {
+	if len(targets) == 0 {
+		return nil, errors.New("至少需要一个清理目标")
+	}
+	results := []PruneResult{}
+	for _, t := range targets {
+		var cmd string
+		switch PruneTarget(t) {
+		case PruneImages:
+			cmd = "docker image prune -f"
+		case PruneVolumes:
+			cmd = "docker volume prune -f"
+		case PruneBuildCache:
+			cmd = "docker builder prune -f"
+		default:
+			return results, fmt.Errorf("不支持的清理目标: %q", t)
+		}
+		out, err := runErr(cli, cmd)
+		if err != nil {
+			return results, fmt.Errorf("%s 清理失败: %w", t, err)
+		}
+		results = append(results, PruneResult{
+			Target:    t,
+			Output:    out,
+			Reclaimed: ParseReclaimed(out),
+		})
+	}
+	return results, nil
+}
+
+// DiskUsage 是 `docker system df` 的一行（空间占用汇总）。
+type DiskUsage struct {
+	Type        string `json:"type"`
+	TotalCount  string `json:"total_count"`
+	Active      string `json:"active"`
+	Size        string `json:"size"`
+	Reclaimable string `json:"reclaimable"`
+}
+
+type diskUsageLine struct {
+	Type        string `json:"Type"`
+	TotalCount  string `json:"TotalCount"`
+	Active      string `json:"Active"`
+	Size        string `json:"Size"`
+	Reclaimable string `json:"Reclaimable"`
+}
+
+// ParseDiskUsageLine 解析 `docker system df --format json` 的单行。
+func ParseDiskUsageLine(line string) (*DiskUsage, error) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil, nil
+	}
+	var p diskUsageLine
+	if err := json.Unmarshal([]byte(line), &p); err != nil {
+		return nil, fmt.Errorf("解析磁盘占用行失败: %w", err)
+	}
+	return &DiskUsage{
+		Type:        p.Type,
+		TotalCount:  p.TotalCount,
+		Active:      p.Active,
+		Size:        p.Size,
+		Reclaimable: p.Reclaimable,
+	}, nil
+}
+
+// SystemDF 返回 Docker 各类型资源的空间占用（镜像/容器/卷/构建缓存）。
+func SystemDF(cli *ssh.Client) ([]DiskUsage, error) {
+	out, err := runErr(cli, `docker system df --format '{{json .}}'`)
+	if err != nil {
+		return nil, fmt.Errorf("docker system df 失败: %w", err)
+	}
+	list := []DiskUsage{}
+	for _, line := range strings.Split(out, "\n") {
+		d, err := ParseDiskUsageLine(line)
+		if err != nil {
+			return nil, err
+		}
+		if d != nil {
+			list = append(list, *d)
 		}
 	}
 	return list, nil

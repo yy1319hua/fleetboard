@@ -113,6 +113,22 @@ export interface VolumeItem {
   mountpoint: string;
 }
 
+/** docker system df 的一行（后端 docker.DiskUsage）。 */
+export interface DockerDiskUsage {
+  type: string;
+  total_count: string;
+  active: string;
+  size: string;
+  reclaimable: string;
+}
+
+/** 单个清理目标的回收结果（后端 docker.PruneResult）。 */
+export interface PruneOutcome {
+  target: string;
+  output: string;
+  reclaimed: string;
+}
+
 export interface ContainerStat {
   container: string;
   name: string;

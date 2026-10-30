@@ -1,5 +1,13 @@
 import { apiDelete, apiGet, apiPost, withQuery } from "@/lib/api";
-import type { Container, ContainerStat, ImageItem, NetworkItem, VolumeItem } from "@/lib/types";
+import type {
+  Container,
+  ContainerStat,
+  DockerDiskUsage,
+  ImageItem,
+  NetworkItem,
+  PruneOutcome,
+  VolumeItem,
+} from "@/lib/types";
 
 export function listContainers(serverID: number) {
   return apiGet<Container[]>(`/api/servers/${serverID}/containers`);
@@ -38,6 +46,23 @@ export function listNetworks(serverID: number) {
 
 export function listVolumes(serverID: number) {
   return apiGet<VolumeItem[]>(`/api/servers/${serverID}/volumes`);
+}
+
+/** 删除数据卷。仍被容器引用时后端返回 409，错误信息里带容器名（直接展示）。 */
+export function removeVolume(serverID: number, name: string) {
+  return apiDelete<{ deleted: string; output: string }>(
+    `/api/servers/${serverID}/volumes/${encodeURIComponent(name)}`,
+  );
+}
+
+/** Docker 空间占用（docker system df）。 */
+export function dockerDiskUsage(serverID: number) {
+  return apiGet<DockerDiskUsage[]>(`/api/servers/${serverID}/docker/df`);
+}
+
+/** 回收空间。targets 必须显式给出（后端不接受空数组）。 */
+export function pruneDocker(serverID: number, targets: Array<"images" | "volumes" | "build_cache">) {
+  return apiPost<{ results: PruneOutcome[] }>(`/api/servers/${serverID}/docker/prune`, { targets });
 }
 
 /** 申请日志票（60s 一次性），用于建立 WebSocket。 */

@@ -13,9 +13,12 @@ import '../domain/docker_resource.dart';
 ///  - `DELETE /api/servers/:id/images/:imageId`   → `{deleted, output}`（镜像不存在视为成功）
 ///  - `GET    /api/servers/:id/networks`          → `[{id, name, driver, scope}]`
 ///  - `GET    /api/servers/:id/volumes`           → `[{name, driver, mountpoint}]`
+///  - `DELETE /api/servers/:id/volumes/:name`     → `{deleted, output}`（被容器占用时 409）
+///  - `GET    /api/servers/:id/docker/df`         → `[{type, total_count, active, size, reclaimable}]`
+///  - `POST   /api/servers/:id/docker/prune`      → `{results: [{target, output, reclaimed}]}`
 ///
-/// 网络与卷**只有 GET**：`router.go` 里没有 `/networks` 与 `/volumes` 的写路由，
-/// 所以 App 端不做创建/删除（不做灰按钮，页面上直接写清"去 Web 端"）。
+/// 网络**只有 GET**：`router.go` 里没有 `/networks` 的写路由，所以 App 端不做
+/// 创建/删除（不做灰按钮，页面上直接写清「去 Web 端」）。
 ///
 /// `pull` 走 `streamDio`：`docker pull` 几分钟很常见，JSON 档 20s 的 receiveTimeout
 /// 会在拉取**正在进行**时报超时，用户重试一次就是重复拉取。
@@ -64,6 +67,41 @@ class ResourcesRepository {
     final data = unwrap<Map<String, dynamic>>(resp.data, (json) => json);
     return (data['output'] as String?) ?? '';
   }
+
+  /// 删除数据卷（卷内数据一并删除）。
+  ///
+  /// 卷仍被容器引用时后端返回 409 且消息里带容器名，[describeApiError]
+  /// 会原样透出，UI 直接展示即可——不要吞掉这句换成人话，用户需要知道是哪个容器。
+  Future<String> removeVolume(int serverId, String name) async {
+    final resp = await _json.delete<dynamic>(
+      '/api/servers/$serverId/volumes/${Uri.encodeComponent(name)}',
+    );
+    final data = unwrap<Map<String, dynamic>>(resp.data, (json) => json);
+    return (data['output'] as String?) ?? '';
+  }
+
+  /// Docker 空间占用（`docker system df`）。
+  Future<List<DockerDiskUsage>> diskUsage(int serverId) async {
+    final resp = await _json.get<dynamic>('/api/servers/$serverId/docker/df');
+    return unwrapList<DockerDiskUsage>(resp.data, DockerDiskUsage.fromJson);
+  }
+
+  /// 回收空间。targets 必须显式给出（后端不接受空数组）。
+  Future<List<DockerPruneOutcome>> prune(
+    int serverId, {
+    required List<String> targets,
+  }) async {
+    final resp = await _json.post<dynamic>(
+      '/api/servers/$serverId/docker/prune',
+      data: <String, dynamic>{'targets': targets},
+    );
+    final data = unwrap<Map<String, dynamic>>(resp.data, (json) => json);
+    final raw = (data['results'] as List<dynamic>?) ?? const <dynamic>[];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(DockerPruneOutcome.fromJson)
+        .toList(growable: false);
+  }
 }
 
 final resourcesRepositoryProvider = Provider<ResourcesRepository>(
@@ -93,4 +131,11 @@ final volumesProvider =
     FutureProvider.autoDispose.family<List<DockerVolume>, int>(
   (ref, serverId) =>
       ref.watch(resourcesRepositoryProvider).listVolumes(serverId),
+);
+
+/// 空间占用：清理入口打开时拉一次，清理完成后再失效重取。
+final diskUsageProvider =
+    FutureProvider.autoDispose.family<List<DockerDiskUsage>, int>(
+  (ref, serverId) =>
+      ref.watch(resourcesRepositoryProvider).diskUsage(serverId),
 );
