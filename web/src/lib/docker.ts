@@ -6,6 +6,7 @@ import type {
   ImageItem,
   NetworkItem,
   PruneOutcome,
+  UnusedVolumesPreview,
   VolumeItem,
 } from "@/lib/types";
 
@@ -63,6 +64,11 @@ export function dockerDiskUsage(serverID: number) {
 /** 回收空间。targets 必须显式给出（后端不接受空数组）。 */
 export function pruneDocker(serverID: number, targets: Array<"images" | "volumes" | "build_cache">) {
   return apiPost<{ results: PruneOutcome[] }>(`/api/servers/${serverID}/docker/prune`, { targets });
+}
+
+/** 未使用卷预览：执行清理前把将被删除的卷名列出来（只读）。 */
+export function dockerUnusedVolumes(serverID: number) {
+  return apiGet<UnusedVolumesPreview>(`/api/servers/${serverID}/docker/unused-volumes`);
 }
 
 /** 申请日志票（60s 一次性），用于建立 WebSocket。 */

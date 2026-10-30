@@ -11,6 +11,7 @@ import {
   containerAction,
   containerStats,
   dockerDiskUsage,
+  dockerUnusedVolumes,
   listContainers,
   listImages,
   listNetworks,
@@ -120,16 +121,35 @@ export function ServerDockerTab() {
   });
 
   const prune = useMutation({
-    // 只清「没有容器引用」的三类：悬空镜像 / 未使用卷 / 构建缓存。
+    // 只清「没有容器引用」的三类：悬空镜像 / 未使用卷（含命名卷）/ 构建缓存。
     mutationFn: () => pruneDocker(server.id, ["images", "volumes", "build_cache"]),
     onSuccess: (data) => {
-      const detail = data.results
-        .map((r) => `${r.target}${r.reclaimed ? ` ${r.reclaimed}` : ""}`)
-        .join("，");
-      toast(detail ? `清理完成：${detail}` : "清理完成", "ok");
+      // 三态：真删了 / 一项都没删 / 单项失败。不再一律报「清理完成」——
+      // 后端只清「无引用」资源，用户勾了却 0 删除时必须说清原因。
+      const deleted = data.results.reduce(
+        (sum, r) => sum + (r.error ? 0 : (r.deleted_count ?? r.deleted_items?.length ?? 0)),
+        0,
+      );
+      const failed = data.results.filter((r) => (r.error ?? "").trim() !== "");
+      if (deleted > 0) {
+        const reclaimed = data.results
+          .map((r) => (r.reclaimed && r.reclaimed !== "0B" ? `${r.target} ${r.reclaimed}` : ""))
+          .filter(Boolean)
+          .join("，");
+        toast(`已删除 ${deleted} 项${reclaimed ? `（${reclaimed}）` : ""}`, "ok");
+      } else if (failed.length > 0) {
+        // 后端文案里常带容器名/原因，原样展示。
+        toast(failed[0]?.error ?? "清理失败", "danger");
+      } else {
+        toast("没有可清理的资源（详见清理前提示）", "ok");
+      }
       void qc.invalidateQueries({ queryKey: ["docker", server.id] });
     },
-    onError: (e) => toast(e instanceof Error ? e.message : "清理失败", "danger"),
+    onError: (e) => {
+      // 请求失败时磁盘上可能已删了一半，列表更需要刷新。
+      void qc.invalidateQueries({ queryKey: ["docker", server.id] });
+      toast(e instanceof Error ? e.message : "清理失败", "danger");
+    },
   });
 
   const statsMap = new Map((stats.data ?? []).map((s) => [s.container.slice(0, 12), s]));
@@ -167,13 +187,42 @@ export function ServerDockerTab() {
 
   const handlePrune = async () => {
     try {
-      const rows = await dockerDiskUsage(server.id);
+      // 预览与执行同源：df 给量、unused-volumes 给卷名（与 prune -a 同判据）。
+      // 预览失败不阻断主流程（后端未升级时 404），只是看不到卷名。
+      const [rows, preview] = await Promise.all([
+        dockerDiskUsage(server.id),
+        dockerUnusedVolumes(server.id).catch(() => null),
+      ]);
       const summary = rows
-        .map((r) => `${r.type}：占 ${r.size}，可回收 ${r.reclaimable || "—"}`)
+        .map((r) => `${r.type}：占 ${r.size}，Docker 认为可回收 ${r.reclaimable || "—"}`)
         .join("\n");
+
+      let volumesPart = "";
+      if (preview) {
+        if (preview.volumes.length === 0) {
+          volumesPart =
+            preview.total_count === 0
+              ? "\n\n这台机器上没有任何数据卷。"
+              : `\n\n没有可自动清理的卷：共 ${preview.total_count} 个卷，全部仍被容器引用（含已停止容器）。`;
+        } else {
+          const names = preview.volumes
+            .slice(0, 8)
+            .map((v) => `· ${v.name}${v.compose_project ? `（compose 项目 ${v.compose_project}）` : ""}`)
+            .join("\n");
+          volumesPart =
+            `\n\n将删除以下 ${preview.volumes.length} 个卷（卷内数据一并删除）：\n` +
+            names +
+            (preview.volumes.length > 8 ? `\n…另有 ${preview.volumes.length - 8} 个` : "");
+        }
+      } else {
+        volumesPart = "\n\n（未能预览将被删除的卷名，仍可继续）";
+      }
+
       const ok = window.confirm(
         `清理 Docker 空间（只清没有容器引用的资源）\n\n${summary}\n\n` +
-          `将清理：悬空镜像、未使用卷、构建缓存。这些数据删除后无法恢复，继续？`,
+          `将清理：悬空镜像（仅无 tag）、全部未使用卷（含命名卷）、构建缓存。` +
+          `\n注：镜像行的可回收量包含「有 tag 但无容器引用」的镜像，本操作不会删除它们。` +
+          `${volumesPart}\n\n这些数据删除后无法恢复，继续？`,
       );
       if (!ok) return;
       prune.mutate();
