@@ -98,6 +98,31 @@ json_field() { # 从状态文件里取一个字符串字段（状态文件始终
 
 # 阶段点写状态文件。字段顺序/名字与 internal/upgrade.Snapshot 的 json tag 完全一致。
 # 写法：临时文件 → chmod 600 → mv（rename 是原子的，读侧永远看不到半个 JSON）→ sync 父目录。
+# state_is_current：状态文件是否属于「本次进行中」的升级请求。
+#
+# 为什么需要它：后端在 Start() 时先把 from/to/op_id/started_at 写进 state 再拉起本脚本，
+# 目的是让 App 对账。但上一轮升级结束后 state 仍是终态记录（done/failed/...），
+# 脚本过去无条件沿用它的 from——于是下次手动升级会：
+#   ① 显示出错误的基线（实测把 v0.4.3 报成 v0.4.2）；
+#   ② 让后面 `TARGET = FROM` 的幂等判断误判「已是该版本」直接跳过，实际什么都没换；
+#   ③ 把 App 的已耗时算成上一轮的开始时间。
+# 判据与后端 busyWindow（30 分钟）同口径：非终态 + started_at 未超窗。
+# 超窗的 running 是机器重启/进程消失留下的残影（后端由 Reconcile 收成 interrupted）。
+state_is_current() {
+  [ -f "$STATE" ] || return 1
+  local st sa ts now
+  st=$(json_field state || true)
+  case "$st" in
+    ""|idle|done|failed|rolled_back|interrupted) return 1 ;;
+  esac
+  sa=$(json_field started_at || true)
+  [ -n "$sa" ] || return 1
+  ts=$(date -d "$sa" +%s 2>/dev/null || echo 0)
+  now=$(date +%s)
+  [ "$ts" -gt 0 ] || return 1
+  [ $((now - ts)) -lt 1800 ]
+}
+
 write_state() { # $1=state $2=phase_text $3=error_code
   local st="$1" ph="$2" ec="${3:-}" tmp
   tmp="$STATE.tmp.$$"
@@ -440,8 +465,8 @@ main() {
     echo "⚠️  没有 flock，跳过单实例保护"
   fi
 
-  # 沿用后端写入的 started_at / op_id（App 用它算已耗时、对账），没有才自己生成
-  if [ -f "$STATE" ]; then
+  # 只在「本次进行中」的情况下沿用后端写入的 started_at / op_id / from（见 state_is_current）
+  if state_is_current; then
     STATE_STARTED_AT=$(json_field started_at || true)
     if [ -z "$OPID" ]; then OPID=$(json_field op_id || true); fi
     if [ -z "$FROM" ]; then FROM=$(json_field from || true); fi
@@ -451,7 +476,10 @@ main() {
   read_port
 
   # ── 阶段 0：看当前版本（幂等判断要用，必须在停服前做）──
-  if [ -z "$FROM" ]; then FROM=$(probe_version || true); fi
+  # 以运行实例自报的版本（/api/health 的 data.version）为准：它反映的是真正在跑的二进制，
+  # 比 state 记录可靠。探测失败（服务已停 / 端口不通）才退回上面从本次 state 取的 from。
+  probed=$(probe_version || true)
+  if [ -n "$probed" ]; then FROM="$probed"; fi
   # 目标版本与当前版本一致 → 什么都不换，只把状态收成终态（否则 App 会一直等到 busy 窗口超时）
   if [ -n "$TARGET" ] && [ "$TARGET" != latest ] && [ "$TARGET" = "$FROM" ]; then
     say done "已是该版本（$TARGET），无需升级"
