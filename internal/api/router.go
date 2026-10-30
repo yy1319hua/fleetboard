@@ -86,6 +86,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	authed.GET("/servers/:id/volumes", listVolumesHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.DELETE("/servers/:id/volumes/:name", removeVolumeHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.GET("/servers/:id/docker/df", dockerDFHandler(opts.DB, opts.MasterKey, opts.Pool))
+	authed.GET("/servers/:id/docker/unused-volumes", unusedVolumesHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.POST("/servers/:id/docker/prune", pruneDockerHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.GET("/servers/:id/container-stats", containerStatsHandler(opts.DB, opts.MasterKey, opts.Pool))
 

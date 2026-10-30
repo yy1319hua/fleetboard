@@ -305,3 +305,183 @@ func TestParseDiskUsageLine(t *testing.T) {
 		t.Error("非法 JSON 应报错")
 	}
 }
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestParseDeletedItems(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{
+			name: "卷删除",
+			in:   "Deleted Volumes:\ndockdeck_dockdeck-hub-data\n\nTotal reclaimed space: 85.94MB\n",
+			want: []string{"dockdeck_dockdeck-hub-data"},
+		},
+		{
+			name: "多个卷",
+			in:   "Deleted Volumes:\nvol1\nvol2\n\nTotal reclaimed space: 1.2GB\n",
+			want: []string{"vol1", "vol2"},
+		},
+		{
+			name: "没有空行分隔",
+			in:   "Deleted Volumes:\nvol-a\nTotal reclaimed space: 1KB\n",
+			want: []string{"vol-a"},
+		},
+		{
+			name: "什么都没删",
+			in:   "Total reclaimed space: 0B\n",
+			want: []string{},
+		},
+		{
+			name: "空输出",
+			in:   "",
+			want: []string{},
+		},
+		{
+			name: "CRLF",
+			in:   "Deleted Volumes:\r\nvol-a\r\nvol-b\r\n\r\nTotal reclaimed space: 1KB\r\n",
+			want: []string{"vol-a", "vol-b"},
+		},
+		{
+			name: "只有 Deleted 段没有 Total",
+			in:   "Deleted Volumes:\nvol-x\n",
+			want: []string{"vol-x"},
+		},
+		{
+			name: "镜像段",
+			in:   "Deleted Images:\nuntagged: busybox:latest\ndeleted: sha256:abc\n\nTotal reclaimed space: 0B\n",
+			want: []string{"untagged: busybox:latest", "deleted: sha256:abc"},
+		},
+		{
+			name: "构建缓存段",
+			in:   "Deleted build cache objects:\nabc123\ndef456\n\nTotal reclaimed space: 512MB\n",
+			want: []string{"abc123", "def456"},
+		},
+		{
+			name: "条目前后空白",
+			in:   "Deleted Volumes:\n  vol-padded  \n\nTotal reclaimed space: 1KB\n",
+			want: []string{"vol-padded"},
+		},
+		{
+			name: "Total 之后不误收",
+			in:   "Total reclaimed space: 0B\nWARNING: something\n",
+			want: []string{},
+		},
+	}
+	for _, c := range cases {
+		got := ParseDeletedItems(c.in)
+		if got == nil {
+			t.Errorf("%s: 不应返回 nil", c.name)
+			continue
+		}
+		if !equalStrings(got, c.want) {
+			t.Errorf("%s: got %v want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestParseVolumeNameList(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{"单个", "dockdeck_dockdeck-hub-data\n", []string{"dockdeck_dockdeck-hub-data"}},
+		{"排序", "b\na\n", []string{"a", "b"}},
+		{"去重与空行", "a\n\na\n\n", []string{"a"}},
+		{"空输出", "", []string{}},
+		{"仅换行", "\n\n", []string{}},
+		{"CRLF", "vol1\r\nvol2\r\n", []string{"vol1", "vol2"}},
+	}
+	for _, c := range cases {
+		got := ParseVolumeNameList(c.in)
+		if got == nil || !equalStrings(got, c.want) {
+			t.Errorf("%s: got %v want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestParseVolumeListWithProject(t *testing.T) {
+	out := "dockdeck_dockdeck-hub-data\tdockdeck\nplain-vol\t\n\n"
+	got := ParseVolumeListWithProject(out)
+	if len(got) != 2 {
+		t.Fatalf("应解析出 2 个卷，got %+v", got)
+	}
+	if got[0].Name != "dockdeck_dockdeck-hub-data" || got[0].Project != "dockdeck" {
+		t.Errorf("第一个卷错误: %+v", got[0])
+	}
+	if got[1].Name != "plain-vol" || got[1].Project != "" {
+		t.Errorf("第二个卷错误: %+v", got[1])
+	}
+	if n := len(ParseVolumeListWithProject("")); n != 0 {
+		t.Errorf("空输出应为 0 项，got %d", n)
+	}
+}
+
+func TestPrunePlan(t *testing.T) {
+	cases := []struct {
+		target   string
+		wantCmd  string
+		wantMode string
+		ok       bool
+	}{
+		{"volumes", "docker volume prune -a -f", ModeAllUnused, true},
+		{"images", "docker image prune -f", ModeDangling, true},
+		{"build_cache", "docker builder prune -f", ModeAllUnused, true},
+		{"", "", "", false},
+		{"all", "", "", false},
+		{"images; rm -rf /", "", "", false},
+	}
+	for _, c := range cases {
+		cmd, mode, err := prunePlan(c.target)
+		if c.ok && err != nil {
+			t.Errorf("%q 应成功，got err %v", c.target, err)
+			continue
+		}
+		if !c.ok {
+			if err == nil {
+				t.Errorf("%q 应失败", c.target)
+			}
+			continue
+		}
+		if cmd != c.wantCmd || mode != c.wantMode {
+			t.Errorf("%q: got (%q,%q) want (%q,%q)", c.target, cmd, mode, c.wantCmd, c.wantMode)
+		}
+	}
+}
+
+func TestDiskUsagePruneCoverage(t *testing.T) {
+	cases := []struct {
+		typ       string
+		wantTgt   string
+		wantCover string
+	}{
+		{"Images", "images", CoveragePartial},
+		{"Local Volumes", "volumes", CoverageFull},
+		{"Build Cache", "build_cache", CoverageFull},
+		{"Containers", "", CoverageNone},
+		{"Weird", "", CoverageNone},
+	}
+	for _, c := range cases {
+		line := `{"Type":"` + c.typ + `","TotalCount":"1","Active":"0","Size":"1MB","Reclaimable":"1MB"}`
+		d, err := ParseDiskUsageLine(line)
+		if err != nil {
+			t.Fatalf("%s: %v", c.typ, err)
+		}
+		if d.PruneTarget != c.wantTgt || d.PruneCoverage != c.wantCover {
+			t.Errorf("%s: got (%q,%q) want (%q,%q)", c.typ, d.PruneTarget, d.PruneCoverage, c.wantTgt, c.wantCover)
+		}
+	}
+}

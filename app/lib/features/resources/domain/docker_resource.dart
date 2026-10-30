@@ -77,16 +77,22 @@ class DockerVolume {
     required this.name,
     required this.driver,
     required this.mountpoint,
+    this.composeProject = '',
   });
 
   final String name;
   final String driver;
   final String mountpoint;
 
+  /// 所属 compose 项目（`com.docker.compose.project` 标签）。仅未使用卷预览接口返回；
+  /// 空串表示非 compose 卷或该接口未提供。
+  final String composeProject;
+
   factory DockerVolume.fromJson(Map<String, dynamic> json) => DockerVolume(
         name: (json['name'] as String?) ?? '',
         driver: (json['driver'] as String?) ?? '',
         mountpoint: (json['mountpoint'] as String?) ?? '',
+        composeProject: (json['compose_project'] as String?) ?? '',
       );
 }
 
@@ -132,6 +138,10 @@ class DockerPruneOutcome {
     required this.target,
     required this.output,
     required this.reclaimed,
+    this.deletedItems = const <String>[],
+    this.deletedCount,
+    this.nothingDeleted,
+    this.error = '',
   });
 
   /// images / volumes / build_cache。
@@ -140,6 +150,29 @@ class DockerPruneOutcome {
 
   /// 形如 `1.234GB`；docker 未输出该行时为空串。
   final String reclaimed;
+
+  /// 实际删除的条目：卷名 / 镜像引用 / 缓存 ID。
+  final List<String> deletedItems;
+
+  /// 后端报告的删除条数。**null = 后端没报（旧版本）**，不是 0。
+  final int? deletedCount;
+
+  /// 后端明确表示「本次没有可删项」。null = 未报告。
+  final bool? nothingDeleted;
+
+  /// 单项失败原因；空串表示该项成功。由后端逐项返回，原样展示，不改写。
+  final String error;
+
+  bool get failed => error.trim().isNotEmpty;
+
+  /// 后端是否报告了「删了什么」。
+  bool get reported => deletedCount != null || deletedItems.isNotEmpty;
+
+  int get actualDeletedCount => deletedCount ?? deletedItems.length;
+
+  /// 执行成功但一项都没删。
+  bool get deletedNothing =>
+      !failed && (nothingDeleted ?? (reported && actualDeletedCount == 0));
 
   /// 目标的中文名，用于结果展示。
   String get label {
@@ -160,7 +193,107 @@ class DockerPruneOutcome {
         target: (json['target'] as String?) ?? '',
         output: (json['output'] as String?) ?? '',
         reclaimed: (json['reclaimed'] as String?) ?? '',
+        deletedItems: (json['deleted_items'] as List<dynamic>?)
+                ?.whereType<String>()
+                .toList(growable: false) ??
+            const <String>[],
+        deletedCount: _asInt(json['deleted_count']),
+        nothingDeleted: json['nothing_deleted'] as bool?,
+        error: (json['error'] as String?) ?? '',
       );
+}
+
+/// 未使用卷预览（`GET /api/servers/:id/docker/unused-volumes`）。
+///
+/// 为什么要这个接口：`docker volume prune` 的输出只有一句
+/// 「Total reclaimed space: 0B」，执行前用户完全不知道会删哪些卷，
+/// 于是出现「显示已清理、卷还在」的观感。
+class DockerVolumePreview {
+  const DockerVolumePreview({
+    required this.volumes,
+    required this.count,
+    required this.totalCount,
+    required this.inUseCount,
+    required this.reclaimable,
+  });
+
+  /// 将被删除的卷（无任何容器引用，**含命名卷**）。
+  final List<DockerVolume> volumes;
+
+  final int count;
+
+  /// 该机器卷总数（含被引用的），用于解释「为什么一个都删不掉」。
+  final int totalCount;
+
+  /// 仍被容器引用（含已停止容器）的卷数。
+  final int inUseCount;
+
+  /// 与 `docker system df` 的本地卷行同源。
+  final String reclaimable;
+
+  factory DockerVolumePreview.fromJson(Map<String, dynamic> json) {
+    final raw = json['volumes'];
+    final list = raw is List<dynamic>
+        ? raw
+            .whereType<Map<String, dynamic>>()
+            .map(DockerVolume.fromJson)
+            .toList(growable: false)
+        : const <DockerVolume>[];
+    return DockerVolumePreview(
+      volumes: list,
+      count: _asInt(json['count']) ?? list.length,
+      totalCount: _asInt(json['total_count']) ?? list.length,
+      inUseCount: _asInt(json['in_use_count']) ?? 0,
+      reclaimable: (json['reclaimable'] as String?) ?? '',
+    );
+  }
+}
+
+int? _asInt(Object? raw) {
+  if (raw is int) return raw;
+  if (raw is num) return raw.toInt();
+  if (raw is String) return int.tryParse(raw.trim());
+  return null;
+}
+
+/// docker 的人类可读容量串 → 字节；无法识别返回 null（宁可不算，不编造）。
+int? parseDockerSizeBytes(String raw) {
+  final text = raw.trim();
+  if (text.isEmpty) return null;
+  final m =
+      RegExp(r'^([0-9]+(?:\.[0-9]+)?)\s*([kKmMgGtTpP]?)B$').firstMatch(text);
+  if (m == null) return null;
+  final value = double.tryParse(m.group(1)!);
+  if (value == null) return null;
+  final exp = const {'': 0, 'K': 1, 'M': 2, 'G': 3, 'T': 4, 'P': 5}[
+      m.group(2)!.toUpperCase()];
+  if (exp == null) return null;
+  return (value * _pow1024(exp)).round();
+}
+
+double _pow1024(int exp) {
+  var v = 1.0;
+  for (var i = 0; i < exp; i++) {
+    v *= 1024;
+  }
+  return v;
+}
+
+/// 字节 → `85.94MB` / `1.2GB`（1024 进制，去尾零）。
+String formatSizeBytes(int bytes) {
+  if (bytes <= 0) return '0B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var value = bytes.toDouble();
+  var i = 0;
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024;
+    i += 1;
+  }
+  var text = value.toStringAsFixed(2);
+  if (text.contains('.')) {
+    text = text.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+  }
+  return '$text${units[i]}';
 }
 
 /// 卷名本地校验，规则与后端 `docker.ValidateVolumeName` 一致。

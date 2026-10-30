@@ -290,6 +290,29 @@ func dockerDFHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Handle
 	}
 }
 
+// unusedVolumesHandler 预览将被 `docker volume prune -a -f` 删除的卷清单。
+// 只读，不执行任何删除；供 App/Web 在执行前把「会删哪些卷」摊给用户看。
+// GET /api/servers/:id/docker/unused-volumes
+func unusedVolumesHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := parseID(c)
+		if !ok {
+			return
+		}
+		cli, err := openSSH(c, d, masterKey, pool, id)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		preview, err := docker.PreviewUnusedVolumes(cli)
+		if err != nil {
+			Fail(c, ErrBadGateway("获取未使用卷清单失败: "+err.Error()))
+			return
+		}
+		OK(c, preview)
+	}
+}
+
 // containerStatsHandler 返回所有运行中容器的资源占用快照。
 // GET /api/servers/:id/container-stats
 func containerStatsHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {

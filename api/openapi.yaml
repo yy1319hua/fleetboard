@@ -151,6 +151,63 @@ components:
         updatedAt: { type: string, format: date-time }
         lines: { type: array, items: { type: string } }
         error: { type: string, nullable: true }
+    UnusedVolume:
+      type: object
+      properties:
+        name: { type: string }
+        compose_project:
+          type: string
+          description: 卷所属 compose 项目（label com.docker.compose.project）；空=非 compose 卷
+    VolumePreview:
+      type: object
+      description: 未使用卷预览（GET /api/servers/{id}/docker/unused-volumes 的 data）
+      properties:
+        volumes:
+          type: array
+          items: { $ref: '#/components/schemas/UnusedVolume' }
+        count: { type: integer, description: 未使用卷数量（=len(volumes)） }
+        total_count: { type: integer, description: 该机卷总数（含被引用的） }
+        in_use_count: { type: integer, description: 仍被容器引用（含已停止容器）的卷数 }
+        reclaimable:
+          type: string
+          description: 与 docker system df 的 Local Volumes 行同源；取不到为空串
+        prune_command: { type: string, description: 确认后实际执行的命令 }
+        snapshot_at: { type: string, format: date-time, description: 清单快照时间 }
+    PruneResult:
+      type: object
+      description: 单个清理目标的执行结果；error 非空表示该项失败，其余项照常完成
+      properties:
+        target: { type: string, enum: [images, volumes, build_cache] }
+        command: { type: string }
+        mode:
+          type: string
+          enum: [dangling, all_unused]
+          description: dangling=只删悬空对象；all_unused=删全部无引用对象（含命名卷）
+        output: { type: string }
+        reclaimed: { type: string, description: '如 85.94MB；解析不到时为空串' }
+        deleted_items:
+          type: array
+          items: { type: string }
+          description: 实际删除的条目（卷名 / 镜像引用 / 缓存 ID）
+        deleted_count: { type: integer }
+        nothing_deleted:
+          type: boolean
+          description: true=本次没有可删项，与「删了但回收 0B」严格区分
+        error: { type: string, description: 该项失败原因；空串表示成功 }
+    DiskUsage:
+      type: object
+      description: docker system df 的一行
+      properties:
+        type: { type: string }
+        total_count: { type: string }
+        active: { type: string }
+        size: { type: string }
+        reclaimable: { type: string }
+        prune_target: { type: string, description: 对应 prune 目标；空=无（如 Containers） }
+        prune_coverage:
+          type: string
+          enum: [full, partial, none]
+          description: full=可被对应 prune 完全清除；partial=只能清一部分（Images 行）
 
 paths:
   # ===== 系统 / 公开 =====
@@ -619,12 +676,28 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiEnvelope' }
 
+  /api/servers/{id}/docker/unused-volumes:
+    get:
+      operationId: previewUnusedVolumes
+      tags: [volumes]
+      x-app-consumed: true
+      summary: 预览将被回收的未使用卷（含命名卷 / compose 卷），供执行前确认
+      description: 只读。清单与 docker volume prune -a -f 的删除集合等价（同一 dangling 判据）。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功，data 为 VolumePreview
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+
   /api/servers/{id}/docker/prune:
     post:
       operationId: pruneDocker
       tags: [volumes]
       x-app-consumed: true
-      summary: 回收 Docker 磁盘空间（悬空镜像 / 未使用卷 / 构建缓存）
+      summary: 回收 Docker 磁盘空间（悬空镜像 / 全部未使用卷（含命名卷，需 -a）/ 构建缓存）
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:

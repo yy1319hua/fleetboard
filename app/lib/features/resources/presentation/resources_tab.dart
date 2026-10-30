@@ -358,7 +358,12 @@ class _VolumesView extends ConsumerWidget {
                       serverId: serverId,
                       volume: volume,
                     );
-                    if (deleted) ref.invalidate(provider);
+                    if (deleted) {
+                      // 删卷同时改变 df 数字与未使用卷清单，一并失效。
+                      ref.invalidate(provider);
+                      ref.invalidate(diskUsageProvider(serverId));
+                      ref.invalidate(unusedVolumesProvider(serverId));
+                    }
                   }
 
                   return ListTile(
@@ -440,17 +445,34 @@ class _CleanupEntry extends ConsumerWidget {
             child: Text(
               reclaimable.isEmpty
                   ? 'Docker 占用与可回收空间'
-                  : 'Docker 可回收 $reclaimable',
+                  // 「约」+ 限定语：这是 docker 的估算，且本页只清无引用资源，
+                  // 不承诺「一定能腾出这么多」。
+                  : 'Docker 可回收约 $reclaimable（只清无 tag 悬空镜像与无引用卷）',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
           TextButton.icon(
-            onPressed: () => showDockerCleanupSheet(
-              context,
-              serverId: serverId,
-            ),
+            onPressed: () async {
+              final run = await showDockerCleanupSheet(
+                context,
+                serverId: serverId,
+              );
+              if (run == null || !context.mounted) return;
+              // provider 失效已在弹层内部用 container 完成；
+              // 这里只把结论再复述一次，避免用户关太快没读到结果。
+              ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    run.deletedSomething
+                        ? '已删除 ${run.deletedTotal} 项 · '
+                            '释放 ${formatSizeBytes(run.releasedBytes)}'
+                        : '没有可清理的资源',
+                  ),
+                ),
+              );
+            },
             icon: const Icon(Icons.auto_delete_outlined, size: 18),
             label: const Text('清理空间'),
           ),
@@ -460,45 +482,19 @@ class _CleanupEntry extends ConsumerWidget {
   }
 }
 
-/// 把各行「可回收」容量换算成 MB 求和，输出人类可读串。
+/// 把各行「可回收」容量换算成字节求和，输出人类可读串。
 ///
 /// docker 给的是 `1.2GB` / `800MB (66%)` 这类串，不做换算就没法合计；
 /// 解析失败的项直接跳过（宁可少算，不编造数字）。
 String _summarizeReclaimable(List<DockerDiskUsage> rows) {
-  double totalMB = 0;
+  var total = 0;
   for (final row in rows) {
-    final mb = _parseSizeToMB(row.reclaimableSize);
-    if (mb != null) totalMB += mb;
+    total += parseDockerSizeBytes(row.reclaimableSize) ?? 0;
   }
-  if (totalMB <= 0) return '';
-  if (totalMB >= 1024) {
-    return '${(totalMB / 1024).toStringAsFixed(1)}GB';
-  }
-  return '${totalMB.toStringAsFixed(totalMB >= 10 ? 0 : 1)}MB';
+  if (total <= 0) return '';
+  return formatSizeBytes(total);
 }
 
-double? _parseSizeToMB(String raw) {
-  final text = raw.trim();
-  if (text.isEmpty) return null;
-  final match = RegExp(r'^([0-9]+(?:\.[0-9]+)?)\s*([kKmMgGtT]?[bB])$').firstMatch(text);
-  if (match == null) return null;
-  final value = double.tryParse(match.group(1)!);
-  if (value == null) return null;
-  switch (match.group(2)!.toUpperCase()) {
-    case 'B':
-      return value / (1024 * 1024);
-    case 'KB':
-      return value / 1024;
-    case 'MB':
-      return value;
-    case 'GB':
-      return value * 1024;
-    case 'TB':
-      return value * 1024 * 1024;
-    default:
-      return null;
-  }
-}
 
 /// 只读提示条：明确「为什么这里没有写操作」，而不是把按钮置灰。
 class _ReadOnlyNotice extends StatelessWidget {

@@ -14,8 +14,9 @@ import '../domain/docker_resource.dart';
 ///  - `GET    /api/servers/:id/networks`          → `[{id, name, driver, scope}]`
 ///  - `GET    /api/servers/:id/volumes`           → `[{name, driver, mountpoint}]`
 ///  - `DELETE /api/servers/:id/volumes/:name`     → `{deleted, output}`（被容器占用时 409）
-///  - `GET    /api/servers/:id/docker/df`         → `[{type, total_count, active, size, reclaimable}]`
-///  - `POST   /api/servers/:id/docker/prune`      → `{results: [{target, output, reclaimed}]}`
+///  - `GET    /api/servers/:id/docker/df`         → `[{type, total_count, active, size, reclaimable, prune_target, prune_coverage}]`
+///  - `GET    /api/servers/:id/docker/unused-volumes` → `{volumes:[{name, compose_project}], count, total_count, in_use_count, reclaimable}`
+///  - `POST   /api/servers/:id/docker/prune`      → `{results: [{target, output, reclaimed, deleted_items, deleted_count, nothing_deleted, error}]}`
 ///
 /// 网络**只有 GET**：`router.go` 里没有 `/networks` 的写路由，所以 App 端不做
 /// 创建/删除（不做灰按钮，页面上直接写清「去 Web 端」）。
@@ -86,6 +87,17 @@ class ResourcesRepository {
     return unwrapList<DockerDiskUsage>(resp.data, DockerDiskUsage.fromJson);
   }
 
+  /// 未使用卷预览：执行清理**之前**把将被删除的卷名列出来。
+  ///
+  /// 独立端点而不是前端拿 [volumesProvider] 自己过滤：卷是否「未被使用」
+  /// 只有 docker 知道（`dangling=true` 含已停止容器的引用判断），
+  /// 客户端筛会漏也会误。清单与后端 `docker volume prune -a -f` 同口径。
+  Future<DockerVolumePreview> unusedVolumes(int serverId) async {
+    final resp =
+        await _json.get<dynamic>('/api/servers/$serverId/docker/unused-volumes');
+    return unwrap<DockerVolumePreview>(resp.data, DockerVolumePreview.fromJson);
+  }
+
   /// 回收空间。targets 必须显式给出（后端不接受空数组）。
   Future<List<DockerPruneOutcome>> prune(
     int serverId, {
@@ -138,4 +150,12 @@ final diskUsageProvider =
     FutureProvider.autoDispose.family<List<DockerDiskUsage>, int>(
   (ref, serverId) =>
       ref.watch(resourcesRepositoryProvider).diskUsage(serverId),
+);
+
+/// 未使用卷预览：只在清理弹层勾选「未使用卷」时被 watch，
+/// autoDispose 保证没人看就不发这次 SSH；弹层关闭即释放。
+final unusedVolumesProvider =
+    FutureProvider.autoDispose.family<DockerVolumePreview, int>(
+  (ref, serverId) =>
+      ref.watch(resourcesRepositoryProvider).unusedVolumes(serverId),
 );

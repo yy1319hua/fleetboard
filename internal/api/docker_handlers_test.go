@@ -299,3 +299,54 @@ func TestPruneRequiresAuth(t *testing.T) {
 		t.Errorf("status=%d, want 401", w.Code)
 	}
 }
+
+// 未使用卷预览：只读接口，同样要先过鉴权与服务器存在性检查。
+func TestUnusedVolumesRequiresAuth(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+
+	w := authReq(r, http.MethodGet, "/api/servers/1/docker/unused-volumes", "", nil)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status=%d, want 401", w.Code)
+	}
+}
+
+func TestUnusedVolumesBadID(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodGet, "/api/servers/abc/docker/unused-volumes", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400 body=%s", w.Code, w.Body)
+	}
+}
+
+func TestUnusedVolumesServerNotFound(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodGet, "/api/servers/999/docker/unused-volumes", tokens.AccessToken, nil)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status=%d, want 404 body=%s", w.Code, w.Body)
+	}
+}
+
+func TestUnusedVolumesConnectionError(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	cw := authReq(r, http.MethodPost, "/api/servers", tokens.AccessToken, map[string]any{
+		"name": "x", "host": "unreachable", "auth_method": "key", "private_key": "K",
+	})
+	if cw.Code != http.StatusCreated {
+		t.Fatalf("创建失败 status=%d", cw.Code)
+	}
+
+	w := authReq(r, http.MethodGet, "/api/servers/1/docker/unused-volumes", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status=%d, want 502 body=%s", w.Code, w.Body)
+	}
+}

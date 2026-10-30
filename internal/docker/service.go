@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -535,11 +537,212 @@ func ValidPruneTarget(t string) bool {
 	return false
 }
 
+// UnusedVolume 是预览清单中的一项。
+type UnusedVolume struct {
+	Name string `json:"name"`
+	// ComposeProject 来自 label com.docker.compose.project；空表示非 compose 卷。
+	// 用于提示「删除后该 compose 栈下次 up 将丢失数据」。
+	ComposeProject string `json:"compose_project,omitempty"`
+}
+
+// VolumePreview 是「执行前预览」：清单与 `docker volume prune -a -f` 的删除集合等价。
+type VolumePreview struct {
+	Volumes []UnusedVolume `json:"volumes"`
+	// Count 是未使用卷数量（= len(Volumes)）。
+	Count int `json:"count"`
+	// TotalCount / InUseCount 用于向用户解释「为什么一个都删不掉」。
+	TotalCount int `json:"total_count"`
+	InUseCount int `json:"in_use_count"`
+	// Reclaimable 与 docker system df 的 Local Volumes 行同源，避免口径割裂。
+	Reclaimable  string `json:"reclaimable"`
+	PruneCommand string `json:"prune_command"`
+	SnapshotAt   string `json:"snapshot_at"` // RFC3339，便于前端提示清单新鲜度
+}
+
+// volumeEntry 是 `docker volume ls --format` 的一行（名字 + compose 项目）。
+type volumeEntry struct {
+	Name    string
+	Project string
+}
+
+// ParseVolumeListWithProject 解析 `{{.Name}}\t{{.Label "com.docker.compose.project"}}` 输出。
+// 卷名不含制表符，故按第一个 \t 切分；缺标签时第二段为空。忽略空行。
+func ParseVolumeListWithProject(out string) []volumeEntry {
+	entries := []volumeEntry{}
+	for _, raw := range strings.Split(out, "\n") {
+		line := strings.TrimRight(raw, "\r")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		name, project, _ := strings.Cut(line, "\t")
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		entries = append(entries, volumeEntry{Name: name, Project: strings.TrimSpace(project)})
+	}
+	return entries
+}
+
+// ParseVolumeNameList 解析 `docker volume ls -q` 的纯名字输出：忽略空行、
+// 去重、按字典序排序（保证 UI 稳定与测试可断言）。恒返回非 nil 切片。
+func ParseVolumeNameList(out string) []string {
+	names := []string{}
+	seen := make(map[string]struct{}, 8)
+	for _, raw := range strings.Split(out, "\n") {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// PreviewUnusedVolumes 列出当前无任何容器引用的卷（含命名卷 / compose 卷）。
+//
+// 判据与 `docker volume prune -a -f` 一致（dangling=true 的含义就是
+// 「无任何容器引用，含已停止容器」），因此预览清单即删除集合。
+func PreviewUnusedVolumes(cli *ssh.Client) (VolumePreview, error) {
+	all, err := runErr(cli, `docker volume ls --format '{{.Name}}	{{.Label "com.docker.compose.project"}}'`)
+	if err != nil {
+		return VolumePreview{}, fmt.Errorf("docker volume ls 失败: %w", err)
+	}
+	danglingOut, err := runErr(cli, `docker volume ls -q --filter dangling=true`)
+	if err != nil {
+		return VolumePreview{}, fmt.Errorf("查询未使用卷失败: %w", err)
+	}
+	dangling := make(map[string]struct{}, 8)
+	for _, n := range ParseVolumeNameList(danglingOut) {
+		dangling[n] = struct{}{}
+	}
+	entries := ParseVolumeListWithProject(all)
+
+	vols := make([]UnusedVolume, 0, len(dangling))
+	for _, e := range entries {
+		if _, ok := dangling[e.Name]; !ok {
+			continue
+		}
+		vols = append(vols, UnusedVolume{Name: e.Name, ComposeProject: e.Project})
+	}
+	// dangling 里有、all 里没有的（两次命令之间新建又删除）按无项目补入，避免漏报。
+	known := make(map[string]struct{}, len(entries))
+	for _, e := range entries {
+		known[e.Name] = struct{}{}
+	}
+	for name := range dangling {
+		if _, ok := known[name]; !ok {
+			vols = append(vols, UnusedVolume{Name: name})
+		}
+	}
+	sort.Slice(vols, func(i, j int) bool { return vols[i].Name < vols[j].Name })
+
+	return VolumePreview{
+		Volumes:      vols,
+		Count:        len(vols),
+		TotalCount:   len(entries),
+		InUseCount:   len(entries) - len(vols),
+		Reclaimable:  volumeReclaimable(cli),
+		PruneCommand: "docker volume prune -a -f",
+		SnapshotAt:   time.Now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
+// volumeReclaimable 复用 system df 的 Local Volumes 可回收量；取不到返回空串（不阻断预览）。
+func volumeReclaimable(cli *ssh.Client) string {
+	rows, err := SystemDF(cli)
+	if err != nil {
+		return ""
+	}
+	for _, r := range rows {
+		if strings.Contains(strings.ToLower(r.Type), "volume") {
+			return r.Reclaimable
+		}
+	}
+	return ""
+}
+
+// prune 的删除范围语义，随结果返回给调用方，避免「不知道删了什么」。
+const (
+	ModeDangling  = "dangling"   // 只删悬空对象（无 tag 的镜像等）
+	ModeAllUnused = "all_unused" // 删全部无引用对象（含命名卷 / compose 卷）
+)
+
 // PruneResult 是单个目标的回收结果。
 type PruneResult struct {
 	Target    string `json:"target"`
+	Command   string `json:"command"` // 实际执行的命令，便于审计与排障
+	Mode      string `json:"mode"`    // dangling / all_unused
 	Output    string `json:"output"`
 	Reclaimed string `json:"reclaimed"` // 如 "1.234GB"；解析不到时为空串
+
+	// DeletedItems 是本次实际删除的条目（卷名 / 镜像引用 / 缓存 ID）。
+	DeletedItems []string `json:"deleted_items"`
+	// DeletedCount 便于调用方直接判空，无需遍历。
+	DeletedCount int `json:"deleted_count"`
+	// NothingDeleted=true 表示「本次没有任何可删项」，与「删了但回收 0B」严格区分。
+	NothingDeleted bool `json:"nothing_deleted"`
+	// Error 是该项的失败原因；空串表示成功。单项失败不影响其余目标。
+	Error string `json:"error"`
+}
+
+// ParseDeletedItems 解析 prune 输出中的「实际删除项」清单。
+//
+// prune 系列命令不支持 --format json，只能解析人读文本。兼容三种段头
+// （大小写不敏感，段头 = 以 "deleted" 开头且以 ":" 结尾）：
+//
+//	Deleted Volumes:             → 卷名
+//	Deleted Images:              → "untagged: nginx:1.19" / "deleted: sha256:..."
+//	Deleted build cache objects: → 构建缓存对象 ID
+//
+// 边界：空输出、只有 "Total reclaimed space: 0B"、CRLF、段内前后空白、
+// 有 Deleted 段但缺 Total 段、Total 之后混入告警 —— 均返回稳定结果。
+// 返回值恒非 nil，便于 JSON 序列化为 []。
+func ParseDeletedItems(out string) []string {
+	items := []string{}
+	inSection := false
+	for _, raw := range strings.Split(out, "\n") {
+		line := strings.TrimSpace(raw) // 同时吃掉 CRLF 的 \r
+		if line == "" {
+			inSection = false // 空行结束当前段
+			continue
+		}
+		low := strings.ToLower(line)
+		if strings.HasPrefix(low, "deleted") && strings.HasSuffix(low, ":") {
+			inSection = true
+			continue
+		}
+		if strings.HasPrefix(low, "total reclaimed space:") {
+			inSection = false // 即使没有空行分隔也能正确收尾
+			continue
+		}
+		if inSection {
+			items = append(items, line)
+		}
+	}
+	return items
+}
+
+// prunePlan 返回清理目标对应的确切命令与删除范围语义。
+func prunePlan(target string) (cmd, mode string, err error) {
+	switch PruneTarget(target) {
+	case PruneImages:
+		// 保持 -f（仅悬空镜像）。绝不使用 -a：会删掉「已 compose down 但保留镜像」
+		// 的栈所用镜像，下次 up 重新 pull :latest 可能拉到不同 digest，
+		// 属静默变更生产镜像；离线/内网环境则直接起不来。
+		return "docker image prune -f", ModeDangling, nil
+	case PruneVolumes:
+		// Docker 23+ 的 volume prune 默认只删匿名卷，命名卷（含 compose 卷）必须 -a。
+		return "docker volume prune -a -f", ModeAllUnused, nil
+	case PruneBuildCache:
+		return "docker builder prune -f", ModeAllUnused, nil
+	}
+	return "", "", fmt.Errorf("不支持的清理目标: %q", target)
 }
 
 // ParseReclaimed 从 prune 输出里解析 "Total reclaimed space: 1.234GB"。
@@ -558,39 +761,45 @@ func ParseReclaimed(out string) string {
 	return best
 }
 
-// Prune 按目标逐项回收空间。任一目标失败即返回已完成的项与错误。
+// Prune 按目标逐项回收空间。
 //
-// 安全边界：images 只清悬空镜像（不带 -a），volumes 只清无容器引用的卷，
-// 因此不会删掉仍在使用的资源。
+// 安全边界：images 只清悬空镜像（不带 -a）；volumes 用 -a 清全部无引用卷
+// （命名卷 / compose 卷包含在内，删除前应由调用方用 PreviewUnusedVolumes 预览）。
+// 单项失败不中断其余目标：失败原因写进该项的 Error，方便调用方逐项展示。
 func Prune(cli *ssh.Client, targets []string) ([]PruneResult, error) {
 	if len(targets) == 0 {
 		return nil, errors.New("至少需要一个清理目标")
 	}
-	results := []PruneResult{}
+	results := make([]PruneResult, 0, len(targets))
 	for _, t := range targets {
-		var cmd string
-		switch PruneTarget(t) {
-		case PruneImages:
-			cmd = "docker image prune -f"
-		case PruneVolumes:
-			cmd = "docker volume prune -f"
-		case PruneBuildCache:
-			cmd = "docker builder prune -f"
-		default:
-			return results, fmt.Errorf("不支持的清理目标: %q", t)
-		}
-		out, err := runErr(cli, cmd)
+		cmd, mode, err := prunePlan(t)
 		if err != nil {
-			return results, fmt.Errorf("%s 清理失败: %w", t, err)
+			return results, err
 		}
-		results = append(results, PruneResult{
-			Target:    t,
-			Output:    out,
-			Reclaimed: ParseReclaimed(out),
-		})
+		out, rerr := runErr(cli, cmd)
+		r := PruneResult{Target: t, Command: cmd, Mode: mode, Output: out, Reclaimed: ParseReclaimed(out)}
+		if rerr != nil {
+			r.Error = rerr.Error()
+			if strings.TrimSpace(out) != "" {
+				r.Error = strings.TrimSpace(out) + ": " + r.Error
+			}
+			results = append(results, r)
+			continue
+		}
+		r.DeletedItems = ParseDeletedItems(out)
+		r.DeletedCount = len(r.DeletedItems)
+		r.NothingDeleted = r.DeletedCount == 0
+		results = append(results, r)
 	}
 	return results, nil
 }
+
+// prune 覆盖度：该行「可回收」能否被对应的 prune 目标完全清掉。
+const (
+	CoverageFull    = "full"    // 可完全清除
+	CoveragePartial = "partial" // 只能清除一部分（Images：-f 只删悬空镜像）
+	CoverageNone    = "none"    // 无对应 prune 目标（Containers）
+)
 
 // DiskUsage 是 `docker system df` 的一行（空间占用汇总）。
 type DiskUsage struct {
@@ -599,6 +808,10 @@ type DiskUsage struct {
 	Active      string `json:"active"`
 	Size        string `json:"size"`
 	Reclaimable string `json:"reclaimable"`
+
+	// 以下为后端派生字段（不来自 docker 输出），用于对齐 UI 与 prune 的真实能力。
+	PruneTarget   string `json:"prune_target"`   // images / volumes / build_cache；空=无对应目标
+	PruneCoverage string `json:"prune_coverage"` // full / partial / none
 }
 
 type diskUsageLine struct {
@@ -607,6 +820,23 @@ type diskUsageLine struct {
 	Active      string `json:"Active"`
 	Size        string `json:"Size"`
 	Reclaimable string `json:"Reclaimable"`
+}
+
+// pruneCoverageForType 把 system df 的行类型映射到本面板的 prune 能力。
+//
+// partial 是口径修复的核心：Images 行的可回收量包含「带 tag 但无容器引用」的镜像，
+// 而 `docker image prune -f` 只删悬空镜像 —— 调用方据此提示「需逐条手动删除」。
+func pruneCoverageForType(t string) (target, coverage string) {
+	low := strings.ToLower(t)
+	switch {
+	case strings.Contains(low, "image"):
+		return string(PruneImages), CoveragePartial
+	case strings.Contains(low, "volume"):
+		return string(PruneVolumes), CoverageFull
+	case strings.Contains(low, "build"):
+		return string(PruneBuildCache), CoverageFull
+	}
+	return "", CoverageNone
 }
 
 // ParseDiskUsageLine 解析 `docker system df --format json` 的单行。
@@ -619,13 +849,15 @@ func ParseDiskUsageLine(line string) (*DiskUsage, error) {
 	if err := json.Unmarshal([]byte(line), &p); err != nil {
 		return nil, fmt.Errorf("解析磁盘占用行失败: %w", err)
 	}
-	return &DiskUsage{
+	d := &DiskUsage{
 		Type:        p.Type,
 		TotalCount:  p.TotalCount,
 		Active:      p.Active,
 		Size:        p.Size,
 		Reclaimable: p.Reclaimable,
-	}, nil
+	}
+	d.PruneTarget, d.PruneCoverage = pruneCoverageForType(p.Type)
+	return d, nil
 }
 
 // SystemDF 返回 Docker 各类型资源的空间占用（镜像/容器/卷/构建缓存）。
