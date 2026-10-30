@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # pre-push —— 强制「push 需用户批准」。
 #
-# 令牌由 scripts/approve-push.sh 签发，两种：
+# 令牌由 ../multi-agent-collab/scripts/approve-push.sh 签发，两种：
 #   batch  一次推送，过期即失效，通过后消费（一次性）。
 #   plan   方案级：方案期内可多次推送，但**每次都校验改动文件是否在令牌
 #          记录的 SCOPE_PATHS 范围内**，越界即拒；通过后不消费。
@@ -52,8 +52,8 @@ if [ ! -f "$TOKEN" ]; then
         "   push 必须由用户批准并签发令牌（batch：逐次；plan：按方案范围）。" \
         "" \
         "   拿到批准后执行其一：" \
-        "     bash scripts/approve-push.sh \"<用户于何时批准哪一批改动>\"" \
-        "     bash scripts/approve-push.sh --plan \"<方案名>\" --paths \"<范围>\" \"<批准说明>\"" \
+        "     bash ../multi-agent-collab/scripts/approve-push.sh \"<用户于何时批准哪一批改动>\"" \
+        "     bash ../multi-agent-collab/scripts/approve-push.sh --plan \"<方案名>\" --paths \"<范围>\" \"<批准说明>\"" \
         "   再重新 push。"
 fi
 
@@ -89,7 +89,7 @@ while read -r lref lsha rsha; do
             if [ "$mode" != batch ]; then
                 reject "打 tag 须逐次批准，plan 令牌不适用于 $lref" \
                     "   → 请为本次打 tag 单独签发 batch 令牌：" \
-                    "     bash scripts/approve-push.sh \"<用户于何时批准打该 tag>\""
+                    "     bash ../multi-agent-collab/scripts/approve-push.sh \"<用户于何时批准打该 tag>\""
             fi
             ;;
     esac
@@ -99,7 +99,7 @@ while read -r lref lsha rsha; do
         if [ "$rsha" = "$ZERO" ]; then
             reject "新分支 $lref 的推送范围无法与已批准方案比对" \
                 "   → 首次推送请用 batch 令牌逐次批准：" \
-                "     bash scripts/approve-push.sh \"<用户于何时批准推该新分支>\""
+                "     bash ../multi-agent-collab/scripts/approve-push.sh \"<用户于何时批准推该新分支>\""
         fi
         [ -z "$files" ] && continue   # 无改动文件，无需范围校验
 
