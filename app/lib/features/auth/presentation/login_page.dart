@@ -284,7 +284,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final credentials = ref.watch(savedCredentialsProvider);
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('登录 fleetboard')),
+      appBar: AppBar(title: const Text('登录 Fleetboard')),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(

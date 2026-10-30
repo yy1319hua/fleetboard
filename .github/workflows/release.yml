@@ -159,7 +159,12 @@ jobs:
           cd app/build/app/outputs/flutter-apk
           # Flutter 默认产物名 app-arm64-v8a-release.apk 按产品名重命名后上传
           mv app-arm64-v8a-release.apk fleetboard-arm64-v8a-release.apk
-          sha256sum fleetboard-arm64-v8a-release.apk > sums-android.txt
+          # 兼容别名：≤v0.4.3 的客户端把旧名写死在 UpdateConfig.apkAssetName 里，
+          # 重命名后它们「检查更新」会直接报「缺少产物」而升不上来。
+          # 同内容副本 + 校验和记录，让这批客户端能自更新到本版；升上来后即改用新名。
+          # 旧客户端淘汰后可删掉这两行（连同下面的上传项）。
+          cp fleetboard-arm64-v8a-release.apk app-arm64-v8a-release.apk
+          sha256sum fleetboard-arm64-v8a-release.apk app-arm64-v8a-release.apk > sums-android.txt
           cat sums-android.txt
 
       - name: 上传 APK 与校验和到 Release
@@ -169,4 +174,5 @@ jobs:
         run: |
           gh release upload "$GITHUB_REF_NAME" \
             app/build/app/outputs/flutter-apk/fleetboard-arm64-v8a-release.apk \
+            app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
             app/build/app/outputs/flutter-apk/sums-android.txt

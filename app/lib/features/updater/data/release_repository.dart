@@ -52,6 +52,26 @@ class ReleaseRepository {
     throw UpdateError('发布 ${release.tagName} 缺少产物 $name');
   }
 
+  /// 取 arm64 APK 资产：先按约定名精确匹配，再按 ABI 后缀兜底。
+  ///
+  /// 兜底存在的理由：资产名被重命名过一次（app-* → fleetboard-*），
+  /// 客户端因此整条更新链路断掉。名字是发布侧的可变约定，不该成为单点。
+  /// 全都找不到时，把**实际资产名**列进错误——旧提示只有「缺少产物 xxx」，
+  /// 分不清是名字变了还是真的没上传，排查成本很高。
+  ReleaseAsset requireApkAsset(ReleaseInfo release) {
+    for (final a in release.assets) {
+      if (a.name == UpdateConfig.apkAssetName) return a;
+    }
+    for (final a in release.assets) {
+      if (a.name.endsWith(UpdateConfig.apkAbiSuffix)) return a;
+    }
+    final names = release.assets.map((a) => a.name).join('、');
+    throw UpdateError(
+      '发布 ${release.tagName} 缺少 arm64 安装包'
+      '${names.isEmpty ? '（该发布没有任何资产）' : '（现有资产：$names）'}',
+    );
+  }
+
   /// 下载 APK 到 `<dir>/<asset.name>`，[onProgress] 回传 0.0–1.0。
   Future<String> downloadApk(
     ReleaseAsset asset,

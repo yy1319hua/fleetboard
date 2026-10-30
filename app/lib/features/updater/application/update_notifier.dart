@@ -86,7 +86,7 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
 
       final release = await _repo.fetchLatest();
       // 两个产物都要齐：缺 sums 文件时宁可不提示更新，也不让用户在没有校验的情况下装包。
-      _repo.requireAsset(release, UpdateConfig.apkAssetName);
+      _repo.requireApkAsset(release);
       _repo.requireAsset(release, UpdateConfig.checksumsAssetName);
       _release = release;
 
@@ -94,7 +94,7 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
         state = UpdateUpToDate(info.version);
         return;
       }
-      final apk = _repo.requireAsset(release, UpdateConfig.apkAssetName);
+      final apk = _repo.requireApkAsset(release);
       state = UpdateAvailable(release: release, apkSize: apk.size);
     } catch (e) {
       state = UpdateFailure(_message(e));

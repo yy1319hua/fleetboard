@@ -27,7 +27,16 @@ class AboutPage extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text('fleetboard', style: theme.textTheme.titleMedium),
+                  // 应用名以系统安装信息为准（Android 取 manifest 的 android:label），
+                  // 不在这里再写死一份——否则桌面图标名和关于页标题会各改各的，
+                  // 本次「关于页仍显示小写 fleetboard」就是这么来的。
+                  Text(
+                    info.maybeWhen(
+                      data: (v) => v.appName.isEmpty ? 'Fleetboard' : v.appName,
+                      orElse: () => 'Fleetboard',
+                    ),
+                    style: theme.textTheme.titleMedium,
+                  ),
                   const SizedBox(height: AppSpacing.sm),
                   _InfoRow(
                     label: '版本',

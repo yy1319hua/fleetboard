@@ -10,7 +10,15 @@ class UpdateConfig {
   static const String repo = 'fleetboard';
 
   /// release.yml android job 上传的 arm64 APK 文件名。
-  static const String apkAssetName = 'app-arm64-v8a-release.apk';
+  ///
+  /// v0.4.4 起按产品名重命名为 fleetboard-*，此前是 Flutter 默认的
+  /// app-arm64-v8a-release.apk。改名直接导致写死旧名的客户端（≤v0.4.3）
+  /// 在「检查更新」时报「缺少产物」而完全无法自更新——所以匹配不再只认
+  /// 一个名字：精确名找不到时按 ABI 后缀兜底（见 ReleaseRepository.requireApkAsset）。
+  static const String apkAssetName = 'fleetboard-arm64-v8a-release.apk';
+
+  /// ABI 后缀。资产名前缀（fleetboard- / app-）再调整也能认出来。
+  static const String apkAbiSuffix = '-arm64-v8a-release.apk';
 
   /// 与 APK 同批发出的 SHA-256 校验和文件（`sha256sum` 默认输出格式）。
   static const String checksumsAssetName = 'sums-android.txt';
