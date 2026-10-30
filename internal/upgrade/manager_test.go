@@ -365,3 +365,21 @@ func TestScriptEmbedded(t *testing.T) {
 		t.Fatal("ScriptSHA256 为空")
 	}
 }
+
+// TestEmbedScriptMatchesSource 守住「源脚本与内嵌副本一致」。
+//
+// deploy/upgrade.sh 是唯一源，internal/upgrade/upgrade.sh 是 go:embed 副本，
+// 由 make sync-upgrade 同步。但 CI 直接跑 `go test ./...`（不经 make），
+// 于是「改了 deploy 忘记同步副本」在 CI 里完全看不出来——二进制里嵌的还是旧脚本，
+// 线上自更新会静默沿用旧逻辑。v0.4.4 修复期真实发生过：deploy 已改，embed 仍是旧的。
+func TestEmbedScriptMatchesSource(t *testing.T) {
+	path := filepath.Join("..", "..", "deploy", "upgrade.sh")
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("跳过：读不到源脚本 %s（%v）", path, err)
+	}
+	if string(src) != string(scriptBytes) {
+		t.Fatalf("内嵌脚本与 %s 不一致（源 %d 字节 / 内嵌 %d 字节）——请运行 make sync-upgrade",
+			path, len(src), len(scriptBytes))
+	}
+}
