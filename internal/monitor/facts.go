@@ -50,8 +50,8 @@ df -P -x tmpfs -x devtmpfs -x squashfs -x efivarfs 2>/dev/null \
   | while IFS='|' read -r dev mnt tot used avail pct; do
       [ -d "$mnt" ] || continue
       # 与 / 同一文件系统的挂载点跳过：避免把同一块盘的 bind mount 重复列出。
-      # （容器里每个 bind mount 可能是独立 overlay，这一层挡不住；那种情况
-      #   最多多一行，不影响真实服务器上的结果。）
+      # 容器运行时内部挂载（overlay / /var/lib/docker/...）的 st_dev 与 / 不同，
+      # 这一层挡不住，由 ParseFacts 侧的 isVirtualMount 过滤。
       fs=$(stat -c %d "$mnt" 2>/dev/null)
       if [ -n "$fs" ] && [ "$fs" = "$root_fs" ] && [ "$mnt" != "/" ]; then continue; fi
       printf 'DISK=%s|%s|%s|%s|%s|%s\n' "$dev" "$mnt" "$tot" "$used" "$avail" "$pct"
@@ -114,7 +114,7 @@ func ParseFacts(out string) (*model.ServerFacts, error) {
 		case "VIRT":
 			f.Virt = val
 		case "DISK":
-			if d, ok := parseDisk(val); ok {
+			if d, ok := parseDisk(val); ok && !isVirtualMount(d) {
 				f.Disks = append(f.Disks, d)
 			}
 		default:
@@ -144,6 +144,39 @@ func parseDisk(s string) (model.DiskUsage, bool) {
 		AvailKB: int64(atoiOr0(parts[4])),
 		UsedPct: atofOr0(pct),
 	}, true
+}
+
+// virtualDevices 是容器/虚拟文件系统在 df 里的设备名，不是块设备。
+var virtualDevices = map[string]bool{
+	"overlay": true, "none": true, "shm": true, "udev": true, "rootfs": true,
+}
+
+// virtualMountPrefixes 是容器运行时自身的内部挂载目录。
+//
+// 带尾部斜杠：`/var/lib/docker` 本身若是一块独立分区，那是真实挂载点，要保留；
+// 只有它下面的容器 rootfs（`/var/lib/docker/rootfs/overlayfs/<id>`）才排除。
+var virtualMountPrefixes = []string{
+	"/var/lib/docker/", "/var/lib/containers/", "/snap/",
+}
+
+// isVirtualMount 判断挂载点是否为容器运行时内部产物。
+//
+// 为什么必须过滤：装了 Docker 且跑着容器的机器上，df 会把每个容器的 rootfs
+// 列成 `overlay → /var/lib/docker/rootfs/overlayfs/<64 位 id>`。它的容量与宿主
+// 盘完全相同，保留就等于把同一块盘重复显示一遍，而且那串几十字符的路径会把
+// 概览卡撑成一堆省略号——用户会以为多了块盘。
+//
+// 只按名字判断的原因：overlay 的 st_dev 与 / 不同，脚本侧的 stat 比对挡不住。
+func isVirtualMount(d model.DiskUsage) bool {
+	if virtualDevices[d.Device] {
+		return true
+	}
+	for _, p := range virtualMountPrefixes {
+		if strings.HasPrefix(d.Mount, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func atoiOr0(s string) int {
