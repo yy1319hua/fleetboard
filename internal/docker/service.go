@@ -523,7 +523,7 @@ func RemoveVolume(cli *ssh.Client, name string) (string, error) {
 type PruneTarget string
 
 const (
-	PruneImages     PruneTarget = "images"      // 悬空镜像（无 tag、无容器引用）
+	PruneImages     PruneTarget = "images"      // 未使用镜像（含无 tag 悬空镜像）
 	PruneVolumes    PruneTarget = "volumes"     // 无容器引用的卷
 	PruneBuildCache PruneTarget = "build_cache" // 构建缓存
 )
@@ -732,10 +732,14 @@ func ParseDeletedItems(out string) []string {
 func prunePlan(target string) (cmd, mode string, err error) {
 	switch PruneTarget(target) {
 	case PruneImages:
-		// 保持 -f（仅悬空镜像）。绝不使用 -a：会删掉「已 compose down 但保留镜像」
-		// 的栈所用镜像，下次 up 重新 pull :latest 可能拉到不同 digest，
-		// 属静默变更生产镜像；离线/内网环境则直接起不来。
-		return "docker image prune -f", ModeDangling, nil
+		// 2026-11-03 用户决策：改为 -a，一次性清掉「有 tag 但无容器引用」的镜像。
+		// 起因：`system df` 的 RECLAIMABLE 把这类镜像算进去，而 -f 只删悬空镜像，
+		// 于是界面显示「可回收 162.7MB」却删不动、还提示「没有可清理的资源」。
+		//
+		// 已知代价（原设计的否决理由，用户知情后仍选择 -a）：已 `compose down`
+		// 但保留镜像的栈，其镜像会被删；下次 up 重新 pull :latest 可能拿到不同
+		// digest，属静默变更；离线/内网环境则直接起不来。UI 必须写明这一点。
+		return "docker image prune -a -f", ModeAllUnused, nil
 	case PruneVolumes:
 		// Docker 23+ 的 volume prune 默认只删匿名卷，命名卷（含 compose 卷）必须 -a。
 		return "docker volume prune -a -f", ModeAllUnused, nil
@@ -763,8 +767,10 @@ func ParseReclaimed(out string) string {
 
 // Prune 按目标逐项回收空间。
 //
-// 安全边界：images 只清悬空镜像（不带 -a）；volumes 用 -a 清全部无引用卷
-// （命名卷 / compose 卷包含在内，删除前应由调用方用 PreviewUnusedVolumes 预览）。
+// 安全边界：images 与 volumes 都用 -a，清掉全部「无容器引用」的对象
+// （镜像含悬空与有 tag 的旧版本；卷含命名卷 / compose 卷）。
+// 「无容器引用」是唯一安全判据——正在被容器使用的镜像与卷一律不动。
+// 删除不可撤销，调用方必须先让用户确认范围。
 // 单项失败不中断其余目标：失败原因写进该项的 Error，方便调用方逐项展示。
 func Prune(cli *ssh.Client, targets []string) ([]PruneResult, error) {
 	if len(targets) == 0 {
@@ -797,7 +803,7 @@ func Prune(cli *ssh.Client, targets []string) ([]PruneResult, error) {
 // prune 覆盖度：该行「可回收」能否被对应的 prune 目标完全清掉。
 const (
 	CoverageFull    = "full"    // 可完全清除
-	CoveragePartial = "partial" // 只能清除一部分（Images：-f 只删悬空镜像）
+	CoveragePartial = "partial" // 只能清除一部分（当前无此类目标，取值保留以兼容旧客户端）
 	CoverageNone    = "none"    // 无对应 prune 目标（Containers）
 )
 
@@ -824,13 +830,14 @@ type diskUsageLine struct {
 
 // pruneCoverageForType 把 system df 的行类型映射到本面板的 prune 能力。
 //
-// partial 是口径修复的核心：Images 行的可回收量包含「带 tag 但无容器引用」的镜像，
-// 而 `docker image prune -f` 只删悬空镜像 —— 调用方据此提示「需逐条手动删除」。
+// Images 改为 full：`docker image prune -a -f` 清掉全部无容器引用的镜像，
+// 与 `system df` 的 RECLAIMABLE 口径一致（此前 -f 只删悬空镜像，两边对不上，
+// 界面会出现「显示可回收 162.7MB / 清理后提示没有可清理的资源」）。
 func pruneCoverageForType(t string) (target, coverage string) {
 	low := strings.ToLower(t)
 	switch {
 	case strings.Contains(low, "image"):
-		return string(PruneImages), CoveragePartial
+		return string(PruneImages), CoverageFull
 	case strings.Contains(low, "volume"):
 		return string(PruneVolumes), CoverageFull
 	case strings.Contains(low, "build"):

@@ -121,7 +121,7 @@ export function ServerDockerTab() {
   });
 
   const prune = useMutation({
-    // 只清「没有容器引用」的三类：悬空镜像 / 未使用卷（含命名卷）/ 构建缓存。
+    // 只清「没有容器引用」的三类：未使用镜像（含悬空）/ 未使用卷（含命名卷）/ 构建缓存。
     mutationFn: () => pruneDocker(server.id, ["images", "volumes", "build_cache"]),
     onSuccess: (data) => {
       // 三态：真删了 / 一项都没删 / 单项失败。不再一律报「清理完成」——
@@ -220,8 +220,9 @@ export function ServerDockerTab() {
 
       const ok = window.confirm(
         `清理 Docker 空间（只清没有容器引用的资源）\n\n${summary}\n\n` +
-          `将清理：悬空镜像（仅无 tag）、全部未使用卷（含命名卷）、构建缓存。` +
-          `\n注：镜像行的可回收量包含「有 tag 但无容器引用」的镜像，本操作不会删除它们。` +
+          `将清理：未使用镜像（含无 tag 悬空镜像与有 tag 的旧版本镜像，删除后需重新 pull）、` +
+          `全部未使用卷（含命名卷）、构建缓存。` +
+          `\n注：镜像清理会把「有 tag 但无容器引用」的镜像一并删掉，正在运行的容器不受影响。` +
           `${volumesPart}\n\n这些数据删除后无法恢复，继续？`,
       );
       if (!ok) return;

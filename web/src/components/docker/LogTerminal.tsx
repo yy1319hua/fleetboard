@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { InlineLoading } from "@/components/ui/Feedback";
+import { toast } from "@/components/ui/Toast";
 import { createLogsTicket, logsSocketURL } from "@/lib/docker";
 import { cn } from "@/lib/cn";
 
@@ -128,6 +129,18 @@ export function LogTerminal({ serverID, cid, title }: { serverID: number; cid: s
 
   const visible = lines.slice(start, end);
 
+  /** 复制当前缓冲的全部日志（最多 MAX_LINES 行）。 */
+  const copyAll = async () => {
+    if (lines.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      toast(`已复制 ${lines.length} 行日志`, "ok");
+    } catch {
+      // 非 HTTPS / 无剪贴板权限时 writeText 会抛错。
+      toast("浏览器拒绝了剪贴板写入，请手动选中复制", "danger");
+    }
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
@@ -151,6 +164,9 @@ export function LogTerminal({ serverID, cid, title }: { serverID: number; cid: s
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setLines([])}>
             清屏
+          </Button>
+          <Button size="sm" variant="ghost" onClick={copyAll} disabled={lines.length === 0} title="复制当前缓冲的全部日志">
+            复制
           </Button>
           <Button size="sm" variant="secondary" onClick={() => setReconnectKey((k) => k + 1)}>
             重连

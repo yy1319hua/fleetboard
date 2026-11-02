@@ -65,7 +65,7 @@ void main() {
       expect(
         const DockerPruneOutcome(target: 'images', output: '', reclaimed: '')
             .label,
-        '悬空镜像',
+        '未使用镜像',
       );
       expect(
         const DockerPruneOutcome(target: 'volumes', output: '', reclaimed: '')

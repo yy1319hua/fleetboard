@@ -207,7 +207,13 @@ class _DockerCleanupSheetState extends ConsumerState<_DockerCleanupSheet> {
   DockerCleanupRun? _run;
 
   static const _specs = <_PruneTargetSpec>[
-    _PruneTargetSpec('images', '悬空镜像', '无 tag、无容器引用'),
+    // v0.4.7：由「只删悬空镜像」改为 `prune -a`，连有 tag 的未使用镜像一起清。
+    // 提示必须写明代价，否则用户会以为只删 <none> 镜像。
+    _PruneTargetSpec(
+      'images',
+      '未使用镜像',
+      '无容器引用（含无 tag 悬空镜像、旧版本 tag），删除后需重新 pull',
+    ),
     // 「含命名卷」必须写出来：命名卷只要无容器引用就会被 -a 删掉。
     _PruneTargetSpec('volumes', '未使用卷', '没有容器引用，含命名卷（会删除卷内数据）'),
     _PruneTargetSpec('build_cache', '构建缓存', 'docker builder prune'),
@@ -473,15 +479,14 @@ class _DfSummary extends StatelessWidget {
                     ],
                   ),
                 ),
-              // 镜像口径必须显式标注：df 的镜像行含「有 tag 但无容器引用」的镜像，
-              // 而「悬空镜像」只清无 tag 的，数字对不上是必然的。
+              // v0.4.7 起镜像清理用 `prune -a`，与 df 的口径对齐，不再需要「数字对不上」的注解；
+              // 但要提醒「有 tag 的旧镜像也会被删」，这是 -a 的真实代价。
               if (rows.any((r) => r.type.toLowerCase() == 'images'))
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    '注：镜像行包含「有 tag 但无容器引用」的镜像；本页「悬空镜像」'
-                    '只清无 tag 的，所以回收量会小于这里的数字。'
-                    '有 tag 的镜像请在镜像列表里逐个删除。',
+                    '注：勾选「未使用镜像」会连同「有 tag 但无容器引用」的镜像一起删除，'
+                    '包括已停止的栈留下的旧版本镜像；删除后如需使用要重新 pull。',
                     style: muted,
                   ),
                 ),
@@ -750,9 +755,8 @@ class _CleanupResults extends StatelessWidget {
   static String _emptyReason(String target) {
     switch (target) {
       case 'images':
-        return '悬空镜像指「无 tag 且无容器引用」的镜像。'
-            'df 里的镜像可回收量还包含有 tag 但没被引用的镜像，'
-            '那些不会被这一项清掉——要在镜像列表里逐个删除。';
+        return '这台机器上已经没有「无容器引用」的镜像了：'
+            '正在用的镜像不会被删，悬空镜像和有 tag 的旧镜像都已清空。';
       case 'volumes':
         return '所有卷都仍被容器引用（已停止的容器也算）。'
             '命名卷本身不会被忽略，但只要有容器在用就删不掉；'

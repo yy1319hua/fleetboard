@@ -438,7 +438,7 @@ func TestPrunePlan(t *testing.T) {
 		ok       bool
 	}{
 		{"volumes", "docker volume prune -a -f", ModeAllUnused, true},
-		{"images", "docker image prune -f", ModeDangling, true},
+		{"images", "docker image prune -a -f", ModeAllUnused, true},
 		{"build_cache", "docker builder prune -f", ModeAllUnused, true},
 		{"", "", "", false},
 		{"all", "", "", false},
@@ -468,7 +468,7 @@ func TestDiskUsagePruneCoverage(t *testing.T) {
 		wantTgt   string
 		wantCover string
 	}{
-		{"Images", "images", CoveragePartial},
+		{"Images", "images", CoverageFull},
 		{"Local Volumes", "volumes", CoverageFull},
 		{"Build Cache", "build_cache", CoverageFull},
 		{"Containers", "", CoverageNone},

@@ -178,7 +178,7 @@ class DockerPruneOutcome {
   String get label {
     switch (target) {
       case 'images':
-        return '悬空镜像';
+        return '未使用镜像';
       case 'volumes':
         return '未使用卷';
       case 'build_cache':

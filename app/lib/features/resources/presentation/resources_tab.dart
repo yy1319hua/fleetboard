@@ -18,7 +18,7 @@ import 'volume_actions.dart';
 ///  - 卷：列表 / 删除（DELETE /volumes/:name，被容器占用时后端 409 并给出容器名）；
 ///  - 网络：**只有 GET**（`router.go` 里没有写路由），所以页面上用一句话
 ///    说明「去 Web 端或命令行创建/删除」，而不是摆一个禁用按钮让人反复点。
-///  - 顶部「清理空间」：docker system df 展示可回收量，按目标清理（悬空镜像 /
+///  - 顶部「清理空间」：docker system df 展示可回收量，按目标清理（未使用镜像 /
 ///    未使用卷 / 构建缓存），只清没有容器引用的资源。
 class ResourcesTab extends ConsumerStatefulWidget {
   const ResourcesTab({super.key, required this.serverId});
@@ -447,7 +447,7 @@ class _CleanupEntry extends ConsumerWidget {
                   ? 'Docker 占用与可回收空间'
                   // 「约」+ 限定语：这是 docker 的估算，且本页只清无引用资源，
                   // 不承诺「一定能腾出这么多」。
-                  : 'Docker 可回收约 $reclaimable（只清无 tag 悬空镜像与无引用卷）',
+                  : 'Docker 可回收约 $reclaimable（清无容器引用的镜像与卷）',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
