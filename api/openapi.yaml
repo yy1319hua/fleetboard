@@ -451,6 +451,44 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/servers/probe:
+    post:
+      operationId: probeServer
+      tags: [servers]
+      x-app-consumed: true
+      summary: 试连 SSH（不落库）
+      description: |
+        纳管预检：用请求里的连接参数拨一次 SSH。成功返回 `{ok, elapsed_ms}`，
+        失败返回 502 且**不创建任何记录** —— 连不上的服务器不会进入列表，
+        监控循环也不会为它反复探测告警。
+        编辑场景可传 `server_id`：留空的字段（含凭据）用库里已存的值补齐。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                host: { type: string, description: 新建必填；编辑时可省略，由 server_id 对应记录补齐 }
+                port: { type: integer, minimum: 1, maximum: 65535, description: 省略=22 }
+                ssh_user: { type: string, description: 省略=root }
+                auth_method: { type: string, enum: [key, password] }
+                password: { type: string, description: auth_method=password 时必填（编辑场景可留空沿用原值） }
+                private_key: { type: string, description: auth_method=key 时必填（编辑场景可留空沿用原值） }
+                key_pass: { type: string }
+                server_id: { type: integer, description: 传入则复用该服务器已存凭据，用于「编辑时先试连」 }
+      responses:
+        '200':
+          description: 连接成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+        '400':
+          description: 参数非法（host 为空 / 端口越界）
+        '404':
+          description: 传了 server_id 但服务器不存在
+        '502':
+          description: SSH 连接失败（msg 内含具体原因）
   /api/servers/{id}:
     get:
       operationId: getServer
@@ -465,6 +503,44 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiEnvelope' }
+    put:
+      operationId: updateServer
+      tags: [servers]
+      x-app-consumed: true
+      summary: 更新服务器
+      description: |
+        更新名称 / 地址 / 端口 / 用户 / 认证方式 / 凭据 / 标签。
+        凭据三字段留空 = 保持原值；auth_method 留空 = 沿用原认证方式。
+        成功后旧 SSH 连接被关闭、connection_status 置 unknown（旧状态已不可信）。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, host]
+              properties:
+                name: { type: string }
+                host: { type: string }
+                port: { type: integer, minimum: 1, maximum: 65535, description: 省略=22 }
+                ssh_user: { type: string, description: 省略=root }
+                auth_method: { type: string, enum: [key, password], description: 省略=沿用原值 }
+                password: { type: string, description: 留空=不修改 }
+                private_key: { type: string, description: 留空=不修改 }
+                key_pass: { type: string, description: 留空=不修改 }
+                tags: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+        '400':
+          description: 参数非法（名称/地址为空、端口越界、切换认证方式却无可用凭据）
+        '404':
+          description: 服务器不存在
     delete:
       operationId: deleteServer
       tags: [servers]

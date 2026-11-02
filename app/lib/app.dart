@@ -20,8 +20,10 @@ import 'features/auth/presentation/login_page.dart';
 import 'features/containers/presentation/containers_page.dart';
 import 'features/emergency/presentation/update_task_page.dart';
 import 'features/overview/application/overview_notifier.dart';
+import 'features/overview/domain/bootstrap.dart';
 import 'features/overview/presentation/overview_page.dart';
 import 'features/overview/presentation/server_detail_page.dart';
+import 'features/servers/application/servers_provider.dart';
 import 'features/servers/presentation/server_wizard_page.dart';
 import 'features/servers/presentation/servers_page.dart';
 import 'features/settings/presentation/settings_monitor_page.dart';
@@ -232,6 +234,23 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                     parentNavigatorKey: _rootNavigatorKey,
                     builder: (context, state) => const ServerWizardPage(),
                   ),
+                  GoRoute(
+                    path: 'edit/:id',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    // 正常入口（列表 / 详情）用 extra 直接带对象；深链接没有 extra，
+                    // 回退到列表 provider 里查，保证冷启动直达也能用。
+                    builder: (context, state) {
+                      final extra = state.extra;
+                      if (extra is Server) {
+                        return ServerWizardPage(server: extra);
+                      }
+                      return _EditServerLoader(
+                        serverId: int.tryParse(
+                          state.pathParameters['id'] ?? '',
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
               // 关于页：版本号 / 构建号 + 自分发 APK 的检查更新闭环（M9.5b）。
@@ -356,6 +375,46 @@ class AppShell extends ConsumerWidget {
             )
             .toList(),
       ),
+    );
+  }
+}
+
+/// 编辑页的深链接兜底：手上没有 Server 对象（冷启动直达 `edit/:id`）时，
+/// 从服务器列表里查出来再进表单。
+class _EditServerLoader extends ConsumerWidget {
+  const _EditServerLoader({required this.serverId});
+
+  final int? serverId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final id = serverId;
+    if (id == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('编辑服务器')),
+        body: const Center(child: Text('服务器编号无效，请返回重试')),
+      );
+    }
+    final servers = ref.watch(serversProvider);
+    return servers.when(
+      loading: () => Scaffold(
+        appBar: AppBar(title: const Text('编辑服务器')),
+        body: const Center(child: CircularProgressIndicator()),
+      ),
+      error: (Object e, _) => Scaffold(
+        appBar: AppBar(title: const Text('编辑服务器')),
+        body: const Center(child: Text('读取服务器信息失败，请返回重试')),
+      ),
+      data: (list) {
+        final server = list.where((s) => s.id == id).firstOrNull;
+        if (server == null) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('编辑服务器')),
+            body: const Center(child: Text('服务器不存在或已被删除')),
+          );
+        }
+        return ServerWizardPage(server: server);
+      },
     );
   }
 }

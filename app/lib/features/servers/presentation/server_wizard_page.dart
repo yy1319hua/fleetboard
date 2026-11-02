@@ -5,20 +5,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants.dart';
 import '../../../core/errors/api_exception.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../overview/domain/bootstrap.dart';
 import '../../settings/presentation/settings_common.dart';
 import '../data/servers_repository.dart';
 import '../domain/private_key_validator.dart';
 
-/// 新增服务器向导（三步）。
+/// 服务器向导：新增与编辑共用（三步）。
 ///
-/// 顺序被后端契约锁死：`POST /api/servers/{id}/test` 要求服务器**已存在**，
-/// 所以「测试连接」只能发生在创建之后。向导因此把「测试」放在第三步 —— 提交后
-/// 立刻自动测一次，把结果直接摆给用户，而不是让他再去列表里找「测试连接」。
+/// **先测后存**：点「测试并保存」时先调 `POST /api/servers/probe` 试连，
+/// 探通才落库（新增走 POST，编辑走 PUT）。探不通就停在原地显示原因，
+/// 列表里什么都不会多——不会出现一台永远连不上、还被监控循环反复告警的机器。
 ///
-/// 测试失败**不回滚**：服务器记录已经建好，失败原因可能是目标机暂时不可达，
-/// 回滚会让用户白填一遍。UI 明确告知「已保存但连不上」，并给出下一步。
+/// 编辑模式（传入 [server]）：元信息预填；凭据默认「已保存，留空则不修改」，
+/// 只有打开「更换凭据」或切换认证方式时才要求重新填写。
 class ServerWizardPage extends ConsumerStatefulWidget {
-  const ServerWizardPage({super.key});
+  const ServerWizardPage({super.key, this.server});
+
+  /// 非空 = 编辑该服务器；空 = 新增。
+  final Server? server;
+
+  bool get isEdit => server != null;
 
   @override
   ConsumerState<ServerWizardPage> createState() => _ServerWizardPageState();
@@ -40,9 +46,34 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
   String _authMethod = 'key';
   KeyCheckResult? _keyCheck;
 
+  /// 编辑模式下是否更换凭据；新增模式恒为 true（必须提供）。
+  bool _replaceCredential = true;
+
   bool _submitting = false;
   String? _failure;
   bool _done = false;
+
+  /// 编辑且未更换凭据、也未切换认证方式时，凭据沿用库中原值。
+  bool get _needCredential {
+    final s = widget.server;
+    if (s == null) return true;
+    if (_replaceCredential) return true;
+    return _authMethod != s.authMethod;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final s = widget.server;
+    if (s != null) {
+      _name.text = s.name;
+      _host.text = s.host;
+      _port.text = '${s.port}';
+      _user.text = s.sshUser;
+      _authMethod = s.authMethod;
+      _replaceCredential = false;
+    }
+  }
 
   @override
   void dispose() {
@@ -63,7 +94,7 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
       canPop: !_submitting,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('新增服务器'),
+          title: Text(widget.isEdit ? '编辑服务器' : '新增服务器'),
           leading: _step == 0
               ? null
               : IconButton(
@@ -127,7 +158,7 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text(_step == 2 ? '保存并测试连接' : '下一步'),
+                    : Text(_step == 2 ? '测试并保存' : '下一步'),
               ),
             ),
           ],
@@ -156,7 +187,7 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
         const SizedBox(height: AppSpacing.md),
         TextField(
           controller: _host,
-          decoration: fieldDecoration('主机名或 IP', helper: '例：10.0.0.170'),
+          decoration: fieldDecoration('主机名或 IP', helper: '例：192.168.1.10'),
           autocorrect: false,
           enableSuggestions: false,
           keyboardType: TextInputType.url,
@@ -210,7 +241,14 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
           ],
           selected: <String>{_authMethod},
           onSelectionChanged: (Set<String> v) {
-            setState(() => _authMethod = v.first);
+            setState(() {
+              _authMethod = v.first;
+              // 编辑时切换认证方式：原凭据必然不可复用，直接打开「更换凭据」。
+              final s = widget.server;
+              if (s != null && _authMethod != s.authMethod) {
+                _replaceCredential = true;
+              }
+            });
           },
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -226,12 +264,45 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
 
   Widget _credentialStep() {
     final theme = Theme.of(context);
+
+    // 编辑且沿用原凭据：不必重填，给一个明确的只读态。
+    if (!_needCredential) {
+      return ListView(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        children: <Widget>[
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.lock_outline, size: 20),
+              title: const Text('凭据已保存'),
+              subtitle: Text(
+                '留空则保持不变。改名称、地址、端口或标签都不必重填凭据。',
+                style: theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          OutlinedButton.icon(
+            onPressed: () => setState(() => _replaceCredential = true),
+            icon: const Icon(Icons.key_outlined, size: 18),
+            label: const Text('更换凭据'),
+          ),
+        ],
+      );
+    }
+
+    final editing = widget.isEdit;
     if (_authMethod == 'password') {
       return ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: <Widget>[
+          if (editing) ...<Widget>[
+            _ReplaceHint(onCancel: _cancelReplace),
+            const SizedBox(height: AppSpacing.md),
+          ],
           Text(
-            '密码只用于 SSH 登录，会加密存放在面板服务器上。',
+            editing
+                ? '留空则沿用原密码；填写则替换。密码会加密存放在面板服务器上。'
+                : '密码只用于 SSH 登录，会加密存放在面板服务器上。',
             style: theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -240,7 +311,10 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
             obscureText: true,
             autocorrect: false,
             enableSuggestions: false,
-            decoration: fieldDecoration('SSH 登录密码'),
+            decoration: fieldDecoration(
+              'SSH 登录密码',
+              helper: editing ? '留空 = 不修改' : null,
+            ),
           ),
         ],
       );
@@ -251,20 +325,13 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                '粘贴 OpenSSH 私钥全文',
-                style: theme.textTheme.titleSmall,
-              ),
-            ),
-            TextButton.icon(
-              onPressed: _pasteFromClipboard,
-              icon: const Icon(Icons.content_paste, size: 18),
-              label: const Text('从剪贴板粘贴'),
-            ),
-          ],
+        if (editing) ...<Widget>[
+          _ReplaceHint(onCancel: _cancelReplace),
+          const SizedBox(height: AppSpacing.md),
+        ],
+        Text(
+          editing ? '留空则沿用原私钥；粘贴新私钥则替换。' : '粘贴 OpenSSH 私钥全文',
+          style: theme.textTheme.titleSmall,
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
@@ -272,7 +339,16 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
           '不用等到测试连接才发现粘错。',
           style: theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.sm),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: _pasteFromClipboard,
+            icon: const Icon(Icons.content_paste, size: 18),
+            label: const Text('从剪贴板粘贴'),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
         TextField(
           controller: _key,
           minLines: 6,
@@ -304,55 +380,44 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
     );
   }
 
+  void _cancelReplace() {
+    setState(() {
+      _replaceCredential = false;
+      _password.clear();
+      _key.clear();
+      _keyPass.clear();
+      _keyCheck = null;
+    });
+  }
+
   // ---------- 第 3 步：提交与结果 ----------
 
   Widget _submitStep() {
     final theme = Theme.of(context);
     if (_done) {
-      final ok = _failure == null;
       return ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: <Widget>[
           const SizedBox(height: AppSpacing.xl),
-          Icon(
-            ok ? Icons.check_circle_outline : Icons.error_outline,
+          const Icon(
+            Icons.check_circle_outline,
             size: 40,
-            color: ok ? AppColors.ok : AppColors.warn,
+            color: AppColors.ok,
           ),
           const SizedBox(height: AppSpacing.md),
           Text(
-            ok ? '已保存并连接成功' : '已保存，但连接失败',
+            widget.isEdit ? '已保存，连接正常' : '已连接，已纳入总览',
             textAlign: TextAlign.center,
             style: theme.textTheme.titleMedium,
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            ok ? '服务器已加入总览，可以查看指标与容器。' : '记录已写入面板，可以在列表里看到它。失败原因：$_failure',
+            widget.isEdit
+                ? '新配置已生效，可以查看指标与容器。'
+                : '服务器已加入总览，可以查看指标与容器。',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
           ),
-          if (!ok) ...<Widget>[
-            const SizedBox(height: AppSpacing.lg),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text('下一步', style: theme.textTheme.titleSmall),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      '· 确认目标机 SSH 端口可达、用户有登录权限\n'
-                      '· 私钥方式：确认粘贴的是私钥全文，且口令填写正确\n'
-                      '· 改完凭据需删除后重新添加（本期不支持在 App 内改凭据）',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: AppColors.muted, height: 1.6),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
           const SizedBox(height: AppSpacing.xl),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
@@ -365,6 +430,48 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       children: <Widget>[
+        if (_failure != null) ...<Widget>[
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: AppColors.accentSoft,
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              border: Border.all(color: AppColors.warn),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    const Icon(Icons.error_outline,
+                        size: 16, color: AppColors.warn),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        widget.isEdit ? '未保存：新配置连接失败' : '未添加：连接失败',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: AppColors.text),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '$_failure',
+                  style:
+                      theme.textTheme.bodySmall?.copyWith(color: AppColors.muted),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '服务器没有被加入总览，改好后再点一次「测试并保存」。',
+                  style:
+                      theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         Text('确认信息', style: theme.textTheme.titleSmall),
         const SizedBox(height: AppSpacing.md),
         Card(
@@ -383,14 +490,19 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
                   label: '认证',
                   value: _authMethod == 'key' ? 'SSH 私钥' : '密码',
                 ),
+                if (widget.isEdit)
+                  _ReviewRow(
+                    label: '凭据',
+                    value: _needCredential ? '将替换为新填写的凭据' : '保持不变',
+                  ),
               ],
             ),
           ),
         ),
         const SizedBox(height: AppSpacing.md),
         Text(
-          '点击「保存并测试连接」后：先在面板登记这台服务器，再立即发起一次 SSH 连接验证。'
-          '目标机暂时不可达时记录仍会保留，不会丢你填过的内容。',
+          '点击「测试并保存」后：先发起一次 SSH 连接验证，通过了才写入面板。'
+          '连不上就停在当前页并给出原因，不会留下一条连不上的记录。',
           style: theme.textTheme.bodySmall
               ?.copyWith(color: AppColors.faint, height: 1.6),
         ),
@@ -442,9 +554,21 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
     return true;
   }
 
+  /// 该认证方式的凭据是否必填。
+  ///
+  /// 新增必填；编辑时只有「换了认证方式」才必填 —— 同一方式下留空表示沿用原值。
+  bool get _credentialRequired {
+    final s = widget.server;
+    if (s == null) return true;
+    return _authMethod != s.authMethod;
+  }
+
   bool _validateCredential() {
+    if (!_needCredential) return true;
+    final required = _credentialRequired;
+
     if (_authMethod == 'password') {
-      if (_password.text.isEmpty) {
+      if (_password.text.isEmpty && required) {
         showToast(context, '请填写 SSH 登录密码', isError: true);
         return false;
       }
@@ -452,6 +576,7 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
     }
     final raw = _key.text;
     if (raw.trim().isEmpty) {
+      if (!required) return true; // 编辑且沿用原私钥
       showToast(context, '请粘贴私钥，或改用密码认证', isError: true);
       return false;
     }
@@ -507,38 +632,101 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
     });
 
     final repo = ref.read(serversRepositoryProvider);
+    final port = int.parse(_port.text.trim());
+    final name = _name.text.trim();
+    final host = _host.text.trim();
+    final user = _user.text.trim();
+
+    // 未更换凭据时一律传 null（后端按「留空」处理，沿用库中原值）。
+    String? password;
+    String? privateKey;
+    String? keyPass;
+    if (_needCredential) {
+      if (_authMethod == 'password') {
+        if (_password.text.isNotEmpty) password = _password.text;
+      } else {
+        final raw = _key.text.trim();
+        if (raw.isNotEmpty) privateKey = _validator.check(raw).normalized;
+        if (_keyPass.text.isNotEmpty) keyPass = _keyPass.text;
+      }
+    }
+
+    final editing = widget.server;
     try {
-      final created = await repo.create(
-        name: _name.text.trim(),
-        host: _host.text.trim(),
-        port: int.parse(_port.text.trim()),
-        sshUser: _user.text.trim(),
+      // 第一关：先试连，不落库。探不通就在这里停住，列表里不会多出任何东西。
+      await repo.probe(
+        host: host,
+        port: port,
+        sshUser: user,
         authMethod: _authMethod,
-        password: _authMethod == 'password' ? _password.text : null,
-        privateKey: _authMethod == 'key'
-            ? _validator.check(_key.text).normalized
-            : null,
-        keyPass: _authMethod == 'key' ? _keyPass.text : null,
+        password: password,
+        privateKey: privateKey,
+        keyPass: keyPass,
+        serverId: editing?.id,
       );
 
-      String? testError;
-      try {
-        await repo.test(created.id);
-      } on Object catch (e) {
-        testError = describeApiError(e);
+      // 第二关：探通了才写库。
+      if (editing == null) {
+        await repo.create(
+          name: name,
+          host: host,
+          port: port,
+          sshUser: user,
+          authMethod: _authMethod,
+          password: password,
+          privateKey: privateKey,
+          keyPass: keyPass,
+        );
+      } else {
+        await repo.update(
+          editing.id,
+          name: name,
+          host: host,
+          port: port,
+          sshUser: user,
+          authMethod: _authMethod,
+          password: password,
+          privateKey: privateKey,
+          keyPass: keyPass,
+          // 向导没有标签输入，编辑时原样保留，避免顺手把已有标签清掉。
+          tags: editing.tags,
+        );
       }
+
       if (!mounted) return;
-      setState(() {
-        _done = true;
-        _failure = testError;
-      });
+      setState(() => _done = true);
     } on Object catch (e) {
       if (!mounted) return;
       setState(() => _failure = describeApiError(e));
-      showToast(context, '保存失败：${describeApiError(e)}', isError: true);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+}
+
+/// 编辑模式「正在更换凭据」的提示条，带一个取消入口。
+class _ReplaceHint extends StatelessWidget {
+  const _ReplaceHint({required this.onCancel});
+
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            '正在更换凭据',
+            style: theme.textTheme.bodySmall?.copyWith(color: AppColors.muted),
+          ),
+        ),
+        TextButton(
+          onPressed: onCancel,
+          child: const Text('取消更换'),
+        ),
+      ],
+    );
   }
 }
 

@@ -151,6 +151,23 @@ func (p *Pool) Get(ctx context.Context, serverID int64, cfg Config) (*ssh.Client
 	return c, nil
 }
 
+// Probe 用给定配置拨一次 SSH，成功即刻关闭并返回耗时；**不入池、不缓存**。
+//
+// 纳管预检在没有 serverID 时调用：既没有可复用的连接，也不该为一次性的
+// 试探在池子里占一个槽位（否则试探失败还会留下半死条目）。
+func (p *Pool) Probe(ctx context.Context, cfg Config) (time.Duration, error) {
+	start := p.now()
+	c, err := p.dial(ctx, cfg)
+	elapsed := p.now().Sub(start)
+	if err != nil {
+		return elapsed, err
+	}
+	if c != nil {
+		_ = c.Close()
+	}
+	return elapsed, nil
+}
+
 // Close 关闭并移除指定服务器的连接。
 func (p *Pool) Close(serverID int64) {
 	p.mu.Lock()

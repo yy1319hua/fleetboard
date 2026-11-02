@@ -76,6 +76,20 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
           ],
         ),
         actions: [
+          if (server != null)
+            IconButton(
+              tooltip: '编辑',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () async {
+                final saved = await context.push<bool>(
+                  '/settings/servers/edit/${server.id}',
+                  extra: server,
+                );
+                if (saved == true) {
+                  ref.read(overviewProvider.notifier).refresh();
+                }
+              },
+            ),
           IconButton(
             tooltip: '刷新',
             icon: const Icon(Icons.refresh),

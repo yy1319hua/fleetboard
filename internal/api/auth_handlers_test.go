@@ -20,6 +20,15 @@ import (
 
 func newAuthTestServer(t *testing.T) (*gin.Engine, *sql.DB) {
 	t.Helper()
+	return newAuthTestServerWithDialer(t, func(context.Context, sshpool.Config) (*ssh.Client, error) {
+		return nil, errors.New("fake dial error")
+	})
+}
+
+// newAuthTestServerWithDialer 同 newAuthTestServer，但可注入建连行为
+// （预检接口需要「成功」分支，而默认假 dialer 恒定失败）。
+func newAuthTestServerWithDialer(t *testing.T, dial sshpool.Dialer) (*gin.Engine, *sql.DB) {
+	t.Helper()
 	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("db.Open: %v", err)
@@ -29,9 +38,7 @@ func newAuthTestServer(t *testing.T) (*gin.Engine, *sql.DB) {
 	}
 	gin.SetMode(gin.TestMode)
 	pool := sshpool.NewPool(time.Minute)
-	pool.SetDialer(func(context.Context, sshpool.Config) (*ssh.Client, error) {
-		return nil, errors.New("fake dial error")
-	})
+	pool.SetDialer(dial)
 	r := NewRouter(RouterOptions{
 		DB:        d,
 		JWTSecret: "test-secret",

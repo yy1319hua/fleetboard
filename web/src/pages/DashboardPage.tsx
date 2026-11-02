@@ -69,9 +69,9 @@ export function DashboardPage() {
       )}
 
       <AddServerDialog
+        key="create"
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        onError={onError}
       />
     </div>
   );

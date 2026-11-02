@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { NavLink, Outlet, useParams, useNavigate } from "react-router-dom";
 
+import { AddServerDialog } from "@/components/AddServerDialog";
 import { Button } from "@/components/ui/Button";
 import { EmptyState, ErrorState, SkeletonRows } from "@/components/ui/Feedback";
 import { StatusBadge, serverTone } from "@/components/ui/StatusBadge";
@@ -26,6 +28,7 @@ export function ServerDetailPage() {
   const { data: server, isLoading, isError, error, refetch } = useServer(serverID);
   const test = useTestServer();
   const del = useDeleteServer();
+  const [editOpen, setEditOpen] = useState(false);
 
   if (!Number.isInteger(serverID) || serverID <= 0) {
     return <ErrorState message="服务器 ID 非法" />;
@@ -80,6 +83,9 @@ export function ServerDetailPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => setEditOpen(true)}>
+            编辑
+          </Button>
           <Button
             variant="secondary"
             onClick={() =>
@@ -97,6 +103,13 @@ export function ServerDetailPage() {
           </Button>
         </div>
       </div>
+
+      <AddServerDialog
+        key={`edit-${server.id}`}
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        server={server}
+      />
 
       <nav className="flex gap-1 overflow-x-auto border-b border-border" aria-label="服务器功能">
         {TABS.map((t) => (

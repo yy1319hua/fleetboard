@@ -71,6 +71,7 @@ class _ServersPageState extends ConsumerState<ServersPage> {
             server: s,
             busy: busy,
             onOpen: () => context.push('/servers/${s.id}'),
+            onEdit: () => _edit(s),
             onTest: () => _test(s),
             onDelete: () => _confirmDelete(s),
           );
@@ -111,6 +112,18 @@ class _ServersPageState extends ConsumerState<ServersPage> {
   Future<void> _openWizard() async {
     final created = await context.push<bool>('/settings/servers/new');
     if (created == true && mounted) {
+      ref.invalidate(serversProvider);
+      ref.invalidate(overviewProvider);
+    }
+  }
+
+  /// 编辑：复用同一个向导，带上当前对象省一次请求。
+  Future<void> _edit(Server s) async {
+    final saved = await context.push<bool>(
+      '/settings/servers/edit/${s.id}',
+      extra: s,
+    );
+    if (saved == true && mounted) {
       ref.invalidate(serversProvider);
       ref.invalidate(overviewProvider);
     }
@@ -185,6 +198,7 @@ class _ServerTile extends StatelessWidget {
     required this.server,
     required this.busy,
     required this.onOpen,
+    required this.onEdit,
     required this.onTest,
     required this.onDelete,
   });
@@ -192,6 +206,7 @@ class _ServerTile extends StatelessWidget {
   final Server server;
   final bool busy;
   final VoidCallback onOpen;
+  final VoidCallback onEdit;
   final VoidCallback onTest;
   final VoidCallback onDelete;
 
@@ -259,10 +274,15 @@ class _ServerTile extends StatelessWidget {
                   icon: const Icon(Icons.more_vert,
                       size: 20, color: AppColors.faint),
                   onSelected: (String v) {
+                    if (v == 'edit') onEdit();
                     if (v == 'test') onTest();
                     if (v == 'delete') onDelete();
                   },
                   itemBuilder: (BuildContext ctx) => <PopupMenuEntry<String>>[
+                    const PopupMenuItem<String>(
+                      value: 'edit',
+                      child: Text('编辑'),
+                    ),
                     const PopupMenuItem<String>(
                       value: 'test',
                       child: Text('测试连接'),

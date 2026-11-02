@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiDelete, apiGet, apiPost } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
 import type { Server, ServerMetric } from "@/lib/types";
 
 export const qk = {
@@ -61,6 +61,45 @@ export function useCreateServer() {
     mutationFn: (input: CreateServerInput) => apiPost<Server>("/api/servers", input),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.servers });
+    },
+  });
+}
+
+/** 预检输入：编辑场景带 server_id，留空的字段（含凭据）由后端用库里值补齐。 */
+export interface ProbeServerInput {
+  host: string;
+  port: number;
+  ssh_user: string;
+  auth_method: "key" | "password";
+  private_key?: string;
+  password?: string;
+  key_pass?: string;
+  server_id?: number;
+}
+
+export interface ProbeResult {
+  ok: boolean;
+  elapsed_ms: number;
+}
+
+/**
+ * 试连但**不落库**。纳管流程靠它把「连不上」挡在写库之前：
+ * 探不通时列表里不会出现一台永远连不上的机器。
+ */
+export function useProbeServer() {
+  return useMutation({
+    mutationFn: (input: ProbeServerInput) => apiPost<ProbeResult>("/api/servers/probe", input),
+  });
+}
+
+export function useUpdateServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: CreateServerInput & { id: number }) =>
+      apiPut<Server>(`/api/servers/${id}`, input),
+    onSuccess: (_data, vars) => {
+      void qc.invalidateQueries({ queryKey: qk.servers });
+      void qc.invalidateQueries({ queryKey: qk.server(vars.id) });
     },
   });
 }

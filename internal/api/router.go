@@ -71,7 +71,10 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	// 服务器管理
 	authed.GET("/servers", listServersHandler(opts.DB))
 	authed.POST("/servers", createServerHandler(opts.DB, opts.MasterKey))
+	// 纳管预检：连不上就不落库，所以必须先于「创建」可用，且不需要 id。
+	authed.POST("/servers/probe", probeServerHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.GET("/servers/:id", getServerHandler(opts.DB))
+	authed.PUT("/servers/:id", updateServerHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.DELETE("/servers/:id", deleteServerHandler(opts.DB))
 	authed.POST("/servers/:id/test", testServerHandler(opts.DB, opts.MasterKey, opts.Pool))
 

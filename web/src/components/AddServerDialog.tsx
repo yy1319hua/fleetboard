@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Input, Select, Textarea } from "@/components/ui/Form";
-import { useCreateServer } from "@/lib/queries";
+import { useCreateServer, useProbeServer, useUpdateServer } from "@/lib/queries";
+import type { Server } from "@/lib/types";
 
-const initial = {
+const empty = {
   name: "",
   host: "",
   port: "22",
@@ -17,68 +18,147 @@ const initial = {
   tags: "",
 };
 
-/** 纳管服务器：填 IP + 凭据即可（零配置目标）。凭据经后端加密后落库，不回显。 */
+type FormState = typeof empty;
+
+function initialForm(server?: Server): FormState {
+  if (!server) return { ...empty };
+  return {
+    name: server.name,
+    host: server.host,
+    port: String(server.port),
+    ssh_user: server.ssh_user,
+    auth_method: server.auth_method === "password" ? "password" : "key",
+    private_key: "",
+    password: "",
+    key_pass: "",
+    tags: server.tags ?? "",
+  };
+}
+
+/**
+ * 纳管服务器：新增与编辑共用。
+ *
+ * **先测后存**：提交时先打 `POST /api/servers/probe`，探通才写库
+ * （新增 POST /api/servers，编辑 PUT /api/servers/{id}）。
+ * 探不通就停在对话框里报原因，列表里不会多出一台永远连不上的机器。
+ *
+ * 编辑模式：凭据默认隐藏，显示「凭据已保存，留空则不修改」。
+ */
 export function AddServerDialog({
   open,
   onClose,
   onError,
+  server,
 }: {
   open: boolean;
   onClose: () => void;
-  onError: (msg: string) => void;
+  onError?: (msg: string) => void;
+  /** 传入即为编辑模式。父组件用 key 保证切换对象时重挂载。 */
+  server?: Server;
 }) {
-  const [form, setForm] = useState(initial);
-  const create = useCreateServer();
+  const editing = Boolean(server);
+  const [form, setForm] = useState<FormState>(() => initialForm(server));
+  const [replaceCredential, setReplaceCredential] = useState(!server);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const set = <K extends keyof typeof initial>(key: K, value: (typeof initial)[K]) =>
+  const probe = useProbeServer();
+  const create = useCreateServer();
+  const update = useUpdateServer();
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(initialForm(server));
+    setReplaceCredential(!server);
+    setError(null);
+    setBusy(false);
+    // server 由父组件用 key 固定；此处只随打开动作重置。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
   const portNum = Number(form.port);
   const portValid = Number.isInteger(portNum) && portNum > 0 && portNum <= 65535;
+
+  /** 切换认证方式后原凭据必然不可用，必须重新填。 */
+  const authChanged = editing && form.auth_method !== (server?.auth_method ?? "key");
+  const credentialRequired = !editing || authChanged;
+  const showCredential = !editing || replaceCredential;
+  const credentialFilled =
+    form.auth_method === "key" ? form.private_key.trim() !== "" : form.password !== "";
+
   const canSubmit =
     form.name.trim() !== "" &&
     form.host.trim() !== "" &&
     portValid &&
     form.ssh_user.trim() !== "" &&
-    (form.auth_method === "key" ? form.private_key.trim() !== "" : form.password !== "");
+    (!credentialRequired || credentialFilled);
 
-  const submit = () => {
-    if (!canSubmit) return;
-    create.mutate(
-      {
+  const submit = async () => {
+    if (!canSubmit || busy) return;
+    setError(null);
+    setBusy(true);
+    try {
+      // 凭据只在「显示且填了」时才发，留空一律交给后端沿用原值。
+      const credential = showCredential
+        ? {
+            private_key:
+              form.auth_method === "key" && form.private_key.trim() !== ""
+                ? form.private_key
+                : undefined,
+            password:
+              form.auth_method === "password" && form.password !== "" ? form.password : undefined,
+            key_pass:
+              form.auth_method === "key" && form.key_pass !== "" ? form.key_pass : undefined,
+          }
+        : { private_key: undefined, password: undefined, key_pass: undefined };
+
+      const base = {
         name: form.name.trim(),
         host: form.host.trim(),
         port: portNum,
         ssh_user: form.ssh_user.trim(),
         auth_method: form.auth_method,
-        private_key: form.auth_method === "key" ? form.private_key : undefined,
-        password: form.auth_method === "password" ? form.password : undefined,
-        key_pass: form.auth_method === "key" && form.key_pass ? form.key_pass : undefined,
-        tags: form.tags.trim() || undefined,
-      },
-      {
-        onSuccess: () => {
-          setForm(initial);
-          onClose();
-        },
-        onError: (err) => onError(err instanceof Error ? err.message : "添加失败"),
-      },
-    );
+        tags: form.tags.trim(),
+      };
+
+      // 第一关：试连，不落库。
+      await probe.mutateAsync({ ...base, ...credential, server_id: server?.id });
+      // 第二关：探通了才写库。
+      if (server) {
+        await update.mutateAsync({ ...base, ...credential, id: server.id });
+      } else {
+        await create.mutateAsync({ ...base, ...credential });
+      }
+      onClose();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "操作失败";
+      setError(msg);
+      onError?.(msg);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <Dialog
       open={open}
-      title="添加服务器"
-      description="填入 SSH 连接信息即可纳管；凭据加密存储，不回显。"
+      title={editing ? "编辑服务器" : "添加服务器"}
+      description={
+        editing
+          ? "改完点「测试并保存」：先试连，通了才写入。"
+          : "先试连再纳管；连不上不会留下记录。凭据加密存储，不回显。"
+      }
       onClose={onClose}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={create.isPending}>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             取消
           </Button>
-          <Button variant="primary" onClick={submit} loading={create.isPending} disabled={!canSubmit}>
-            添加
+          <Button variant="primary" onClick={() => void submit()} loading={busy} disabled={!canSubmit}>
+            {editing ? "测试并保存" : "测试并添加"}
           </Button>
         </>
       }
@@ -87,9 +167,18 @@ export function AddServerDialog({
         className="space-y-3.5"
         onSubmit={(e) => {
           e.preventDefault();
-          submit();
+          void submit();
         }}
       >
+        {error ? (
+          <div className="rounded-control border border-border bg-surface-2 px-3 py-2">
+            <p className="text-caption text-danger">{error}</p>
+            <p className="mt-0.5 text-caption text-text-faint">
+              {editing ? "新配置没有写入，服务器保持原样。" : "服务器没有被加入总览，改好后可重试。"}
+            </p>
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
           <Field label="名称" htmlFor="srv-name">
             <Input
@@ -104,7 +193,7 @@ export function AddServerDialog({
               id="srv-host"
               value={form.host}
               onChange={(e) => set("host", e.target.value)}
-              placeholder="10.0.0.10"
+              placeholder="192.168.1.10"
               autoCapitalize="none"
               spellCheck={false}
             />
@@ -134,49 +223,87 @@ export function AddServerDialog({
           <Select
             id="srv-auth"
             value={form.auth_method}
-            onChange={(e) => set("auth_method", e.target.value as "key" | "password")}
+            onChange={(e) => {
+              const next = e.target.value as "key" | "password";
+              set("auth_method", next);
+              if (editing && next !== (server?.auth_method ?? "key")) {
+                setReplaceCredential(true);
+              }
+            }}
           >
             <option value="key">SSH 私钥</option>
             <option value="password">密码</option>
           </Select>
         </Field>
 
-        {form.auth_method === "key" ? (
-          <>
-            <Field
-              label="私钥（OpenSSH 格式）"
-              htmlFor="srv-key"
-              hint="仅上传到你的控制面并加密存储，绝不入库明文"
-            >
-              <Textarea
-                id="srv-key"
-                value={form.private_key}
-                onChange={(e) => set("private_key", e.target.value)}
-                placeholder="粘贴 id_ed25519 私钥全文"
-                spellCheck={false}
-                className="min-h-28"
-              />
-            </Field>
-            <Field label="私钥口令（可选）" htmlFor="srv-keypass">
-              <Input
-                id="srv-keypass"
-                type="password"
-                value={form.key_pass}
-                onChange={(e) => set("key_pass", e.target.value)}
-                placeholder="私钥未加密则留空"
-              />
-            </Field>
-          </>
+        {editing && !showCredential ? (
+          <div className="flex items-center justify-between gap-3 rounded-control border border-border bg-surface-2 px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-body text-text">凭据已保存</p>
+              <p className="text-caption text-text-faint">留空则不修改，改端口或名称不必重填。</p>
+            </div>
+            <Button variant="ghost" onClick={() => setReplaceCredential(true)}>
+              更换凭据
+            </Button>
+          </div>
         ) : (
-          <Field label="登录密码" htmlFor="srv-pass">
-            <Input
-              id="srv-pass"
-              type="password"
-              value={form.password}
-              onChange={(e) => set("password", e.target.value)}
-              placeholder="SSH 登录密码"
-            />
-          </Field>
+          <>
+            {editing ? (
+              <div className="flex items-center justify-between text-caption text-text-muted">
+                <span>正在更换凭据，留空则沿用原值</span>
+                <button
+                  type="button"
+                  className="text-accent hover:underline"
+                  onClick={() => {
+                    setReplaceCredential(false);
+                    set("private_key", "");
+                    set("password", "");
+                    set("key_pass", "");
+                  }}
+                >
+                  取消更换
+                </button>
+              </div>
+            ) : null}
+
+            {form.auth_method === "key" ? (
+              <>
+                <Field
+                  label="私钥（OpenSSH 格式）"
+                  htmlFor="srv-key"
+                  hint="仅上传到你的控制面并加密存储，绝不入库明文"
+                >
+                  <Textarea
+                    id="srv-key"
+                    value={form.private_key}
+                    onChange={(e) => set("private_key", e.target.value)}
+                    placeholder={editing ? "留空 = 沿用原私钥" : "粘贴 id_ed25519 私钥全文"}
+                    spellCheck={false}
+                    className="min-h-28"
+                  />
+                </Field>
+                <Field label="私钥口令（可选）" htmlFor="srv-keypass">
+                  <Input
+                    id="srv-keypass"
+                    type="password"
+                    value={form.key_pass}
+                    onChange={(e) => set("key_pass", e.target.value)}
+                    placeholder={editing ? "留空 = 沿用原口令" : "私钥未加密则留空"}
+                  />
+                </Field>
+              </>
+            ) : (
+              <Field label="登录密码" htmlFor="srv-pass" hint={editing ? "留空 = 沿用原密码" : undefined}>
+                <Input
+                  id="srv-pass"
+                  type="password"
+                  value={form.password}
+                  onChange={(e) => set("password", e.target.value)}
+                  placeholder="SSH 登录密码"
+                />
+              </Field>
+            )}
+          </>
         )}
 
         <Field label="标签（可选）" htmlFor="srv-tags" hint="用于分组，如 生产 / 测试">
