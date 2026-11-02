@@ -124,8 +124,16 @@ export function AddServerDialog({
         tags: form.tags.trim(),
       };
 
+      // 预检只发连接相关字段：name / tags 与连通性无关，openapi 里也没这两个字段。
+      const conn = {
+        host: form.host.trim(),
+        port: portNum,
+        ssh_user: form.ssh_user.trim(),
+        auth_method: form.auth_method,
+      };
+
       // 第一关：试连，不落库。
-      await probe.mutateAsync({ ...base, ...credential, server_id: server?.id });
+      await probe.mutateAsync({ ...conn, ...credential, server_id: server?.id });
       // 第二关：探通了才写库。
       if (server) {
         await update.mutateAsync({ ...base, ...credential, id: server.id });
