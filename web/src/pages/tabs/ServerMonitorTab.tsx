@@ -6,6 +6,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -15,7 +16,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui/Feedback";
 import { apiGet } from "@/lib/api";
-import { formatRelative } from "@/lib/format";
+import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { Server, ServerMetric } from "@/lib/types";
 
@@ -72,6 +73,9 @@ const SERIES = [
 export function ServerMonitorTab() {
   const { server } = useOutletContext<Ctx>();
   const [range, setRange] = useState<Range>("24h");
+  // 游标位置：鼠标/手指在图上移动时记录索引，顶部数值卡跟着变；
+  // 离开图表后回到「最新采样」。null 表示没有游标。
+  const [cursorIdx, setCursorIdx] = useState<number | null>(null);
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["metrics", server.id, range],
@@ -81,6 +85,10 @@ export function ServerMonitorTab() {
 
   const points = useMemo(() => downsample(data?.points ?? []), [data]);
   const latest = points.length > 0 ? points[points.length - 1] : null;
+  // 游标点有效时才接管顶部数值卡，否则回落最新点。
+  const cursorPoint =
+    cursorIdx !== null && cursorIdx >= 0 && cursorIdx < points.length ? points[cursorIdx] : null;
+  const active = cursorPoint ?? latest;
 
   return (
     <div className="space-y-4">
@@ -111,23 +119,31 @@ export function ServerMonitorTab() {
         </div>
       </div>
 
-      {latest ? (
-        <div className="grid grid-cols-2 gap-4 rounded-card border border-border bg-surface-1 px-4 py-3 sm:grid-cols-4">
-          <div>
-            <div className="eyebrow">CPU</div>
-            <div className="tabular mt-0.5 text-h1 text-text">{latest.cpu_pct.toFixed(1)}%</div>
+      {active ? (
+        <div className="rounded-card border border-border bg-surface-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+            <span className="text-caption text-text-faint">
+              {cursorPoint ? "游标位置" : "最新采样"}
+            </span>
+            <span className="tabular text-caption text-text-muted">{formatDateTime(active.ts)}</span>
           </div>
-          <div>
-            <div className="eyebrow">内存</div>
-            <div className="tabular mt-0.5 text-h1 text-text">{latest.mem_pct.toFixed(1)}%</div>
-          </div>
-          <div>
-            <div className="eyebrow">磁盘</div>
-            <div className="tabular mt-0.5 text-h1 text-text">{latest.disk_pct.toFixed(1)}%</div>
-          </div>
-          <div>
-            <div className="eyebrow">负载 1m</div>
-            <div className="tabular mt-0.5 text-h1 text-text">{latest.load1.toFixed(2)}</div>
+          <div className="grid grid-cols-2 gap-4 px-4 py-3 sm:grid-cols-4">
+            <div>
+              <div className="eyebrow">CPU</div>
+              <div className="tabular mt-0.5 text-h1 text-text">{active.cpu_pct.toFixed(1)}%</div>
+            </div>
+            <div>
+              <div className="eyebrow">内存</div>
+              <div className="tabular mt-0.5 text-h1 text-text">{active.mem_pct.toFixed(1)}%</div>
+            </div>
+            <div>
+              <div className="eyebrow">磁盘</div>
+              <div className="tabular mt-0.5 text-h1 text-text">{active.disk_pct.toFixed(1)}%</div>
+            </div>
+            <div>
+              <div className="eyebrow">负载 1m</div>
+              <div className="tabular mt-0.5 text-h1 text-text">{active.load1.toFixed(2)}</div>
+            </div>
           </div>
         </div>
       ) : null}
@@ -156,7 +172,17 @@ export function ServerMonitorTab() {
           ) : (
             <div className="h-[320px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={points} margin={{ top: 8, right: 12, bottom: 4, left: 0 }}>
+                <LineChart
+                  data={points}
+                  margin={{ top: 8, right: 12, bottom: 4, left: 0 }}
+                  // 鼠标/手指横向移动 → 记录游标索引，顶部数值卡与竖线一起跟随。
+                  // recharts 的 activeTooltipIndex 在触摸拖动时同样会更新，移动端可用。
+                  onMouseMove={(state) => {
+                    const i = (state as { activeTooltipIndex?: number } | null)?.activeTooltipIndex;
+                    if (typeof i === "number" && i >= 0) setCursorIdx(i);
+                  }}
+                  onMouseLeave={() => setCursorIdx(null)}
+                >
                   <CartesianGrid stroke="#2a303b" strokeDasharray="2 4" vertical={false} />
                   <XAxis
                     dataKey="ts"
@@ -188,6 +214,9 @@ export function ServerMonitorTab() {
                     height={28}
                     formatter={(v: string) => <span style={{ color: "#9aa4b2", fontSize: 12 }}>{v}</span>}
                   />
+                  {cursorPoint ? (
+                    <ReferenceLine x={cursorPoint.ts} stroke="#9aa4b2" strokeDasharray="3 3" />
+                  ) : null}
                   {SERIES.map((s) => (
                     <Line
                       key={s.key}
@@ -208,7 +237,8 @@ export function ServerMonitorTab() {
       </div>
 
       <p className="text-caption text-text-faint">
-        采样间隔与保留天数可在控制面配置（默认 30 秒 / 30 天）。曲线为前端抽稀后的均值，尖峰可能被平滑。
+        在曲线上左右移动鼠标（手机上是手指拖动），可查看该时刻的具体数值。采样间隔与保留天数可在控制面配置（默认 30 秒 /
+        30 天）。曲线为前端抽稀后的均值，尖峰可能被平滑。
       </p>
     </div>
   );

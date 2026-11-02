@@ -21,6 +21,17 @@ class ServerMonitorTab extends ConsumerStatefulWidget {
 class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
   MetricRange _range = MetricRange.day;
 
+  /// 游标索引：手指在任意一张图上左右拖动时记录，四张图共用同一个值，
+  /// 这样「同一时刻的 CPU / 内存 / 磁盘 / 负载」能一起读，而不是各看各的。
+  /// null 表示没有游标，各图显示最新值。
+  int? _cursorIndex;
+
+  void _setCursor(int? index) {
+    // 拖动时每帧都会回调，索引没变就不重建——否则四张图每次触摸移动都重绘一遍。
+    if (_cursorIndex == index) return;
+    setState(() => _cursorIndex = index);
+  }
+
   @override
   Widget build(BuildContext context) {
     final key = (serverId: widget.serverId, range: _range);
@@ -38,7 +49,10 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
                 ],
                 selected: {_range},
                 showSelectedIcon: false,
-                onSelectionChanged: (v) => setState(() => _range = v.first),
+                onSelectionChanged: (v) => setState(() {
+                  _range = v.first;
+                  _cursorIndex = null; // 换时间窗后旧索引没有意义
+                }),
               ),
               const Spacer(),
               if (state is AsyncData<MetricSeries>)
@@ -63,12 +77,23 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 88),
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                      child: Text(
+                        '在任意一张图上左右拖动，四张图会同步定位到同一时刻。',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                      ),
+                    ),
                     _MetricChart(
                       title: 'CPU',
                       unit: '%',
                       points: points,
                       valueOf: (p) => p.cpuPct,
                       fixedMax: 100,
+                      cursorIndex: _cursorIndex,
+                      onCursorChanged: _setCursor,
                     ),
                     _MetricChart(
                       title: '内存',
@@ -76,6 +101,8 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
                       points: points,
                       valueOf: (p) => p.memPct,
                       fixedMax: 100,
+                      cursorIndex: _cursorIndex,
+                      onCursorChanged: _setCursor,
                     ),
                     _MetricChart(
                       title: '磁盘',
@@ -83,12 +110,16 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
                       points: points,
                       valueOf: (p) => p.diskPct,
                       fixedMax: 100,
+                      cursorIndex: _cursorIndex,
+                      onCursorChanged: _setCursor,
                     ),
                     _MetricChart(
                       title: '负载（1 分钟）',
                       unit: '',
                       points: points,
                       valueOf: (p) => p.load1,
+                      cursorIndex: _cursorIndex,
+                      onCursorChanged: _setCursor,
                     ),
                   ],
                 ),
@@ -115,6 +146,8 @@ class _MetricChart extends StatelessWidget {
     required this.points,
     required this.valueOf,
     this.fixedMax,
+    this.cursorIndex,
+    this.onCursorChanged,
   });
 
   final String title;
@@ -124,6 +157,12 @@ class _MetricChart extends StatelessWidget {
 
   /// 百分比类固定 0–100；负载类按数据自适应。
   final double? fixedMax;
+
+  /// 四张图共用的游标索引（由父级持有，实现联动）。
+  final int? cursorIndex;
+
+  /// 拖动回调：把落点索引回传给父级。为 null 表示这张图不响应拖动。
+  final ValueChanged<int?>? onCursorChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +178,14 @@ class _MetricChart extends StatelessWidget {
     if (fixedMax == null) {
       maxY = maxY <= 0 ? 1 : maxY * 1.15;
     }
-    final color = _colorFor(theme, valueOf(points.last), fixedMax);
+    // 游标有效时展示该点的值，否则展示最新值；两者共用同一套配色阈值。
+    final hasCursor = cursorIndex != null &&
+        cursorIndex! >= 0 &&
+        cursorIndex! < points.length;
+    final activeIndex = hasCursor ? cursorIndex! : points.length - 1;
+    final active = points[activeIndex];
+    final showingCursor = activeIndex != points.length - 1;
+    final color = _colorFor(theme, valueOf(active), fixedMax);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -152,8 +198,15 @@ class _MetricChart extends StatelessWidget {
               children: [
                 Text(title, style: theme.textTheme.titleSmall),
                 const Spacer(),
+                if (showingCursor) ...[
+                  Text(
+                    _hhmm(active.ts),
+                    style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 Text(
-                  '${valueOf(points.last).toStringAsFixed(1)}$unit',
+                  '${valueOf(active).toStringAsFixed(1)}$unit',
                   style: theme.textTheme.titleSmall?.copyWith(color: color),
                 ),
               ],
@@ -178,6 +231,19 @@ class _MetricChart extends StatelessWidget {
                     ),
                   ),
                   borderData: FlBorderData(show: false),
+                  // 游标：一条虚线竖线，四张图因共用 cursorIndex 而同步出现。
+                  extraLinesData: showingCursor
+                      ? ExtraLinesData(
+                          verticalLines: [
+                            VerticalLine(
+                              x: activeIndex.toDouble(),
+                              color: theme.colorScheme.outline,
+                              strokeWidth: 1,
+                              dashArray: const [3, 3],
+                            ),
+                          ],
+                        )
+                      : const ExtraLinesData(),
                   titlesData: FlTitlesData(
                     topTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false),
@@ -222,6 +288,13 @@ class _MetricChart extends StatelessWidget {
                     ),
                   ),
                   lineTouchData: LineTouchData(
+                    // 手指在图上横向移动就更新游标；松手后保留，让用户把数值读完再走。
+                    // 落点索引经父级 state 传给其余三张图，实现四图同步。
+                    touchCallback: (event, response) {
+                      final barSpots = response?.lineBarSpots;
+                      if (barSpots == null || barSpots.isEmpty) return;
+                      onCursorChanged?.call(barSpots.first.x.round());
+                    },
                     touchTooltipData: LineTouchTooltipData(
                       getTooltipItems: (touched) => [
                         for (final t in touched)

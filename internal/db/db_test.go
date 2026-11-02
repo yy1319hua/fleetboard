@@ -2,8 +2,33 @@ package db
 
 import (
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 )
+
+// migrationFiles 返回 embed 里按文件名排序的迁移清单。
+//
+// 这里原先写死 "0005_system_upgrades.sql" 与 want 5：每加一个迁移都要改测试，
+// 漏改就红在与本次改动无关的地方，改错还会掩盖真实问题。改成动态取。
+func migrationFiles(t *testing.T) []string {
+	t.Helper()
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("读取 migrations: %v", err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
+			names = append(names, e.Name())
+		}
+	}
+	if len(names) == 0 {
+		t.Fatal("没有任何迁移文件")
+	}
+	sort.Strings(names)
+	return names
+}
 
 func TestOpenAndMigrate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
@@ -16,7 +41,7 @@ func TestOpenAndMigrate(t *testing.T) {
 
 	for _, table := range []string{
 		"users", "servers", "ssh_credentials", "operation_log", "settings", "file_cache",
-		"server_metrics", "alert_rules", "alert_events", "system_upgrades",
+		"server_metrics", "alert_rules", "alert_events", "system_upgrades", "server_facts",
 	} {
 		var n int
 		if err := d.QueryRow(
@@ -33,8 +58,9 @@ func TestOpenAndMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Version: %v", err)
 	}
-	if v != "0005_system_upgrades.sql" {
-		t.Errorf("Version=%q, want 0005_system_upgrades.sql", v)
+	files := migrationFiles(t)
+	if want := files[len(files)-1]; v != want {
+		t.Errorf("Version=%q, want %q", v, want)
 	}
 }
 
@@ -57,8 +83,8 @@ func TestOpenIdempotent(t *testing.T) {
 	if err := d2.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 5 {
-		t.Errorf("迁移记录数=%d, want 5（重复打开不应重复应用）", n)
+	if want := len(migrationFiles(t)); n != want {
+		t.Errorf("迁移记录数=%d, want %d（重复打开不应重复应用）", n, want)
 	}
 }
 
@@ -71,7 +97,8 @@ func TestOpenCreatesParentDir(t *testing.T) {
 	}
 	defer d.Close()
 
-	if v, err := Version(d); err != nil || v != "0005_system_upgrades.sql" {
+	files := migrationFiles(t)
+	if v, err := Version(d); err != nil || v != files[len(files)-1] {
 		t.Errorf("Version=%q err=%v", v, err)
 	}
 }

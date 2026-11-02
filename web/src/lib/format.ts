@@ -64,3 +64,20 @@ export function formatPct(v: number | null | undefined, digits = 1): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
   return `${v.toFixed(digits)}%`;
 }
+
+/** KB → 人类可读（df/内存总量都是 KB 口径）。 */
+export function formatKB(kb: number | null | undefined): string {
+  if (kb === null || kb === undefined || Number.isNaN(kb) || kb <= 0) return "—";
+  return formatBytes(kb * 1024);
+}
+
+/** 运行秒数 → 「12 天 3 小时」这类粗粒度文案（精确到分没有意义）。 */
+export function formatUptime(sec: number | null | undefined): string {
+  if (sec === null || sec === undefined || Number.isNaN(sec) || sec <= 0) return "—";
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d > 0) return h > 0 ? `${d} 天 ${h} 小时` : `${d} 天`;
+  if (h > 0) return m > 0 ? `${h} 小时 ${m} 分` : `${h} 小时`;
+  return `${m} 分钟`;
+}

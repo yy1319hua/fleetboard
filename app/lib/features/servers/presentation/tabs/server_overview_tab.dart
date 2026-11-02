@@ -7,6 +7,8 @@ import '../../../../core/widgets/status_dot.dart';
 import '../../../overview/application/overview_notifier.dart';
 import '../../../overview/domain/bootstrap.dart';
 import '../../../servers/data/servers_repository.dart';
+import '../../data/facts_repository.dart';
+import '../../domain/server_facts.dart';
 
 /// 服务器详情 · 概览段。
 ///
@@ -64,6 +66,8 @@ class _ServerOverviewTabState extends ConsumerState<ServerOverviewTab> {
               _IdentityCard(server: server),
               const SizedBox(height: 12),
               _MetricsCard(metric: metric),
+              const SizedBox(height: 12),
+              _FactsCard(state: ref.watch(serverFactsProvider(widget.serverId))),
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: _testing ? null : () => _testConnection(server),
@@ -293,4 +297,154 @@ class _MetricsCard extends StatelessWidget {
           Text(value, style: theme.textTheme.bodyMedium),
         ],
       );
+}
+
+/// 系统配置卡：这台机器是什么样（CPU 型号/核数、内存总量、磁盘挂载点、系统与内核）。
+///
+/// 数据来自后台每小时一次的采集，与「实时指标」是两条独立链路：指标挂了
+/// （SSH 抖动）不影响这里显示上一次的配置；配置没采到也不影响指标的刷新。
+class _FactsCard extends StatelessWidget {
+  const _FactsCard({required this.state});
+
+  final AsyncValue<ServerFacts?> state;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final facts = state.valueOrNull;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('系统配置', style: theme.textTheme.titleSmall),
+                const Spacer(),
+                if (facts != null)
+                  Text(
+                    '${_ago(facts.collectedAt)}采集',
+                    style: theme.textTheme.bodySmall,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (state.isLoading)
+              const LinearProgressIndicator(minHeight: 3)
+            else if (state.hasError)
+              Text(
+                '读取配置失败：${describeApiError(state.error!)}',
+                style: theme.textTheme.bodySmall,
+              )
+            else if (facts == null)
+              Text(
+                '尚未采集到配置。后台每小时采集一次，服务器离线或刚纳管时暂无数据。',
+                style: theme.textTheme.bodySmall,
+              )
+            else ...[
+              _kv(theme, 'CPU', facts.cpuModel.isEmpty ? '—' : facts.cpuModel),
+              if (facts.cpuCores > 0)
+                _kv(theme, '线程数', '${facts.cpuCores}'),
+              _kv(
+                theme,
+                '内存',
+                facts.swapTotalKb > 0
+                    ? '${facts.memTotalText}（Swap ${facts.swapTotalText}）'
+                    : facts.memTotalText,
+              ),
+              _kv(theme, '系统', facts.osName.isEmpty ? '—' : facts.osName),
+              _kv(theme, '内核', facts.kernel.isEmpty ? '—' : facts.kernel),
+              _kv(theme, '架构', facts.arch.isEmpty ? '—' : facts.arch),
+              _kv(theme, '虚拟化', facts.virtLabel),
+              _kv(theme, '主机名', facts.hostname.isEmpty ? '—' : facts.hostname),
+              _kv(theme, '运行时长', facts.uptimeText),
+              if (facts.disks.isNotEmpty) ...[
+                const Divider(height: 20),
+                Text(
+                  '磁盘',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 8),
+                for (final d in facts.disks) _disk(theme, d),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _kv(ThemeData theme, String k, String v) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 72,
+              child: Text(
+                k,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ),
+            Expanded(child: Text(v, style: theme.textTheme.bodyMedium)),
+          ],
+        ),
+      );
+
+  /// 一个挂载点：挂载路径 + 已用/总量 + 占比条（阈值与实时指标一致）。
+  Widget _disk(ThemeData theme, DiskUsage d) {
+    final pct = d.usedPct.clamp(0.0, 100.0);
+    final color = pct >= 90
+        ? theme.colorScheme.error
+        : pct >= 80
+            ? const Color(0xFFB26A00)
+            : theme.colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  d.mount.isEmpty ? (d.device.isEmpty ? '—' : d.device) : d.mount,
+                  style: theme.textTheme.bodySmall,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                '${d.usedText} / ${d.totalText}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: pct / 100,
+              minHeight: 4,
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _ago(DateTime ts) {
+    final d = DateTime.now().difference(ts);
+    if (d.inMinutes < 1) return '刚刚';
+    if (d.inHours < 1) return '${d.inMinutes} 分钟前';
+    if (d.inDays < 1) return '${d.inHours} 小时前';
+    return '${d.inDays} 天前';
+  }
 }

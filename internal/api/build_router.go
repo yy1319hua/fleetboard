@@ -151,6 +151,20 @@ func runBackground(d *sql.DB, store *settings.Store, pool *sshpool.Pool, masterK
 				_ = db.UpdateServerStatus(d, s.ID, "offline")
 			}
 		}
+		// 配置采集的节流状态：成功后 1 小时再采，失败 5 分钟后重试。
+		// 不单独起 goroutine 的理由：新纳管的机器要尽快看到配置卡，而指标采集
+		// 本来就每 30 秒遍历全部服务器，顺手判断即可，也避免启动时对每台机器
+		// 各建一条连接（两条 goroutine 同时 Get 同一台会撞在建连上）。
+		const (
+			factsOKInterval    = time.Hour
+			factsRetryInterval = 5 * time.Minute
+		)
+		type factsState struct {
+			at time.Time
+			ok bool
+		}
+		factsAt := make(map[int64]factsState)
+
 		collect := func() {
 			servers, err := db.ListServers(d)
 			if err != nil {
@@ -191,6 +205,31 @@ func runBackground(d *sql.DB, store *settings.Store, pool *sshpool.Pool, masterK
 					log.Printf("指标采集：写入 #%d 失败: %v", s.ID, err)
 				}
 				_ = db.UpdateServerStatus(d, s.ID, "online")
+
+				// 静态配置：复用同一连接，按节流状态决定是否采。
+				// 失败只记日志，不影响 online 判定——配置采集失败通常是个别命令
+				// 缺失（如没有 systemd-detect-virt），不代表主机不可达。
+				st, seen := factsAt[s.ID]
+				interval := factsOKInterval
+				if seen && !st.ok {
+					interval = factsRetryInterval
+				}
+				if !seen || time.Since(st.at) >= interval {
+					facts, ferr := monitor.CollectFacts(cli)
+					switch {
+					case ferr != nil:
+						log.Printf("配置采集 #%d(%s) 失败: %v", s.ID, s.Name, ferr)
+						factsAt[s.ID] = factsState{at: time.Now(), ok: false}
+					default:
+						facts.ServerID = s.ID
+						if uerr := db.UpsertFacts(d, facts); uerr != nil {
+							log.Printf("配置采集 #%d(%s) 写入失败: %v", s.ID, s.Name, uerr)
+							factsAt[s.ID] = factsState{at: time.Now(), ok: false}
+						} else {
+							factsAt[s.ID] = factsState{at: time.Now(), ok: true}
+						}
+					}
+				}
 
 				hits, err := alert.Evaluate(d, s.ID, &model.ServerMetric{
 					CPUPct:  snap.CPUPct,

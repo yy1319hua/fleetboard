@@ -67,6 +67,33 @@ components:
         load1: { type: number }
         net_in_kbps: { type: number }
         net_out_kbps: { type: number }
+    DiskUsage:
+      type: object
+      properties:
+        device: { type: string }
+        mount: { type: string }
+        total_kb: { type: integer }
+        used_kb: { type: integer }
+        avail_kb: { type: integer }
+        used_pct: { type: number }
+    ServerFacts:
+      type: object
+      properties:
+        server_id: { type: integer }
+        cpu_model: { type: string }
+        cpu_cores: { type: integer }
+        mem_total_kb: { type: integer }
+        swap_total_kb: { type: integer }
+        os_name: { type: string }
+        kernel: { type: string }
+        arch: { type: string }
+        hostname: { type: string }
+        uptime_sec: { type: integer }
+        virt: { type: string }
+        disks:
+          type: array
+          items: { $ref: '#/components/schemas/DiskUsage' }
+        collected_at: { type: string, format: date-time }
     Container:
       type: object
       properties:
@@ -820,6 +847,26 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+  /api/servers/{id}/facts:
+    get:
+      operationId: serverFacts
+      tags: [metrics]
+      x-app-consumed: true
+      summary: 主机静态配置（CPU 型号/核数、内存总量、磁盘挂载点、系统与内核）
+      description: 由后台每小时采集一次写入 server_facts；尚未采集时返回 404 与提示文案。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+        '404':
+          description: 尚未采集到配置
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiEnvelope' }

@@ -90,6 +90,36 @@ type AlertEvent struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// DiskUsage 一个挂载点的磁盘占用（server_facts.disks_json 的元素）。
+type DiskUsage struct {
+	Device  string  `json:"device"`
+	Mount   string  `json:"mount"`
+	TotalKB int64   `json:"total_kb"`
+	UsedKB  int64   `json:"used_kb"`
+	AvailKB int64   `json:"avail_kb"`
+	UsedPct float64 `json:"used_pct"` // 已去掉 df 的百分号
+}
+
+// ServerFacts 主机静态配置（server_facts 一行）。
+//
+// 与 ServerMetric 的区别：这是「这台机器是什么样」，每小时刷新一次；
+// 那是「这台机器现在怎么样」，30 秒一条。概览的「系统配置」卡只读这里。
+type ServerFacts struct {
+	ServerID    int64       `json:"server_id"`
+	CPUModel    string      `json:"cpu_model"`
+	CPUCores    int         `json:"cpu_cores"`
+	MemTotalKB  int64       `json:"mem_total_kb"`
+	SwapTotalKB int64       `json:"swap_total_kb"`
+	OSName      string      `json:"os_name"`
+	Kernel      string      `json:"kernel"`
+	Arch        string      `json:"arch"`
+	Hostname    string      `json:"hostname"`
+	UptimeSec   int64       `json:"uptime_sec"`
+	Virt        string      `json:"virt"`
+	Disks       []DiskUsage `json:"disks"`
+	CollectedAt time.Time   `json:"collected_at"`
+}
+
 // UpgradeRecord 面板自更新历史（system_upgrades 一行）。
 // 字段与表列一一对齐：status 取值 in_progress|done|failed|rolled_back|interrupted。
 type UpgradeRecord struct {

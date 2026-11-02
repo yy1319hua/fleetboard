@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
-import type { Server, ServerMetric } from "@/lib/types";
+import type { Server, ServerFacts, ServerMetric } from "@/lib/types";
 
 export const qk = {
   servers: ["servers"] as const,
   server: (id: number) => ["servers", id] as const,
   latestMetric: (id: number) => ["servers", id, "metric-latest"] as const,
+  serverFacts: (id: number) => ["servers", id, "facts"] as const,
 };
 
 export function useServer(serverID: number) {
@@ -39,6 +40,28 @@ export function useLatestMetric(serverID: number) {
       }
     },
     refetchInterval: 30_000,
+    enabled: serverID > 0,
+  });
+}
+
+/**
+ * 主机静态配置。404 表示后台还没采到（刚纳管 / 服务器离线），
+ * 视为 null 让概览卡显示「等待采集」，而不是抛错让整页进错误态。
+ * 配置变化很慢，5 分钟刷新一次足够。
+ */
+export function useServerFacts(serverID: number) {
+  return useQuery({
+    queryKey: qk.serverFacts(serverID),
+    queryFn: async () => {
+      try {
+        return await apiGet<ServerFacts>(`/api/servers/${serverID}/facts`);
+      } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status === 404) return null;
+        throw err;
+      }
+    },
+    refetchInterval: 300_000,
     enabled: serverID > 0,
   });
 }

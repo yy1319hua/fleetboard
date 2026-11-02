@@ -104,6 +104,8 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	// 监控
 	authed.GET("/servers/:id/metrics", metricsHandler(opts.DB))
 	authed.GET("/servers/:id/metrics/latest", latestMetricHandler(opts.DB))
+	// 主机静态配置（CPU 型号/核数、内存总量、磁盘挂载点、系统与内核）
+	authed.GET("/servers/:id/facts", serverFactsHandler(opts.DB))
 
 	// 告警规则
 	authed.GET("/alert-rules", listAlertRulesHandler(opts.DB))

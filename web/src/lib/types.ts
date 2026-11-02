@@ -37,6 +37,33 @@ export interface ServerMetric {
   net_out_kbps: number;
 }
 
+/** 一个挂载点的磁盘占用（server_facts.disks 的元素）。 */
+export interface DiskUsage {
+  device: string;
+  mount: string;
+  total_kb: number;
+  used_kb: number;
+  avail_kb: number;
+  used_pct: number;
+}
+
+/** 主机静态配置：每小时采集一次，「这台机器是什么样」而不是「现在怎么样」。 */
+export interface ServerFacts {
+  server_id: number;
+  cpu_model: string;
+  cpu_cores: number;
+  mem_total_kb: number;
+  swap_total_kb: number;
+  os_name: string;
+  kernel: string;
+  arch: string;
+  hostname: string;
+  uptime_sec: number;
+  virt: string;
+  disks: DiskUsage[];
+  collected_at: string;
+}
+
 export interface AlertRule {
   id: number;
   server_id: number | null;
