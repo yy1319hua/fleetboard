@@ -60,7 +60,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="hidden w-[216px] shrink-0 border-r border-border bg-surface-1 lg:flex lg:flex-col">
         <div className="flex h-14 items-center gap-2 border-b border-border px-4">
           <span className="inline-block h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
-          <span className="text-h3 tracking-tight text-text">fleetboard</span>
+          <span className="text-h3 tracking-tight text-text">Fleetboard</span>
         </div>
 
         <nav className="flex-1 space-y-0.5 p-2" aria-label="主导航">
@@ -111,7 +111,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="flex h-12 items-center justify-between border-b border-border bg-surface-1 px-3 lg:hidden">
         <div className="flex items-center gap-2">
           <span className="inline-block h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
-          <span className="text-h3 tracking-tight text-text">fleetboard</span>
+          <span className="text-h3 tracking-tight text-text">Fleetboard</span>
         </div>
         <button
           type="button"
@@ -127,7 +127,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="min-w-0 flex-1 pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0">
         <div className="mx-auto w-full max-w-[1440px] px-3 py-4 sm:px-5 sm:py-6">{children}</div>
         <div className="pb-3 pt-2 text-center text-[10px] text-text-faint lg:hidden">
-          fleetboard {version.data?.version ? version.data.version.replace(/^v/, "") : "…"}
+          Fleetboard {version.data?.version ? version.data.version.replace(/^v/, "") : "…"}
         </div>
       </main>
 

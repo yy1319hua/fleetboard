@@ -4,11 +4,12 @@ import 'package:app/features/updater/domain/checksums.dart';
 import 'package:app/features/updater/domain/update_error.dart';
 
 void main() {
-  // release.yml 的真实产出：在 flutter-apk 目录下执行
-  // `sha256sum app-arm64-v8a-release.apk > sums-android.txt`
+  // release.yml 的真实产出：在 flutter-apk 目录下重命名后执行
+  // `sha256sum fleetboard-arm64-v8a-release.apk > sums-android.txt`
+  // （v0.4.4 曾同时产出旧名别名 app-arm64-v8a-release.apk，v0.4.6 起已移除）
   const realSums = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
-      '  app-arm64-v8a-release.apk\n';
-  const apkName = 'app-arm64-v8a-release.apk';
+      '  fleetboard-arm64-v8a-release.apk\n';
+  const apkName = 'fleetboard-arm64-v8a-release.apk';
 
   test('解析 release.yml 真实产出的校验和文件', () {
     expect(

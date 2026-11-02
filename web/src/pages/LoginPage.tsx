@@ -44,7 +44,7 @@ export function LoginPage() {
       <div className="w-full max-w-[360px]">
         <div className="mb-6 flex items-center gap-2">
           <span className="inline-block h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
-          <span className="text-h1 tracking-tight text-text">fleetboard</span>
+          <span className="text-h1 tracking-tight text-text">Fleetboard</span>
         </div>
 
         <div className="rounded-card border border-border bg-surface-1 p-5">
