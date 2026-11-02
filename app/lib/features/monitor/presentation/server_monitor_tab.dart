@@ -1,4 +1,5 @@
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -86,7 +87,7 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
                             ),
                       ),
                     ),
-                    _MetricChart(
+                    MetricChart(
                       title: 'CPU',
                       unit: '%',
                       points: points,
@@ -95,7 +96,7 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
                       cursorIndex: _cursorIndex,
                       onCursorChanged: _setCursor,
                     ),
-                    _MetricChart(
+                    MetricChart(
                       title: '内存',
                       unit: '%',
                       points: points,
@@ -104,7 +105,7 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
                       cursorIndex: _cursorIndex,
                       onCursorChanged: _setCursor,
                     ),
-                    _MetricChart(
+                    MetricChart(
                       title: '磁盘',
                       unit: '%',
                       points: points,
@@ -113,7 +114,7 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
                       cursorIndex: _cursorIndex,
                       onCursorChanged: _setCursor,
                     ),
-                    _MetricChart(
+                    MetricChart(
                       title: '负载（1 分钟）',
                       unit: '',
                       points: points,
@@ -139,8 +140,9 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
   }
 }
 
-class _MetricChart extends StatelessWidget {
-  const _MetricChart({
+class MetricChart extends StatelessWidget {
+  const MetricChart({
+    super.key,
     required this.title,
     required this.unit,
     required this.points,
@@ -164,6 +166,10 @@ class _MetricChart extends StatelessWidget {
   /// 拖动回调：把落点索引回传给父级。为 null 表示这张图不响应拖动。
   final ValueChanged<int?>? onCursorChanged;
 
+  /// 左轴文字占位宽度。必须与 [leftTitles] 的 `reservedSize` 一致，
+  /// 否则手指位置换算成索引时会整体偏移。
+  static const double _yAxisWidth = 34;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -174,7 +180,8 @@ class _MetricChart extends StatelessWidget {
       for (var i = 0; i < points.length; i++)
         FlSpot(i.toDouble(), valueOf(points[i])),
     ];
-    var maxY = fixedMax ?? spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+    var maxY =
+        fixedMax ?? spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
     if (fixedMax == null) {
       maxY = maxY <= 0 ? 1 : maxY * 1.15;
     }
@@ -214,115 +221,142 @@ class _MetricChart extends StatelessWidget {
             const SizedBox(height: 8),
             SizedBox(
               height: 130,
-              child: LineChart(
-                LineChartData(
-                  minX: 0,
-                  maxX: (spots.length - 1).toDouble(),
-                  minY: 0,
-                  maxY: maxY,
-                  clipData: const FlClipData.all(),
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: fixedMax == null ? null : 25,
-                    getDrawingHorizontalLine: (_) => FlLine(
-                      color: theme.colorScheme.outlineVariant,
-                      strokeWidth: 0.5,
-                    ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  // 游标：一条虚线竖线，四张图因共用 cursorIndex 而同步出现。
-                  extraLinesData: showingCursor
-                      ? ExtraLinesData(
-                          verticalLines: [
-                            VerticalLine(
-                              x: activeIndex.toDouble(),
-                              color: theme.colorScheme.outline,
-                              strokeWidth: 1,
-                              dashArray: const [3, 3],
-                            ),
-                          ],
-                        )
-                      : const ExtraLinesData(),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 34,
-                        interval: fixedMax == null ? null : 50,
-                        getTitlesWidget: (value, meta) => Text(
-                          '${value.toInt()}$unit',
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(fontSize: 10),
-                        ),
-                      ),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 22,
-                        interval: _bottomInterval(points.length),
-                        getTitlesWidget: (value, meta) {
-                          final i = value.round();
-                          if (i < 0 || i >= points.length) {
-                            return const SizedBox.shrink();
-                          }
-                          final t = points[i].ts;
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              '${t.hour.toString().padLeft(2, '0')}:'
-                              '${t.minute.toString().padLeft(2, '0')}',
-                              style: theme.textTheme.bodySmall
-                                  ?.copyWith(fontSize: 10),
-                            ),
-                          );
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // 图表必须自己接管横向拖动，不能让父级 TabBarView 赢。
+                  // fl_chart 内置的是 PanGestureRecognizer（阈值 kPanSlop≈36px），
+                  // 而 TabBarView 的横向拖动阈值是 kTouchSlop≈18px，所以每次都是
+                  // 父级先赢得竞技场：页面被拖去隔壁 tab，游标却几乎没动。
+                  // 这里改用同为 18px 的 HorizontalDrag，且它比 TabBarView 更靠内，
+                  // 同一帧内先完成 accept，从而稳定赢下拖动。
+                  void emit(Offset local) {
+                    final plotWidth = constraints.maxWidth - _yAxisWidth;
+                    if (plotWidth <= 0 || spots.length < 2) return;
+                    final ratio = (local.dx - _yAxisWidth) / plotWidth;
+                    onCursorChanged?.call(
+                      (ratio.clamp(0.0, 1.0) * (spots.length - 1)).round(),
+                    );
+                  }
+
+                  return RawGestureDetector(
+                    gestures: {
+                      HorizontalDragGestureRecognizer:
+                          GestureRecognizerFactoryWithHandlers<
+                              HorizontalDragGestureRecognizer>(
+                        HorizontalDragGestureRecognizer.new,
+                        (r) {
+                          r.onStart = (d) => emit(d.localPosition);
+                          r.onUpdate = (d) => emit(d.localPosition);
                         },
                       ),
-                    ),
-                  ),
-                  lineTouchData: LineTouchData(
-                    // 手指在图上横向移动就更新游标；松手后保留，让用户把数值读完再走。
-                    // 落点索引经父级 state 传给其余三张图，实现四图同步。
-                    touchCallback: (event, response) {
-                      final barSpots = response?.lineBarSpots;
-                      if (barSpots == null || barSpots.isEmpty) return;
-                      onCursorChanged?.call(barSpots.first.x.round());
                     },
-                    touchTooltipData: LineTouchTooltipData(
-                      getTooltipItems: (touched) => [
-                        for (final t in touched)
-                          LineTooltipItem(
-                            '${t.y.toStringAsFixed(1)}$unit\n'
-                            '${_hhmm(points[t.x.toInt()].ts)}',
-                            TextStyle(
-                              color: theme.colorScheme.onInverseSurface,
-                              fontSize: 11,
+                    child: LineChart(
+                      LineChartData(
+                        minX: 0,
+                        maxX: (spots.length - 1).toDouble(),
+                        minY: 0,
+                        maxY: maxY,
+                        clipData: const FlClipData.all(),
+                        gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: false,
+                          horizontalInterval: fixedMax == null ? null : 25,
+                          getDrawingHorizontalLine: (_) => FlLine(
+                            color: theme.colorScheme.outlineVariant,
+                            strokeWidth: 0.5,
+                          ),
+                        ),
+                        borderData: FlBorderData(show: false),
+                        // 游标：一条虚线竖线，四张图因共用 cursorIndex 而同步出现。
+                        extraLinesData: showingCursor
+                            ? ExtraLinesData(
+                                verticalLines: [
+                                  VerticalLine(
+                                    x: activeIndex.toDouble(),
+                                    color: theme.colorScheme.outline,
+                                    strokeWidth: 1,
+                                    dashArray: const [3, 3],
+                                  ),
+                                ],
+                              )
+                            : const ExtraLinesData(),
+                        titlesData: FlTitlesData(
+                          topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: _yAxisWidth,
+                              interval: fixedMax == null ? null : 50,
+                              getTitlesWidget: (value, meta) => Text(
+                                '${value.toInt()}$unit',
+                                style: theme.textTheme.bodySmall
+                                    ?.copyWith(fontSize: 10),
+                              ),
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: spots,
-                      isCurved: false,
-                      color: color,
-                      barWidth: 1.6,
-                      dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: color.withAlpha(30),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 22,
+                              interval: _bottomInterval(points.length),
+                              getTitlesWidget: (value, meta) {
+                                final i = value.round();
+                                if (i < 0 || i >= points.length) {
+                                  return const SizedBox.shrink();
+                                }
+                                final t = points[i].ts;
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    '${t.hour.toString().padLeft(2, '0')}:'
+                                    '${t.minute.toString().padLeft(2, '0')}',
+                                    style: theme.textTheme.bodySmall
+                                        ?.copyWith(fontSize: 10),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        // 手势由外层 RawGestureDetector 统一接管；这里必须关掉内置
+                        // touch，否则 fl_chart 的 PanGestureRecognizer 会再进一次竞技场，
+                        // 且它自带的 tooltip 会跟着手指飘、盖住曲线。
+                        lineTouchData: const LineTouchData(enabled: false),
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: spots,
+                            isCurved: false,
+                            color: color,
+                            barWidth: 1.6,
+                            dotData: FlDotData(
+                              // 游标落点画一个点：线只有 1.6 宽，光靠虚线看不出
+                              // 到底落在哪个采样上。
+                              show: showingCursor,
+                              checkToShowDot: (spot, _) =>
+                                  spot.x.round() == activeIndex,
+                              getDotPainter: (spot, xPct, bar, index) =>
+                                  FlDotCirclePainter(
+                                radius: 3,
+                                color: color,
+                                strokeWidth: 0,
+                                strokeColor: Colors.transparent,
+                              ),
+                            ),
+                            belowBarData: BarAreaData(
+                              show: true,
+                              color: color.withAlpha(30),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
           ],
