@@ -34,11 +34,23 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
     length: serverTabs.length,
     vsync: this,
     initialIndex: serverTabIndex(widget.initialTab),
-  );
+  )..addListener(_handleTabChanged);
+
+  /// 当前段索引。只为「监控段要不要允许横滑切段」这一件事维护：
+  /// TabController.index 在 animateTo 开始时就已变成目标值，所以监听器里
+  /// 必须自己比一次，否则每帧动画都会 setState。
+  late int _tabIndex = _controller.index;
+
+  void _handleTabChanged() {
+    if (_tabIndex == _controller.index) return;
+    setState(() => _tabIndex = _controller.index);
+  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller
+      ..removeListener(_handleTabChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -119,6 +131,13 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
       ),
       body: TabBarView(
         controller: _controller,
+        // 监控段禁止横滑切段：那一段里左右拖动是「移动时间游标」，
+        // 段级横滑会和它抢同一个手势。与其在竞技场里赌谁先 accept
+        // （v0.4.10 试过，真机上外层照样赢），不如从结构上让外层不参战。
+        // 代价：监控段不能用滑动切段，要点上面的 Tab —— 仪表盘类页面的常规做法。
+        physics: _tabIndex == serverTabIndex('监控')
+            ? const NeverScrollableScrollPhysics()
+            : null,
         children: [
           for (final tab in serverTabs)
             // KeepAlive 让来回切 Tab 不重拉数据；离开详情页后 provider 的

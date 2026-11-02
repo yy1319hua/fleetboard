@@ -1,5 +1,4 @@
 import 'package:fl_chart/fl_chart.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -140,7 +139,7 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
   }
 }
 
-class MetricChart extends StatelessWidget {
+class MetricChart extends StatefulWidget {
   const MetricChart({
     super.key,
     required this.title,
@@ -171,7 +170,38 @@ class MetricChart extends StatelessWidget {
   static const double _yAxisWidth = 34;
 
   @override
+  State<MetricChart> createState() => _MetricChartState();
+}
+
+class _MetricChartState extends State<MetricChart> {
+  /// 绘图区的 key。手指可能落在卡片任意位置（标题、数值行、图上），
+  /// 统一拿这块 RenderBox 把全局坐标换算成绘图区内的横向比例。
+  final GlobalKey _plotKey = GlobalKey();
+
+  /// 把一次指针位置换算成采样点索引。
+  ///
+  /// 用 [Listener] 而不是 GestureDetector/RawGestureDetector：Listener 收的是
+  /// 原始 pointer 事件，不参与手势竞技场，父级 TabBarView 无论赢不赢都抢不走它。
+  /// v0.4.10 试过在内层塞 HorizontalDragGestureRecognizer 去竞技场里抢，
+  /// 自动化测试能赢、真机仍然被外层拿走，说明「谁先 accept」在真机上不可靠。
+  void _emitAt(Offset globalPosition, int count) {
+    final box = _plotKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize || count < 2) return;
+    final plotWidth = box.size.width - MetricChart._yAxisWidth;
+    if (plotWidth <= 0) return;
+    final local = box.globalToLocal(globalPosition);
+    final ratio = (local.dx - MetricChart._yAxisWidth) / plotWidth;
+    widget.onCursorChanged?.call((ratio.clamp(0.0, 1.0) * (count - 1)).round());
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final title = widget.title;
+    final unit = widget.unit;
+    final points = widget.points;
+    final valueOf = widget.valueOf;
+    final fixedMax = widget.fixedMax;
+    final cursorIndex = widget.cursorIndex;
     final theme = Theme.of(context);
     if (points.isEmpty) {
       return const SizedBox.shrink();
@@ -186,180 +216,155 @@ class MetricChart extends StatelessWidget {
       maxY = maxY <= 0 ? 1 : maxY * 1.15;
     }
     // 游标有效时展示该点的值，否则展示最新值；两者共用同一套配色阈值。
-    final hasCursor = cursorIndex != null &&
-        cursorIndex! >= 0 &&
-        cursorIndex! < points.length;
-    final activeIndex = hasCursor ? cursorIndex! : points.length - 1;
+    final ci = cursorIndex;
+    final hasCursor = ci != null && ci >= 0 && ci < points.length;
+    final activeIndex = hasCursor ? ci : points.length - 1;
     final active = points[activeIndex];
     final showingCursor = activeIndex != points.length - 1;
     final color = _colorFor(theme, valueOf(active), fixedMax);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 16, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(title, style: theme.textTheme.titleSmall),
-                const Spacer(),
-                if (showingCursor) ...[
+    return Listener(
+      // 整张卡片都能拖：绘图区只有 130 高，只认图上触摸会显得「滑不动」。
+      // Listener 收原始指针事件，不进手势竞技场，父级 TabBarView 抢不走。
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (e) => _emitAt(e.position, points.length),
+      onPointerMove: (e) => _emitAt(e.position, points.length),
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(title, style: theme.textTheme.titleSmall),
+                  const Spacer(),
+                  if (showingCursor) ...[
+                    Text(
+                      _hhmm(active.ts),
+                      style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   Text(
-                    _hhmm(active.ts),
-                    style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                    '${valueOf(active).toStringAsFixed(1)}$unit',
+                    style: theme.textTheme.titleSmall?.copyWith(color: color),
                   ),
-                  const SizedBox(width: 8),
                 ],
-                Text(
-                  '${valueOf(active).toStringAsFixed(1)}$unit',
-                  style: theme.textTheme.titleSmall?.copyWith(color: color),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 130,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  // 图表必须自己接管横向拖动，不能让父级 TabBarView 赢。
-                  // fl_chart 内置的是 PanGestureRecognizer（阈值 kPanSlop≈36px），
-                  // 而 TabBarView 的横向拖动阈值是 kTouchSlop≈18px，所以每次都是
-                  // 父级先赢得竞技场：页面被拖去隔壁 tab，游标却几乎没动。
-                  // 这里改用同为 18px 的 HorizontalDrag，且它比 TabBarView 更靠内，
-                  // 同一帧内先完成 accept，从而稳定赢下拖动。
-                  void emit(Offset local) {
-                    final plotWidth = constraints.maxWidth - _yAxisWidth;
-                    if (plotWidth <= 0 || spots.length < 2) return;
-                    final ratio = (local.dx - _yAxisWidth) / plotWidth;
-                    onCursorChanged?.call(
-                      (ratio.clamp(0.0, 1.0) * (spots.length - 1)).round(),
-                    );
-                  }
-
-                  return RawGestureDetector(
-                    gestures: {
-                      HorizontalDragGestureRecognizer:
-                          GestureRecognizerFactoryWithHandlers<
-                              HorizontalDragGestureRecognizer>(
-                        HorizontalDragGestureRecognizer.new,
-                        (r) {
-                          r.onStart = (d) => emit(d.localPosition);
-                          r.onUpdate = (d) => emit(d.localPosition);
-                        },
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                key: _plotKey,
+                height: 130,
+                child: LineChart(
+                  LineChartData(
+                    minX: 0,
+                    maxX: (spots.length - 1).toDouble(),
+                    minY: 0,
+                    maxY: maxY,
+                    clipData: const FlClipData.all(),
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      horizontalInterval: fixedMax == null ? null : 25,
+                      getDrawingHorizontalLine: (_) => FlLine(
+                        color: theme.colorScheme.outlineVariant,
+                        strokeWidth: 0.5,
                       ),
-                    },
-                    child: LineChart(
-                      LineChartData(
-                        minX: 0,
-                        maxX: (spots.length - 1).toDouble(),
-                        minY: 0,
-                        maxY: maxY,
-                        clipData: const FlClipData.all(),
-                        gridData: FlGridData(
-                          show: true,
-                          drawVerticalLine: false,
-                          horizontalInterval: fixedMax == null ? null : 25,
-                          getDrawingHorizontalLine: (_) => FlLine(
-                            color: theme.colorScheme.outlineVariant,
-                            strokeWidth: 0.5,
+                    ),
+                    borderData: FlBorderData(show: false),
+                    // 游标：一条虚线竖线，四张图因共用 cursorIndex 而同步出现。
+                    extraLinesData: showingCursor
+                        ? ExtraLinesData(
+                            verticalLines: [
+                              VerticalLine(
+                                x: activeIndex.toDouble(),
+                                color: theme.colorScheme.outline,
+                                strokeWidth: 1,
+                                dashArray: const [3, 3],
+                              ),
+                            ],
+                          )
+                        : const ExtraLinesData(),
+                    titlesData: FlTitlesData(
+                      topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: MetricChart._yAxisWidth,
+                          interval: fixedMax == null ? null : 50,
+                          getTitlesWidget: (value, meta) => Text(
+                            '${value.toInt()}$unit',
+                            style: theme.textTheme.bodySmall
+                                ?.copyWith(fontSize: 10),
                           ),
                         ),
-                        borderData: FlBorderData(show: false),
-                        // 游标：一条虚线竖线，四张图因共用 cursorIndex 而同步出现。
-                        extraLinesData: showingCursor
-                            ? ExtraLinesData(
-                                verticalLines: [
-                                  VerticalLine(
-                                    x: activeIndex.toDouble(),
-                                    color: theme.colorScheme.outline,
-                                    strokeWidth: 1,
-                                    dashArray: const [3, 3],
-                                  ),
-                                ],
-                              )
-                            : const ExtraLinesData(),
-                        titlesData: FlTitlesData(
-                          topTitles: const AxisTitles(
-                            sideTitles: SideTitles(showTitles: false),
-                          ),
-                          rightTitles: const AxisTitles(
-                            sideTitles: SideTitles(showTitles: false),
-                          ),
-                          leftTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              reservedSize: _yAxisWidth,
-                              interval: fixedMax == null ? null : 50,
-                              getTitlesWidget: (value, meta) => Text(
-                                '${value.toInt()}$unit',
+                      ),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 22,
+                          interval: _bottomInterval(points.length),
+                          getTitlesWidget: (value, meta) {
+                            final i = value.round();
+                            if (i < 0 || i >= points.length) {
+                              return const SizedBox.shrink();
+                            }
+                            final t = points[i].ts;
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                '${t.hour.toString().padLeft(2, '0')}:'
+                                '${t.minute.toString().padLeft(2, '0')}',
                                 style: theme.textTheme.bodySmall
                                     ?.copyWith(fontSize: 10),
                               ),
-                            ),
-                          ),
-                          bottomTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              reservedSize: 22,
-                              interval: _bottomInterval(points.length),
-                              getTitlesWidget: (value, meta) {
-                                final i = value.round();
-                                if (i < 0 || i >= points.length) {
-                                  return const SizedBox.shrink();
-                                }
-                                final t = points[i].ts;
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Text(
-                                    '${t.hour.toString().padLeft(2, '0')}:'
-                                    '${t.minute.toString().padLeft(2, '0')}',
-                                    style: theme.textTheme.bodySmall
-                                        ?.copyWith(fontSize: 10),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
+                            );
+                          },
                         ),
-                        // 手势由外层 RawGestureDetector 统一接管；这里必须关掉内置
-                        // touch，否则 fl_chart 的 PanGestureRecognizer 会再进一次竞技场，
-                        // 且它自带的 tooltip 会跟着手指飘、盖住曲线。
-                        lineTouchData: const LineTouchData(enabled: false),
-                        lineBarsData: [
-                          LineChartBarData(
-                            spots: spots,
-                            isCurved: false,
-                            color: color,
-                            barWidth: 1.6,
-                            dotData: FlDotData(
-                              // 游标落点画一个点：线只有 1.6 宽，光靠虚线看不出
-                              // 到底落在哪个采样上。
-                              show: showingCursor,
-                              checkToShowDot: (spot, _) =>
-                                  spot.x.round() == activeIndex,
-                              getDotPainter: (spot, xPct, bar, index) =>
-                                  FlDotCirclePainter(
-                                radius: 3,
-                                color: color,
-                                strokeWidth: 0,
-                                strokeColor: Colors.transparent,
-                              ),
-                            ),
-                            belowBarData: BarAreaData(
-                              show: true,
-                              color: color.withAlpha(30),
-                            ),
-                          ),
-                        ],
                       ),
                     ),
-                  );
-                },
+                    // 手势由外层 RawGestureDetector 统一接管；这里必须关掉内置
+                    // touch，否则 fl_chart 的 PanGestureRecognizer 会再进一次竞技场，
+                    // 且它自带的 tooltip 会跟着手指飘、盖住曲线。
+                    lineTouchData: const LineTouchData(enabled: false),
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: spots,
+                        isCurved: false,
+                        color: color,
+                        barWidth: 1.6,
+                        dotData: FlDotData(
+                          // 游标落点画一个点：线只有 1.6 宽，光靠虚线看不出
+                          // 到底落在哪个采样上。
+                          show: showingCursor,
+                          checkToShowDot: (spot, _) =>
+                              spot.x.round() == activeIndex,
+                          getDotPainter: (spot, xPct, bar, index) =>
+                              FlDotCirclePainter(
+                            radius: 3,
+                            color: color,
+                            strokeWidth: 0,
+                            strokeColor: Colors.transparent,
+                          ),
+                        ),
+                        belowBarData: BarAreaData(
+                          show: true,
+                          color: color.withAlpha(30),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
