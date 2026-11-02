@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/yy1319hua/fleetboard/internal/file"
+	"github.com/yy1319hua/fleetboard/internal/sshpool"
 )
 
 // DefaultRoots 是 compose 文件可访问的根目录白名单（防止越权读写任意路径）。
@@ -188,7 +189,7 @@ func Action(cli *ssh.Client, p, action string, roots []string) (string, error) {
 	defer func() { _ = sess.Close() }()
 
 	// 合并 stderr，便于把 compose 报错回传给前端
-	out, err := sess.CombinedOutput(cmd)
+	out, err := sess.CombinedOutput(sshpool.PrepareScript(sess, cmd))
 	if err != nil {
 		return string(out), fmt.Errorf("docker compose %s 失败: %w", action, err)
 	}

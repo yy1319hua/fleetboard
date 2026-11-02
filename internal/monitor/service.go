@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/yy1319hua/fleetboard/internal/sshpool"
 )
 
 // Snapshot 是一次主机指标采样。
@@ -46,6 +48,10 @@ func ParseMetricsLine(line string) (*Snapshot, error) {
 }
 
 // Collect 采样一台主机的指标。
+//
+// 脚本经 sshpool.PrepareScript 交给 /bin/sh 执行，而**不是**交给登录 shell：
+// metricsScript 依赖 `set -- $a $b` 的隐式分词，在 zsh（armbian 的 root 默认）
+// 下不分词，会直接报 `bad math expression`，采集 100% 失败。详见 sshpool.ShPath。
 func Collect(cli *ssh.Client) (*Snapshot, error) {
 	sess, err := cli.NewSession()
 	if err != nil {
@@ -53,7 +59,7 @@ func Collect(cli *ssh.Client) (*Snapshot, error) {
 	}
 	defer func() { _ = sess.Close() }()
 
-	out, err := sess.Output(metricsScript)
+	out, err := sess.Output(sshpool.PrepareScript(sess, metricsScript))
 	if err != nil {
 		return nil, err
 	}

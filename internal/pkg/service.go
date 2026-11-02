@@ -10,6 +10,8 @@ import (
 	"sync"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/yy1319hua/fleetboard/internal/sshpool"
 )
 
 // UpdateCommand 是固定的更新命令：
@@ -43,7 +45,11 @@ func Upgrade(ctx context.Context, cli *ssh.Client, onLine func(string)) error {
 		return err
 	}
 
-	if err := sess.Start(UpdateCommand); err != nil {
+	// 交给 /bin/sh 执行：登录 shell 可能是 zsh（armbian 的 root 默认），
+	// 而本命令用了 `&&` 串联与 export，语义须按 POSIX sh 解释。
+	shCmd := sshpool.PrepareScript(sess, UpdateCommand)
+
+	if err := sess.Start(shCmd); err != nil {
 		return fmt.Errorf("启动 apt 失败: %w", err)
 	}
 

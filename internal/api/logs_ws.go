@@ -77,7 +77,9 @@ func containerLogsHandler(d *sql.DB, masterKey, secret string, pool *sshpool.Poo
 			return
 		}
 
-		if err := sess.Start(cmdline); err != nil {
+		// 用 /bin/sh 执行：登录 shell 可能是 zsh，而日志命令含引号与管道，
+		// 语义须按 POSIX sh 解释（详见 sshpool.ShPath）。
+		if err := sess.Start(sshpool.PrepareScript(sess, cmdline)); err != nil {
 			Fail(c, ErrBadGateway("启动日志命令失败: "+err.Error()))
 			return
 		}

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/yy1319hua/fleetboard/internal/sshpool"
 )
 
 // Container 是容器摘要（对应 `docker ps` 一行）。
@@ -67,7 +69,7 @@ func List(cli *ssh.Client) ([]Container, error) {
 	}
 	defer func() { _ = sess.Close() }()
 
-	out, err := sess.Output(`docker ps -a --format '{{json .}}'`)
+	out, err := sess.Output(sshpool.PrepareScript(sess, `docker ps -a --format '{{json .}}'`))
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +130,7 @@ func Action(cli *ssh.Client, containerID, action string) (string, error) {
 	}
 	defer func() { _ = sess.Close() }()
 
-	out, err := sess.CombinedOutput(fmt.Sprintf("docker %s %s", sub, containerID))
+	out, err := sess.CombinedOutput(sshpool.PrepareScript(sess, fmt.Sprintf("docker %s %s", sub, containerID)))
 	output := string(out)
 	if err != nil {
 		// 幂等：删除不存在的容器不视为失败
@@ -195,7 +197,7 @@ func run(cli *ssh.Client, cmd string) (string, error) {
 		return "", err
 	}
 	defer func() { _ = sess.Close() }()
-	out, _ := sess.CombinedOutput(cmd)
+	out, _ := sess.CombinedOutput(sshpool.PrepareScript(sess, cmd))
 	return string(out), nil
 }
 
@@ -206,7 +208,7 @@ func runErr(cli *ssh.Client, cmd string) (string, error) {
 		return "", err
 	}
 	defer func() { _ = sess.Close() }()
-	out, err := sess.CombinedOutput(cmd)
+	out, err := sess.CombinedOutput(sshpool.PrepareScript(sess, cmd))
 	return string(out), err
 }
 

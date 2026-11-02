@@ -212,10 +212,29 @@ func (p *Pool) Len() int {
 	return len(p.entries)
 }
 
+// keepAliveTimeout 是存活探测的上限。
+//
+// SendRequest 是同步阻塞的：连接被 NAT/Tailscale 静默丢弃（TCP 半开）时，
+// 它会一直等到内核重传超时（可达数分钟）。而 Get 持有池锁调用 alive，
+// 一次卡住会让整轮采集陪等——表现为「面板卡住、所有机器一起掉线」。
+// 超时即判定连接不可用并主动关闭，解除阻塞并让下次调用重建。
+const keepAliveTimeout = 5 * time.Second
+
 func (p *Pool) alive(c *ssh.Client) bool {
 	if c == nil {
 		return false
 	}
-	_, _, err := c.SendRequest("keepalive@openssh.com", true, nil)
-	return err == nil
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := c.SendRequest("keepalive@openssh.com", true, nil)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		// ok=false（服务端不支持该请求）仍算存活，只看传输层错误
+		return err == nil
+	case <-time.After(keepAliveTimeout):
+		_ = c.Close()
+		return false
+	}
 }

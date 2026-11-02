@@ -139,6 +139,18 @@ func runBackground(d *sql.DB, store *settings.Store, pool *sshpool.Pool, masterK
 	// 指标采集 + 告警评估
 	go func() {
 		failCount := make(map[int64]int)
+		// 失败只记首次与达到阈值那一次，避免每 30s 刷屏；成功清零后又从 1 开始记。
+		noteFail := func(s model.Server, stage string, err error) {
+			failCount[s.ID]++
+			n := failCount[s.ID]
+			threshold := store.Int("monitor.offline_threshold", 2)
+			if n == 1 || n == threshold {
+				log.Printf("指标采集 #%d(%s) %s失败第 %d 次: %v", s.ID, s.Name, stage, n, err)
+			}
+			if n >= threshold {
+				_ = db.UpdateServerStatus(d, s.ID, "offline")
+			}
+		}
 		collect := func() {
 			servers, err := db.ListServers(d)
 			if err != nil {
@@ -148,6 +160,7 @@ func runBackground(d *sql.DB, store *settings.Store, pool *sshpool.Pool, masterK
 			for _, s := range servers {
 				cred, err := db.GetDecryptedCredential(d, masterKey, s.ID)
 				if err != nil {
+					log.Printf("指标采集 #%d(%s) 读取凭据失败: %v", s.ID, s.Name, err)
 					continue
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -162,20 +175,14 @@ func runBackground(d *sql.DB, store *settings.Store, pool *sshpool.Pool, masterK
 				})
 				if err != nil {
 					cancel()
-					failCount[s.ID]++
-					if failCount[s.ID] >= store.Int("monitor.offline_threshold", 2) {
-						_ = db.UpdateServerStatus(d, s.ID, "offline")
-					}
+					noteFail(s, "连接", err)
 					continue
 				}
 
 				snap, err := monitor.Collect(cli)
 				cancel()
 				if err != nil {
-					failCount[s.ID]++
-					if failCount[s.ID] >= store.Int("monitor.offline_threshold", 2) {
-						_ = db.UpdateServerStatus(d, s.ID, "offline")
-					}
+					noteFail(s, "执行采样脚本", err)
 					continue
 				}
 
