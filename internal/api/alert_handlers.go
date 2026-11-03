@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +27,19 @@ func createAlertRuleHandler(d *sql.DB) gin.HandlerFunc {
 		var req alertRuleRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, ErrBadRequest(`请求体需含 metric，如 {"metric":"cpu_pct","operator":">","threshold":80,"severity":"warn","enabled":true}`))
+			return
+		}
+
+		// 创建与更新必须同一套校验：metric 拼错、threshold 越界的规则不会报错，
+		// 只会静默永不触发——用户以为配好了，真出事时一条通知都没有。
+		if req.Operator == "" {
+			req.Operator = ">"
+		}
+		if req.Severity == "" {
+			req.Severity = "warn"
+		}
+		if err := validateAlertRule(req.Metric, req.Operator, req.Severity, req.Threshold); err != nil {
+			Fail(c, ErrBadRequest(err.Error()))
 			return
 		}
 
@@ -118,6 +132,23 @@ func validSeverity(v string) bool {
 		return true
 	}
 	return false
+}
+
+// validateAlertRule 校验一条完整规则（字段已补齐默认值）。
+func validateAlertRule(metric, operator, severity string, threshold float64) error {
+	if !validMetric(metric) {
+		return fmt.Errorf("metric 仅支持 cpu_pct / mem_pct / disk_pct / offline")
+	}
+	if !validOperator(operator) {
+		return fmt.Errorf("operator 仅支持 > >= < <= =")
+	}
+	if !validSeverity(severity) {
+		return fmt.Errorf("severity 仅支持 info / warn / critical")
+	}
+	if threshold < 0 || threshold > 100 {
+		return fmt.Errorf("threshold 需在 0–100 之间")
+	}
+	return nil
 }
 
 // updateAlertRuleHandler 部分更新告警规则（merge 语义）。
