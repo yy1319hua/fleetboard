@@ -118,9 +118,17 @@ export function ServerFilesTab() {
 
   const handleDownload = async (entry: FileEntry) => {
     try {
-      const blob = await downloadFile(server.id, entry.path);
-      saveBlob(blob, entry.name);
-      toast("已开始下载", "ok");
+      const r = await downloadFile(server.id, entry.path, entry.name);
+      if (r.cancelled) return;
+      // 直接写盘成功时文件已经在用户选的位置上了，不需要也不应该再拼 Blob。
+      if (r.savedToDisk) {
+        toast(`已保存 ${entry.name}（${formatBytes(r.bytes)}）`, "ok");
+        return;
+      }
+      if (r.blob) {
+        saveBlob(r.blob, entry.name);
+        toast("已开始下载", "ok");
+      }
     } catch (e) {
       toast(e instanceof Error ? e.message : "下载失败", "danger");
     }
