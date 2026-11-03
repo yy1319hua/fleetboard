@@ -22,8 +22,11 @@ func bootstrapHandler(opts RouterOptions) gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 9*time.Second)
 		defer cancel()
 
+		// servers 必须是空切片而不是 nil：聚合失败或超时时若输出 "servers": null，
+		// App 的 `required List<Server>` 会解析失败、首屏直接变错误页，
+		// 而 Web 只是显示空列表——同一个降级在两端表现不一致。
+		servers := []model.Server{}
 		var (
-			servers []model.Server
 			metrics map[int64]*model.ServerMetric
 			unread  int
 		)

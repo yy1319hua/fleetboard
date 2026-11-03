@@ -24,6 +24,7 @@ const (
 	CodeForbidden    = 403
 	CodeNotFound     = 404
 	CodeConflict     = 409
+	CodeTooMany      = 429
 	CodeInternal     = 500
 	CodeBadGateway   = 502
 )
@@ -65,6 +66,11 @@ func ErrConflict(msg string) *APIError {
 // ErrBadGateway 502，上游（被管机 SSH/Docker）异常。
 func ErrBadGateway(msg string) *APIError {
 	return &APIError{Status: http.StatusBadGateway, Code: CodeBadGateway, Msg: msg}
+}
+
+// ErrTooManyRequests 429，请求过于频繁（登录失败退避）。
+func ErrTooManyRequests(msg string) *APIError {
+	return &APIError{Status: http.StatusTooManyRequests, Code: CodeTooMany, Msg: msg}
 }
 
 // OK 写入成功响应。

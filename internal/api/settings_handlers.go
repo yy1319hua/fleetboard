@@ -9,26 +9,27 @@ import (
 	"github.com/yy1319hua/fleetboard/internal/settings"
 )
 
-// maskTail 掩码：只留尾 4 位。
+// maskTail 掩码：不回任何原文片段。
+//
+// 早期版本回「**** + 末 4 位」，但主密钥尾号对使用者没有用处（前端只用它
+// 判断「已配置」），却会随设置页响应、日志、截图一路流转，纯负收益。
 func maskTail(v string) string {
 	if v == "" {
 		return ""
 	}
-	if len(v) <= 4 {
-		return "****"
-	}
-	return "****" + v[len(v)-4:]
+	return "****"
 }
 
-// readonlyView 组装只读展示区（M8.1c）：KEY 尾 4 位与端口。
+// readonlyView 组装只读展示区：KEY 是否已配置（不回片段）与端口。
 func readonlyView(masterKey string, port int) gin.H {
 	return gin.H{
 		"key_masked": maskTail(masterKey),
+		"key_set":    masterKey != "",
 		"port":       port,
 	}
 }
 
-// getSettingsHandler 返回全部设置项。敏感项只回 {"masked":"****尾4位","set":bool}。
+// getSettingsHandler 返回全部设置项。敏感项只回 {"masked":"****","set":bool}。
 func getSettingsHandler(st *settings.Store, masterKey string, port int) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if st == nil {

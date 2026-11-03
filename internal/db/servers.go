@@ -254,7 +254,30 @@ func GetServer(d *sql.DB, id int64) (*model.Server, error) {
 
 // DeleteServer 删除服务器（ssh_credentials 由外键级联删除）。
 func DeleteServer(d *sql.DB, id int64) error {
-	res, err := d.Exec(`DELETE FROM servers WHERE id = ?`, id)
+	tx, err := d.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// servers 的从表大多在建表时没有声明外键（0002 的 metrics/alerts、
+	// 0001 的 file_cache），只靠外键会留下「幽灵数据」：删了服务器，
+	// 凭据、指标、告警事件还留在库里，甚至继续被后台任务读到。
+	// 这里显式按 server_id 清理，与外键形成双保险。
+	for _, q := range []string{
+		`DELETE FROM ssh_credentials WHERE server_id = ?`,
+		`DELETE FROM server_facts WHERE server_id = ?`,
+		`DELETE FROM server_metrics WHERE server_id = ?`,
+		`DELETE FROM alert_events WHERE server_id = ?`,
+		`DELETE FROM alert_rules WHERE server_id = ?`,
+		`DELETE FROM file_cache WHERE server_id = ?`,
+	} {
+		if _, err := tx.Exec(q, id); err != nil {
+			return fmt.Errorf("清理服务器 %d 的关联数据: %w", id, err)
+		}
+	}
+
+	res, err := tx.Exec(`DELETE FROM servers WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
@@ -265,7 +288,7 @@ func DeleteServer(d *sql.DB, id int64) error {
 	if n == 0 {
 		return ErrServerNotFound
 	}
-	return nil
+	return tx.Commit()
 }
 
 // UpdateServerStatus 更新连接状态与最后心跳时间。

@@ -75,10 +75,12 @@ func main() {
 	log.Println("收到退出信号，正在关闭...")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	api.StopBackground()
+	// 顺序不能反：先停 HTTP 入口并等在途请求结束，再释放 DB 与连接池。
+	// 反过来会让优雅退出窗口内的请求拿到 "database is closed" 的 500。
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("关闭异常: %v", err)
 	}
+	api.StopBackground()
 }
 
 // envOr 读环境变量，空值回落到默认。

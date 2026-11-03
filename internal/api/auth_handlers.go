@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"regexp"
 	"time"
 
@@ -28,7 +29,7 @@ type tokenResponse struct {
 }
 
 // loginHandler 用户名密码登录，返回 access + refresh。
-func loginHandler(d *sql.DB, secret string) gin.HandlerFunc {
+func loginHandler(d *sql.DB, secret string, guard *loginGuard) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req loginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -36,16 +37,25 @@ func loginHandler(d *sql.DB, secret string) gin.HandlerFunc {
 			return
 		}
 
+		key := loginKey(c, req.Username)
+		if wait := guard.blockedFor(key); wait > 0 {
+			Fail(c, ErrTooManyRequests(fmt.Sprintf("尝试次数过多，请 %d 秒后再试", wait)))
+			return
+		}
+
 		u, err := db.GetUserByUsername(d, req.Username)
 		if err != nil {
-			// 统一提示，避免用户名枚举
+			// 统一提示，避免用户名枚举；失败也要计数，否则换个用户名就能绕开退避。
+			guard.fail(key)
 			Fail(c, ErrUnauthorized("用户名或密码错误"))
 			return
 		}
 		if !auth.VerifyPassword(u.PasswordHash, req.Password) {
+			guard.fail(key)
 			Fail(c, ErrUnauthorized("用户名或密码错误"))
 			return
 		}
+		guard.reset(key)
 
 		access, err := auth.GenerateAccessToken(secret, u.ID, u.TokenVer)
 		if err != nil {

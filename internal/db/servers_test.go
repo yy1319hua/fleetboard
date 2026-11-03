@@ -119,6 +119,23 @@ func TestDeleteServerCascades(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 从表大多在建表时没有声明外键，删服务器必须由 DeleteServer 显式清理。
+	if _, err := d.Exec(`INSERT INTO server_metrics (server_id, cpu_pct) VALUES (?, 1)`, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`INSERT INTO alert_rules (server_id, metric) VALUES (?, 'cpu_pct')`, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`INSERT INTO alert_events (server_id, title) VALUES (?, 't')`, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`INSERT INTO server_facts (server_id) VALUES (?)`, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`INSERT INTO file_cache (server_id, path) VALUES (?, '/')`, s.ID); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := DeleteServer(d, s.ID); err != nil {
 		t.Fatalf("DeleteServer: %v", err)
 	}
@@ -126,12 +143,17 @@ func TestDeleteServerCascades(t *testing.T) {
 		t.Errorf("删除后应查不到: %v", err)
 	}
 
-	var n int
-	if err := d.QueryRow(`SELECT COUNT(1) FROM ssh_credentials WHERE server_id = ?`, s.ID).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 0 {
-		t.Errorf("凭据未级联删除: n=%d", n)
+	for _, tbl := range []string{
+		"ssh_credentials", "server_facts", "server_metrics",
+		"alert_rules", "alert_events", "file_cache",
+	} {
+		var n int
+		if err := d.QueryRow(`SELECT COUNT(1) FROM `+tbl+` WHERE server_id = ?`, s.ID).Scan(&n); err != nil {
+			t.Fatalf("%s 计数: %v", tbl, err)
+		}
+		if n != 0 {
+			t.Errorf("%s 未随服务器删除清理: n=%d", tbl, n)
+		}
 	}
 }
 

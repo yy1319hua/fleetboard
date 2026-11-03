@@ -26,7 +26,7 @@ func Open(dbPath string) (*sql.DB, error) {
 		}
 	}
 
-	d, err := sql.Open("sqlite", dbPath)
+	d, err := sql.Open("sqlite", sqliteDSN(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库: %w", err)
 	}
@@ -35,7 +35,7 @@ func Open(dbPath string) (*sql.DB, error) {
 		_ = d.Close()
 		return nil, fmt.Errorf("连接数据库: %w", err)
 	}
-	// SQLite 外键约束默认关闭；开启后 ssh_credentials 可随 servers 级联删除。
+	// 兜底：DSN 已带 _pragma，这里再设一次，方便用非 sqliteDSN 打开的场景。
 	if _, err := d.Exec(`PRAGMA foreign_keys = ON`); err != nil {
 		_ = d.Close()
 		return nil, fmt.Errorf("开启外键约束: %w", err)
@@ -45,6 +45,23 @@ func Open(dbPath string) (*sql.DB, error) {
 		return nil, err
 	}
 	return d, nil
+}
+
+// sqliteDSN 把数据库路径转成带连接级 PRAGMA 的 DSN。
+//
+// `PRAGMA foreign_keys` 是**连接级**开关：一次性 Exec 只对当时那条连接生效，
+// 连接被驱动回收重建后外键会静默失效——表现为删了服务器，凭据与告警还留在库里。
+// 写进 DSN 才能保证每条新连接都带上。
+func sqliteDSN(dbPath string) string {
+	dsn := dbPath
+	if !strings.HasPrefix(dsn, "file:") && dsn != ":memory:" {
+		dsn = "file:" + dsn
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	return dsn + sep + "_pragma=foreign_keys(1)"
 }
 
 // ensureSchema 建 schema_migrations 表，并按文件名顺序应用尚未执行的迁移。

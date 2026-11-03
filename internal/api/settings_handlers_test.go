@@ -73,8 +73,10 @@ func TestSettingsGetMasked(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("解析: %v", err)
 	}
-	if resp.Data.Readonly["key_masked"] != "****ster" || resp.Data.Readonly["port"] != float64(8080) {
-		t.Errorf("只读区应含 KEY 尾4位与端口: %v", resp.Data.Readonly)
+	// 只回掩码与「已配置」，不回主密钥任何片段（尾号会随响应/日志/截图外流）。
+	if resp.Data.Readonly["key_masked"] != "****" || resp.Data.Readonly["key_set"] != true ||
+		resp.Data.Readonly["port"] != float64(8080) {
+		t.Errorf("只读区应只含掩码、key_set 与端口: %v", resp.Data.Readonly)
 	}
 	if resp.Data.Items["monitor.interval"] != "30" {
 		t.Errorf("非敏感默认应可见: %v", resp.Data.Items["monitor.interval"])

@@ -36,6 +36,9 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
+	// 登录失败退避：进程内单实例，按「用户名 + IP」计数。
+	loginGuard := newLoginGuard()
+
 	// 公开端点
 	r.GET("/api/health", func(c *gin.Context) {
 		data := gin.H{
@@ -48,7 +51,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 		}
 		OK(c, data)
 	})
-	r.POST("/api/login", loginHandler(opts.DB, opts.JWTSecret))
+	r.POST("/api/login", loginHandler(opts.DB, opts.JWTSecret, loginGuard))
 	r.POST("/api/refresh", refreshHandler(opts.DB, opts.JWTSecret))
 
 	// WebSocket 日志流：浏览器无法自带 Authorization 头，改由 handler 内
