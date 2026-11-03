@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/yy1319hua/fleetboard/internal/db"
 	"github.com/yy1319hua/fleetboard/internal/pkg"
 	"github.com/yy1319hua/fleetboard/internal/sshpool"
+	"golang.org/x/crypto/ssh"
 )
 
 // errPackageUpdate 是对外统一文案：原始错误只进服务端日志，不回传客户端。
@@ -36,7 +38,25 @@ func sseFrame(payload gin.H) (string, error) {
 // 因此 App 断连后升级仍可跑完，供 GET /api/jobs/:id 续接。SSE 断连仅 detach（不取消底层升级）；
 // 显式取消走 DELETE /api/jobs/:id。
 // POST /api/servers/:id/packages/update
+// pkgUpgradeDeps 把 handler 与外部世界的两个接触点抽出来：建连、跑升级。
+//
+// 不抽这两处，SSE 主循环就只能靠读代码判断——「断连只 detach」「取消走 DELETE」
+// 「同 opId 不重复升级」这三条最容易退化的行为，一条都测不了（要连真机）。
+// 生产路径仍走 openSSH + pkg.Upgrade，测试换成桩即可。
+type pkgUpgradeDeps struct {
+	open func(c *gin.Context, d *sql.DB, masterKey string, pool *sshpool.Pool, id int64) (*ssh.Client, error)
+	run  func(ctx context.Context, cli *ssh.Client, onLine func(string)) error
+}
+
+func defaultPkgUpgradeDeps() pkgUpgradeDeps {
+	return pkgUpgradeDeps{open: openSSH, run: pkg.Upgrade}
+}
+
 func packageUpdateHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
+	return packageUpdateHandlerWith(d, masterKey, pool, defaultPkgUpgradeDeps())
+}
+
+func packageUpdateHandlerWith(d *sql.DB, masterKey string, pool *sshpool.Pool, deps pkgUpgradeDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := parseID(c)
 		if !ok {
@@ -44,7 +64,7 @@ func packageUpdateHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.H
 		}
 
 		// 流开始前连接失败：返回 JSON 502（保持原有契约，TestPackageUpdateConnectionError）
-		cli, err := openSSH(c, d, masterKey, pool, id)
+		cli, err := deps.open(c, d, masterKey, pool, id)
 		if err != nil {
 			Fail(c, err)
 			return
@@ -69,14 +89,21 @@ func packageUpdateHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.H
 
 		// writeRaw 向 SSE 通道写一段原始文本（已含换行），统一走 detached / writeFailed 门闩。
 		//
-		// 心跳注释帧与数据帧必须共用同一把锁：绕过它并发写会在连接里产生
-		// 交错的半帧，客户端解析直接坏掉。
+		// 两个约束缺一不可：
+		//  1. 心跳注释帧与数据帧必须共用同一把锁——绕过它并发写会在连接里产生
+		//     交错的半帧，客户端解析直接坏掉。
+		//  2. 门闩判断必须在**锁内**做。`c.Writer` 不是并发安全的：handler 一旦
+		//     返回，net/http 会在另一个 goroutine 里 finishRequest（chunkWriter
+		//     close）；此时后台升级 goroutine 若还在 WriteString/Flush，就是
+		//     对同一 bufio.Writer 的并发读写（-race 可复现，真机上表现为偶发
+		//     乱序或 panic）。锁内判断保证了：detach 拿到锁时，所有在途写入已
+		//     完成；此后任何写入都会在锁内看到 detached 直接返回。
 		writeRaw := func(s string) bool {
+			writeMu.Lock()
+			defer writeMu.Unlock()
 			if writeFailed.Load() || detached.Load() {
 				return false
 			}
-			writeMu.Lock()
-			defer writeMu.Unlock()
 			if _, wErr := c.Writer.WriteString(s); wErr != nil {
 				writeFailed.Store(true)
 				return false
@@ -118,7 +145,7 @@ func packageUpdateHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.H
 		// 后台跑升级：job ctx 独立于请求 ctx（context.Background 派生）。
 		if !reused {
 			go func() {
-				runErr := pkg.Upgrade(job.Context(), cli, func(line string) {
+				runErr := deps.run(job.Context(), cli, func(line string) {
 					job.AppendLine(line)
 					send(gin.H{"event": "line", "line": line})
 				})
@@ -156,8 +183,14 @@ func packageUpdateHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.H
 		for {
 			select {
 			case <-c.Request.Context().Done():
-				// 客户端断连：仅 detach，底层升级继续（job ctx 独立）
+				// 客户端断连：仅 detach，底层升级继续（job ctx 独立）。
+				//
+				// 置位必须在写锁内完成：这是与后台 send 的交接点。拿到锁说明
+				// 当前没有在途写入，置位后返回，net/http 才去 finishRequest；
+				// 后台之后的写入都会在锁内看到 detached，不再碰 c.Writer。
+				writeMu.Lock()
 				detached.Store(true)
+				writeMu.Unlock()
 				return
 			case <-keepalive.C:
 				writeRaw(": keepalive\n\n")
