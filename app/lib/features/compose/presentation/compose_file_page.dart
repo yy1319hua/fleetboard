@@ -55,14 +55,12 @@ class _ComposeFilePageState extends ConsumerState<ComposeFilePage> {
   /// 切换模式时 +1：编辑器按 key 重建，从而丢弃上一个模式的输入状态。
   int _modeEpoch = 0;
 
-  ComposeFileKey get _key =>
-      (serverId: widget.serverId, path: widget.path);
+  ComposeFileKey get _key => (serverId: widget.serverId, path: widget.path);
 
   ComposeFileNotifier get _notifier =>
       ref.read(composeFileProvider(_key).notifier);
 
-  String get _fileName =>
-      widget.name ?? widget.path.split('/').last;
+  String get _fileName => widget.name ?? widget.path.split('/').last;
 
   String get _projectDir {
     final index = widget.path.lastIndexOf('/');
@@ -77,52 +75,83 @@ class _ComposeFilePageState extends ConsumerState<ComposeFilePage> {
     });
   }
 
+  /// 返回上一页前，有未保存改动时确认是否放弃。
+  Future<bool> _confirmLeave() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('放弃修改？'),
+        content: Text('「$_fileName」有未保存的改动，返回将丢失这些改动。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('继续编辑'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('放弃修改'),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(composeFileProvider(_key));
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_fileName, overflow: TextOverflow.ellipsis),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              switch (value) {
-                case 'import':
-                  _importFromClipboard(state);
-                case 'reload':
-                  _reload(state);
-                case 'copy':
-                  _copyPath();
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem<String>(
-                value: 'import',
-                child: Text('从剪贴板粘贴整份'),
-              ),
-              PopupMenuItem<String>(
-                value: 'reload',
-                child: Text('重新加载（丢弃改动）'),
-              ),
-              PopupMenuItem<String>(
-                value: 'copy',
-                child: Text('复制文件路径'),
-              ),
-            ],
-          ),
-        ],
+    return PopScope(
+      canPop: !state.dirty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || !state.dirty) return;
+        final leave = await _confirmLeave();
+        if (!context.mounted || !leave) return;
+        Navigator.of(context).pop();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(_fileName, overflow: TextOverflow.ellipsis),
+          actions: [
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                switch (value) {
+                  case 'import':
+                    _importFromClipboard(state);
+                  case 'reload':
+                    _reload(state);
+                  case 'copy':
+                    _copyPath();
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem<String>(
+                  value: 'import',
+                  child: Text('从剪贴板粘贴整份'),
+                ),
+                PopupMenuItem<String>(
+                  value: 'reload',
+                  child: Text('重新加载（丢弃改动）'),
+                ),
+                PopupMenuItem<String>(
+                  value: 'copy',
+                  child: Text('复制文件路径'),
+                ),
+              ],
+            ),
+          ],
+        ),
+        body: state.loading
+            ? const _LoadingBody()
+            : state.loadError != null
+                ? _LoadErrorBody(
+                    message: state.loadError!,
+                    path: widget.path,
+                    onRetry: () => ref.invalidate(composeFileProvider(_key)),
+                  )
+                : _buildLoaded(state),
+        bottomNavigationBar: _buildSaveBar(state),
       ),
-      body: state.loading
-          ? const _LoadingBody()
-          : state.loadError != null
-              ? _LoadErrorBody(
-                  message: state.loadError!,
-                  path: widget.path,
-                  onRetry: () => ref.invalidate(composeFileProvider(_key)),
-                )
-              : _buildLoaded(state),
-      bottomNavigationBar: _buildSaveBar(state),
     );
   }
 
@@ -195,7 +224,8 @@ class _ComposeFilePageState extends ConsumerState<ComposeFilePage> {
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainerLow,
           border: Border(
-            top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+            top:
+                BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
           ),
         ),
         child: Row(
@@ -433,7 +463,8 @@ class _ComposeFilePageState extends ConsumerState<ComposeFilePage> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(error == null ? 'compose $action 输出' : 'compose $action 失败'),
+        title:
+            Text(error == null ? 'compose $action 输出' : 'compose $action 失败'),
         content: SizedBox(
           width: double.maxFinite,
           // 跟随屏幕高度而不是写死 320：小屏（<600dp）上写死高度会把

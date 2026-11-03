@@ -194,7 +194,9 @@ export function LogTerminal({ serverID, cid, title }: { serverID: number; cid: s
               {visible.map((line, i) => (
                 <div
                   key={start + i}
-                  className={cn("whitespace-pre-wrap break-all font-mono text-mono-sm", lineTone(line))}
+                  // 不能用 pre-wrap：日志折行后实际高度大于 ROW_H，虚拟滚动按
+                  // 固定行高计算偏移，滚动时文字会重叠/被截断。改横向滚动。
+                  className={cn("whitespace-pre font-mono text-mono-sm", lineTone(line))}
                   style={{ height: ROW_H, lineHeight: `${ROW_H}px` }}
                 >
                   {line}

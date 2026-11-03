@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -47,6 +47,9 @@ interface UploadItem {
   abort: AbortController;
 }
 
+/** 每次请求的条目数；不够时由「加载更多」按页追加，避免大目录被静默截断。 */
+const PAGE_SIZE = 200;
+
 /** 文件管理：目录浏览 + 上传（分片续传）+ 下载 + 在线编辑 + 增删改。 */
 export function ServerFilesTab() {
   const { server } = useOutletContext<Ctx>();
@@ -56,16 +59,21 @@ export function ServerFilesTab() {
   const [sort, setSort] = useState<SortField>("name");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
   const [editing, setEditing] = useState<string | null>(null);
+  const [limit, setLimit] = useState(PAGE_SIZE);
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const queryKey = ["files", server.id, dir, sort, order] as const;
+  const queryKey = ["files", server.id, dir, sort, order, limit] as const;
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey,
-    queryFn: () => listFiles(server.id, dir, { sort, order, limit: 500 }),
+    queryFn: () => listFiles(server.id, dir, { sort, order, limit }),
   });
 
+  // 换目录回到第一页，否则会把上一个目录翻出来的页数带过去。
+  useEffect(() => setLimit(PAGE_SIZE), [dir]);
+
   const entries = data?.entries ?? [];
+  const hasMore = entries.length < (data?.total ?? 0);
   const crumbs = useMemo(() => breadcrumbs(dir), [dir]);
 
   const invalidate = () => {
@@ -437,6 +445,14 @@ export function ServerFilesTab() {
           </>
         )}
       </div>
+
+      {hasMore ? (
+        <div className="flex justify-center">
+          <Button size="sm" variant="secondary" onClick={() => setLimit((n) => n + PAGE_SIZE)} disabled={isFetching}>
+            加载更多（已显示 {entries.length} / {data?.total ?? 0} 项）
+          </Button>
+        </div>
+      ) : null}
 
       <p className="text-caption text-text-faint">
         共 {data?.total ?? 0} 项 · 在线编辑上限 1 MiB · 上传按 4 MiB 分片，失败自动从断点续传 ·{" "}

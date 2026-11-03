@@ -139,10 +139,14 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
             ? const NeverScrollableScrollPhysics()
             : null,
         children: [
-          for (final tab in serverTabs)
-            // KeepAlive 让来回切 Tab 不重拉数据；离开详情页后 provider 的
-            // autoDispose 才会真正释放轮询，两者不冲突。
-            _KeepAlive(child: tab.builder(sid)),
+          for (var i = 0; i < serverTabs.length; i++)
+            // KeepAlive 让来回切 Tab 不重拉数据；active 让非当前段不构建子树，
+            // 从而停掉容器列表/统计那两条 30s SSH 轮询——它们原本在别的段
+            // 仍然照跑，等于白开两条远端连接。
+            _KeepAlive(
+              active: _tabIndex == i,
+              child: serverTabs[i].builder(sid),
+            ),
         ],
       ),
       floatingActionButton: server == null
@@ -158,8 +162,11 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
 }
 
 class _KeepAlive extends StatefulWidget {
-  const _KeepAlive({required this.child});
+  const _KeepAlive({required this.child, this.active = true});
   final Widget child;
+
+  /// false 时只保留占位：子树不构建、不 watch provider，轮询随之停止。
+  final bool active;
 
   @override
   State<_KeepAlive> createState() => _KeepAliveState();
@@ -173,6 +180,7 @@ class _KeepAliveState extends State<_KeepAlive>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    if (!widget.active) return const SizedBox.shrink();
     return widget.child;
   }
 }

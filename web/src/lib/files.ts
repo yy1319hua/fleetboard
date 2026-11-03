@@ -1,6 +1,9 @@
 import { apiDelete, apiGet, apiPost, apiPut, currentAccessToken, withQuery } from "@/lib/api";
 import type { FileEntry } from "@/lib/types";
 
+/** 大文件阈值：超过它先确认，避免把整个文件读进标签页内存。 */
+const LARGE_FILE_BYTES = 100 * 1024 * 1024;
+
 export interface ListResult {
   entries: FileEntry[];
   total: number;
@@ -61,6 +64,18 @@ export async function downloadFile(serverID: number, path: string, onProgress?: 
   }
 
   const total = Number(res.headers.get("Content-Length") ?? 0);
+
+  // 手动累积分片会把整个文件读进内存再拼 Blob，几百 MB 的日志/镜像包足以
+  // 让标签页 OOM。大文件先确认，并交给浏览器原生 blob()（内核可溢写到临时
+  // 文件，比手工 Uint8Array 数组稳）。
+  if (total > LARGE_FILE_BYTES) {
+    const proceed = window.confirm(
+      `该文件约 ${(total / 1024 / 1024).toFixed(1)} MB，需要先下载到浏览器内存，可能较慢。继续？`,
+    );
+    if (!proceed) throw new Error("已取消下载");
+    return await res.blob();
+  }
+
   if (!res.body || !onProgress) {
     return await res.blob();
   }

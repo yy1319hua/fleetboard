@@ -16,6 +16,8 @@ export function DashboardPage() {
   const servers = data ?? [];
   const online = servers.filter((s) => s.connection_status === "online").length;
   const offline = servers.filter((s) => s.connection_status === "offline").length;
+  // 首次采集前是 unknown；不单独计的话「在线 + 离线」对不上总数。
+  const unknown = servers.filter((s) => s.connection_status !== "online" && s.connection_status !== "offline").length;
 
   const onError = (msg: string) => toast(msg, "danger");
 
@@ -26,6 +28,7 @@ export function DashboardPage() {
           <h1 className="text-h1 text-text">总览</h1>
           <p className="mt-1 text-body-sm text-text-muted">
             共 {servers.length} 台 · 在线 {online} · 离线 {offline}
+            {unknown > 0 ? ` · 未知 ${unknown}` : ""}
             {isFetching ? " · 刷新中" : ""}
           </p>
         </div>

@@ -42,6 +42,7 @@ class LogsWsClient {
   StreamSubscription<dynamic>? _sub;
   int _retries = 0;
   bool _closed = false;
+  Timer? _reconnect;
 
   final StreamController<LogChunk> _controller =
       StreamController<LogChunk>.broadcast();
@@ -90,14 +91,19 @@ class LogsWsClient {
 
   LogChunk? _parse(dynamic raw) {
     if (raw is! String) return null;
+    Object? decoded;
     try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) return LogChunk.fromJson(decoded);
+      decoded = jsonDecode(raw);
     } on Object {
-      // 非 JSON 帧按原始文本处理。
-      return LogChunk(ts: '', stream: 'stdout', text: raw);
+      decoded = null;
     }
-    return null;
+    // 只有协议帧才当帧解析：判据是带 text 字段。容器日志本身可能就是 JSON 行
+    // （nginx access log、结构化应用日志），把它们当帧会解析出空 text，
+    // 界面上表现为「日志消失了」。
+    if (decoded is Map<String, dynamic> && decoded.containsKey('text')) {
+      return LogChunk.fromJson(decoded);
+    }
+    return LogChunk(ts: '', stream: 'stdout', text: raw);
   }
 
   void _scheduleReconnect() {
@@ -109,11 +115,15 @@ class LogsWsClient {
       return;
     }
     _retries++;
-    Timer(Duration(seconds: _retries), _open); // 退避：1s / 2s / 3s
+    // 保存 Timer 并在 dispose 取消：否则页面关掉后还会再触发一次 _open。
+    _reconnect?.cancel();
+    _reconnect = Timer(Duration(seconds: _retries), _open); // 退避：1s / 2s / 3s
   }
 
   Future<void> dispose() async {
     _closed = true;
+    _reconnect?.cancel();
+    _reconnect = null;
     await _sub?.cancel();
     _sub = null;
     await _channel?.sink.close();

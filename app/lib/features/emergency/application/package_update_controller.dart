@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/errors/api_exception.dart';
+
 import '../data/jobs_repository.dart';
 import '../domain/job.dart';
 
@@ -57,49 +59,49 @@ class PackageUpdateController extends StateNotifier<UpdateState> {
     state = UpdateRunning(jobId: null, lines: lines, startedAt: startedAt);
 
     _sub = _repo.startPackageUpdate(serverId, opId: opId).listen(
-      (event) async {
-        if (_disposed) return;
-        switch (event) {
-          case SseStarted(:final jobId):
-            if (jobId.isNotEmpty) {
-              await _saveJobId(jobId);
-              if (_disposed) return;
-              final cur = state;
-              state = UpdateRunning(
-                jobId: jobId,
-                lines: cur is UpdateRunning ? cur.lines : lines,
-                startedAt: startedAt,
-              );
-            }
-          case SseLine(:final line):
-            lines.add(line);
-            final cur = state;
-            state = UpdateRunning(
-              jobId: cur is UpdateRunning ? cur.jobId : null,
-              lines: List<String>.of(lines),
-              startedAt: startedAt,
-            );
-          case SseDone(:final ok, :final canceled, :final error):
-            await _clearJobId();
+          (event) async {
             if (_disposed) return;
-            state = UpdateFinished(
-              status: canceled
-                  ? JobStatus.cancelled
-                  : (ok ? JobStatus.done : JobStatus.failed),
-              lines: List<String>.of(lines),
-              error: error,
-            );
-          case SseUnknown():
-            break;
-        }
-      },
-      onError: (Object _) => _resumeByPolling(lines, startedAt),
-      onDone: () {
-        // 流结束但仍在 Running（未收到 done 帧）→ 断连，续接
-        if (state is UpdateRunning) _resumeByPolling(lines, startedAt);
-      },
-      cancelOnError: true,
-    );
+            switch (event) {
+              case SseStarted(:final jobId):
+                if (jobId.isNotEmpty) {
+                  await _saveJobId(jobId);
+                  if (_disposed) return;
+                  final cur = state;
+                  state = UpdateRunning(
+                    jobId: jobId,
+                    lines: cur is UpdateRunning ? cur.lines : lines,
+                    startedAt: startedAt,
+                  );
+                }
+              case SseLine(:final line):
+                lines.add(line);
+                final cur = state;
+                state = UpdateRunning(
+                  jobId: cur is UpdateRunning ? cur.jobId : null,
+                  lines: List<String>.of(lines),
+                  startedAt: startedAt,
+                );
+              case SseDone(:final ok, :final canceled, :final error):
+                await _clearJobId();
+                if (_disposed) return;
+                state = UpdateFinished(
+                  status: canceled
+                      ? JobStatus.cancelled
+                      : (ok ? JobStatus.done : JobStatus.failed),
+                  lines: List<String>.of(lines),
+                  error: error,
+                );
+              case SseUnknown():
+                break;
+            }
+          },
+          onError: (Object _) => _resumeByPolling(lines, startedAt),
+          onDone: () {
+            // 流结束但仍在 Running（未收到 done 帧）→ 断连，续接
+            if (state is UpdateRunning) _resumeByPolling(lines, startedAt);
+          },
+          cancelOnError: true,
+        );
   }
 
   /// SSE 断开且未收 done：用 jobId 轮询 GET 续接（B4）。
@@ -169,9 +171,12 @@ class PackageUpdateController extends StateNotifier<UpdateState> {
         );
         _resumeByPolling(job.lines, startedAt);
       }
-    } on Object {
-      // 任务可能已过期（24h TTL）→ 清 jobId
-      await _clearJobId();
+    } on Object catch (e) {
+      // 只有「任务不存在 / 已过期（24h TTL）」才清 jobId。
+      // 断网、超时也会落到这里，若一律清掉，正在跑的升级就再也续接不上了。
+      if (e is ApiException && e.code == 404) {
+        await _clearJobId();
+      }
     }
   }
 
