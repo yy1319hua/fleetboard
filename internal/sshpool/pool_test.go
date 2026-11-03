@@ -3,6 +3,7 @@ package sshpool
 import (
 	"context"
 	"errors"
+	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -152,29 +153,117 @@ func TestGetConcurrentSingleFlight(t *testing.T) {
 	}
 }
 
-func TestReapMarksIdleWithoutDropping(t *testing.T) {
-	var dials int32
+// fakeConn 只实现 ssh.Conn 的 Close 等空方法，供「探活失败要关闭连接」的用例
+// 安全地走到 Close 而不 panic（零值 *ssh.Client 的 Conn 是 nil）。
+type fakeConn struct{ closed int32 }
+
+func (c *fakeConn) User() string          { return "u" }
+func (c *fakeConn) SessionID() []byte     { return nil }
+func (c *fakeConn) ClientVersion() []byte { return nil }
+func (c *fakeConn) ServerVersion() []byte { return nil }
+func (c *fakeConn) SendRequest(string, bool, []byte) (bool, []byte, error) {
+	return true, nil, nil
+}
+func (c *fakeConn) OpenChannel(string, []byte) (ssh.Channel, <-chan *ssh.Request, error) {
+	return nil, nil, nil
+}
+func (c *fakeConn) Close() error         { atomic.AddInt32(&c.closed, 1); return nil }
+func (c *fakeConn) LocalAddr() net.Addr  { return nil }
+func (c *fakeConn) RemoteAddr() net.Addr { return nil }
+func (c *fakeConn) Wait() error          { return nil }
+
+// 空闲但健康：不能被回收。这正是「长任务不被腰斩」的保证——
+// apt 升级跑过 idleTTL，连接仍然是活的，Reap 必须放过它。
+func TestReapKeepsIdleButHealthyConnection(t *testing.T) {
+	var dials, probes int32
 	p := newTestPool(&dials, 0)
 	base := time.Now()
 	p.now = func() time.Time { return base }
+	p.aliveFn = func(*ssh.Client) bool { atomic.AddInt32(&probes, 1); return true }
 
 	if _, err := p.Get(context.Background(), 3, Config{Host: "x"}); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 	if n := p.Reap(); n != 0 {
-		t.Errorf("未超时应标记 0 条，实际 %d", n)
+		t.Errorf("未超时不应回收，实际 %d", n)
+	}
+	if got := atomic.LoadInt32(&probes); got != 0 {
+		t.Errorf("未超时不应探活，实际探活 %d 次", got)
 	}
 
-	// 超过 idleTTL：标记 stale，但**不从池里删除、不关闭**——连接可能正被
-	// apt 升级或 docker logs -f 使用，关掉会把任务腰斩。
 	p.now = func() time.Time { return base.Add(2 * time.Minute) }
-	if n := p.Reap(); n != 1 {
-		t.Errorf("超时应标记 1 条，实际 %d", n)
+	if n := p.Reap(); n != 0 {
+		t.Errorf("健康连接不应被回收，实际 %d", n)
 	}
 	if p.Len() != 1 {
-		t.Errorf("Reap 不应删除条目，Len=%d", p.Len())
+		t.Errorf("健康连接应保留，Len=%d", p.Len())
 	}
-	if n := p.Reap(); n != 0 {
-		t.Errorf("已标记的条目不应重复计数，实际 %d", n)
+	if got := atomic.LoadInt32(&probes); got != 1 {
+		t.Errorf("超时后应探活 1 次，实际 %d", got)
+	}
+	if got := atomic.LoadInt32(&dials); got != 1 {
+		t.Errorf("回收不应触发重新拨号，拨号 %d 次", got)
+	}
+}
+
+// 空闲且已死：必须回收，否则长期不访问的机器会一直占着半死 socket 与读写 goroutine。
+func TestReapDropsDeadConnection(t *testing.T) {
+	var dials int32
+	p := newTestPool(&dials, 0)
+	base := time.Now()
+	p.now = func() time.Time { return base }
+
+	conn := &fakeConn{}
+	p.SetDialer(func(context.Context, Config) (*ssh.Client, error) {
+		atomic.AddInt32(&dials, 1)
+		return &ssh.Client{Conn: conn}, nil
+	})
+	p.aliveFn = func(*ssh.Client) bool { return true }
+
+	if _, err := p.Get(context.Background(), 4, Config{Host: "x"}); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	// 连接随后半死（NAT 静默丢弃 → TCP 半开），探活恒失败。
+	p.aliveFn = func(*ssh.Client) bool { return false }
+	p.now = func() time.Time { return base.Add(2 * time.Minute) }
+	if n := p.Reap(); n != 1 {
+		t.Errorf("死连接应回收 1 条，实际 %d", n)
+	}
+	if p.Len() != 0 {
+		t.Errorf("死连接应已从池中移除，Len=%d", p.Len())
+	}
+	if got := atomic.LoadInt32(&conn.closed); got != 1 {
+		t.Errorf("死连接应被关闭 1 次，实际 %d", got)
+	}
+}
+
+// 死亡连接被回收后，下一次 Get 应重建——不能留下「移除但未关闭」或反向的残留。
+func TestGetRebuildsAfterDeadConnectionReaped(t *testing.T) {
+	var dials, probes int32
+	p := newTestPool(&dials, 0)
+	p.SetDialer(func(context.Context, Config) (*ssh.Client, error) {
+		atomic.AddInt32(&dials, 1)
+		return &ssh.Client{Conn: &fakeConn{}}, nil
+	})
+	base := time.Now()
+	p.now = func() time.Time { return base }
+	p.aliveFn = func(*ssh.Client) bool { return atomic.LoadInt32(&probes) == 0 }
+
+	if _, err := p.Get(context.Background(), 5, Config{Host: "x"}); err != nil {
+		t.Fatalf("首次 Get: %v", err)
+	}
+	atomic.StoreInt32(&probes, 1) // 之后探活恒失败
+	p.now = func() time.Time { return base.Add(2 * time.Minute) }
+	if n := p.Reap(); n != 1 {
+		t.Fatalf("应回收死连接，实际 %d", n)
+	}
+
+	p.now = func() time.Time { return base.Add(3 * time.Minute) }
+	if _, err := p.Get(context.Background(), 5, Config{Host: "x"}); err != nil {
+		t.Fatalf("回收后 Get: %v", err)
+	}
+	if got := atomic.LoadInt32(&dials); got != 2 {
+		t.Errorf("回收后应重新拨号，累计拨号 %d 次", got)
 	}
 }

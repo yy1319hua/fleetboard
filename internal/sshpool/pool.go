@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -105,11 +106,6 @@ func DefaultDialer(ctx context.Context, cfg Config) (*ssh.Client, error) {
 type entry struct {
 	client   *ssh.Client
 	lastUsed time.Time
-
-	// stale 表示空闲已超时，等下一次 Get 时关闭旧连接并重建。
-	// Reap 只打标记、不关闭——池里没有「会话是否在途」的信息，凭 lastUsed
-	// 直接关会把跑得久的任务（apt 全量升级、docker logs -f、大文件传输）腰斩。
-	stale bool
 }
 
 // dialCall 是一次进行中的建连，供并发 Get 的其它 goroutine 等待复用。
@@ -160,18 +156,11 @@ func (p *Pool) Get(ctx context.Context, serverID int64, cfg Config) (*ssh.Client
 }
 
 // reusable 取出池中可用连接。锁内只做取指针与刷新 lastUsed，探测在锁外。
-// 失活或已标记 stale 的条目会被移除，并在锁外关闭。
 func (p *Pool) reusable(serverID int64) (*ssh.Client, bool) {
 	p.mu.Lock()
 	e, ok := p.entries[serverID]
 	if !ok {
 		p.mu.Unlock()
-		return nil, false
-	}
-	if e.stale {
-		delete(p.entries, serverID)
-		p.mu.Unlock()
-		_ = e.client.Close()
 		return nil, false
 	}
 	cli := e.client
@@ -271,29 +260,71 @@ func (p *Pool) CloseAll() {
 	}
 }
 
-// Reap 把空闲超过 idleTTL 的连接标记为 stale，返回标记数量。
+// reapProbeConcurrency 限制一轮探活的并发数。
 //
-// 刻意**不在这里关闭**：池中没有「会话是否在途」的信息，而 apt 全量升级、
-// docker logs -f、大文件传输可能持续十几分钟以上，仅凭 lastUsed 关闭会把
-// 这些任务静默腰斩（任务中断且不留明确报错）。标记后由下一次 Get 关闭旧连接
-// 并重建；进程退出走 CloseAll，删服务器走 Close。
-//
-// 代价是长期不用的连接会占着 socket，直到下次访问或进程退出。个人面板的
-// 连接数是服务器数量级，这个代价远小于「长任务被腰斩」。
-func (p *Pool) Reap() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+// 探活是网络往返，几十台机器同时发会瞬时打出一批 SSH 请求；限到 4 路既能把
+// 一轮的总耗时压在可接受范围（最坏 ceil(n/4)×5s），又不会形成突发。
+const reapProbeConcurrency = 4
 
-	cutoff := p.now().Add(-p.idleTTL)
-	n := 0
-	for _, e := range p.entries {
-		if e.stale || !e.lastUsed.Before(cutoff) {
+// Reap 回收空闲连接——但只在**确认它已经死了**的时候关闭。
+//
+// 为什么不能按 lastUsed 直接关：池里没有「会话是否在途」的信息，而 apt 全量
+// 升级、docker logs -f、大文件传输可能持续十几分钟以上，仅凭空闲时间关闭会把
+// 这些任务静默腰斩（任务中断且不留明确报错）。
+//
+// 为什么也不能只标记不关：标记后的连接要等到下一轮 Get 才被处理，长期不访问
+// 的机器就会一直占着半死的 socket 和它的读写 goroutine。
+//
+// 所以判断依据换成「连接还活着吗」：
+//   - 探活成功 → 连接健康，保留（顺带刷新 lastUsed，下一轮 TTL 后再看）；
+//   - 探活失败 → 连接已死，关闭并从池中移除，下次访问重建。
+//
+// 这样长任务永远不会被回收动作打断——活着的连接一律不动；死连接也不会滞留。
+func (p *Pool) Reap() int {
+	type candidate struct {
+		id  int64
+		cli *ssh.Client
+	}
+
+	p.mu.Lock()
+	now := p.now()
+	cutoff := now.Add(-p.idleTTL)
+	cands := make([]candidate, 0, len(p.entries))
+	for id, e := range p.entries {
+		if !e.lastUsed.Before(cutoff) {
 			continue
 		}
-		e.stale = true
-		n++
+		// 本轮已经看过它了：先刷新时间戳，避免探活耗时导致下一轮立刻重复探测。
+		e.lastUsed = now
+		cands = append(cands, candidate{id: id, cli: e.client})
 	}
-	return n
+	p.mu.Unlock()
+
+	if len(cands) == 0 {
+		return 0
+	}
+
+	var closed atomic.Int32
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, reapProbeConcurrency)
+	for _, c := range cands {
+		wg.Add(1)
+		go func(c candidate) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			if p.aliveFn(c.cli) {
+				return
+			}
+			// invalidate 内部会校验「池里的条目仍是这条连接」，避免误删刚被
+			// 其它 goroutine 重建的新连接。
+			p.invalidate(c.id, c.cli)
+			closed.Add(1)
+		}(c)
+	}
+	wg.Wait()
+	return int(closed.Load())
 }
 
 // Len 返回当前缓存的连接数。
