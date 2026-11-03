@@ -49,13 +49,21 @@ paths:
       messages:
         - $ref: '#/components/schemas/SseEvent'
 
-  # ===== 文件分片上传：HTTP multipart（App 首版不用，仍入哨兵）=====
+  # ===== 文件分片上传：原始字节流 + offset（App 已消费）=====
   /api/servers/{id}/files/upload:
     post:
       operationId: uploadFileChunked
       x-transport: http
-      x-upload-protocol: multipart-chunked
+      x-upload-protocol: raw-bytes-offset
       summary: >
-        分片上传协议（App 首版不消费）。对应 gin 路由 POST /api/servers/:id/files/upload。
+        分片上传：请求体是原始字节（Content-Type: application/octet-stream），
+        从 offset 查询参数指定的位置开始写，返回 {path, offset, written}。
+        对应 gin 路由 POST /api/servers/:id/files/upload。
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: path, in: query, required: true, schema: { type: string } }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, default: 0 }
+          description: 本次写入的起始字节偏移；分片上传时由客户端累加

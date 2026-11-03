@@ -221,7 +221,7 @@ components:
           type: boolean
           description: true=本次没有可删项，与「删了但回收 0B」严格区分
         error: { type: string, description: 该项失败原因；空串表示成功 }
-    DiskUsage:
+    DockerDiskUsage:
       type: object
       description: docker system df 的一行
       properties:
@@ -1071,7 +1071,7 @@ paths:
     get:
       operationId: listFiles
       tags: [files]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: 列目录
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1080,7 +1080,7 @@ paths:
     delete:
       operationId: deleteFile
       tags: [files]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: 删除文件/目录
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1090,7 +1090,7 @@ paths:
     get:
       operationId: downloadFile
       tags: [files]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: 下载文件
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1100,7 +1100,7 @@ paths:
     post:
       operationId: uploadFile
       tags: [files]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: 上传文件（分片协议见 realtime-contract.yaml）
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1110,7 +1110,7 @@ paths:
     get:
       operationId: getFileContent
       tags: [files]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: 读取文件内容
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1119,7 +1119,7 @@ paths:
     put:
       operationId: putFileContent
       tags: [files]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: 写入文件内容
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1129,7 +1129,7 @@ paths:
     post:
       operationId: renameFile
       tags: [files]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: 重命名
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1139,7 +1139,7 @@ paths:
     post:
       operationId: copyFile
       tags: [files]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: 复制
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1149,7 +1149,7 @@ paths:
     get:
       operationId: statFile
       tags: [files]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: 文件/目录元信息
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1161,7 +1161,7 @@ paths:
     get:
       operationId: listCompose
       tags: [compose]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: 列出 compose 工程
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1171,7 +1171,7 @@ paths:
     get:
       operationId: getComposeContent
       tags: [compose]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: 读取 compose 文件内容
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1180,7 +1180,7 @@ paths:
     put:
       operationId: putComposeContent
       tags: [compose]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: 写入 compose 文件内容
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1190,7 +1190,7 @@ paths:
     post:
       operationId: composeAction
       tags: [compose]
-      x-app-consumed: false
+      x-app-consumed: true
       summary: compose 操作（up/down/restart）
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
