@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/errors/api_exception.dart';
 import '../../../core/widgets/async_state_view.dart';
 import '../../../core/widgets/hold_to_confirm.dart';
+import '../../../core/widgets/refresh_icon_button.dart';
 import '../../../core/widgets/status_dot.dart';
 import '../../overview/domain/bootstrap.dart';
 import '../../servers/application/servers_provider.dart';
@@ -34,10 +35,9 @@ class AlertRulesPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('告警规则'),
         actions: [
-          IconButton(
+          RefreshIconButton(
             tooltip: '刷新',
-            onPressed: notifier.load,
-            icon: const Icon(Icons.refresh),
+            onRefresh: notifier.refresh,
           ),
         ],
       ),
@@ -57,26 +57,24 @@ class AlertRulesPage extends ConsumerWidget {
               emptyHint: '还没有告警规则。点右下角「新建规则」建第一条：'
                   '最常用的是「CPU 使用率 > 80%」，命中后会出现在通知中心，'
                   '需要电话/微信提醒再打开 PushPlus。',
-              builder: (rules) => RefreshIndicator(
-                onRefresh: notifier.refresh,
-                child: ListView.separated(
-                  padding: const EdgeInsets.only(bottom: 96),
-                  itemCount: rules.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final rule = rules[index];
-                    return _RuleTile(
-                      rule: rule,
-                      scopeName: rule.serverId == null
-                          ? '全局'
-                          : (serverNames[rule.serverId] ?? '服务器 #${rule.serverId}'),
-                      onToggle: (enabled) =>
-                          _toggle(context, notifier, rule, enabled),
-                      onEdit: () => _openEditor(context, rule: rule),
-                      onDelete: () => _confirmDelete(context, ref, rule),
-                    );
-                  },
-                ),
+              builder: (rules) => ListView.separated(
+                padding: const EdgeInsets.only(bottom: 96),
+                itemCount: rules.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final rule = rules[index];
+                  return _RuleTile(
+                    rule: rule,
+                    scopeName: rule.serverId == null
+                        ? '全局'
+                        : (serverNames[rule.serverId] ??
+                            '服务器 #${rule.serverId}'),
+                    onToggle: (enabled) =>
+                        _toggle(context, notifier, rule, enabled),
+                    onEdit: () => _openEditor(context, rule: rule),
+                    onDelete: () => _confirmDelete(context, ref, rule),
+                  );
+                },
               ),
             ),
           ),

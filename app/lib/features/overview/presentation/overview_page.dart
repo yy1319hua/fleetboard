@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants.dart';
 import '../../../core/storage/bootstrap_cache.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/refresh_icon_button.dart';
 import '../../auth/application/auth_notifier.dart';
 import '../application/overview_notifier.dart';
 import '../domain/bootstrap.dart';
@@ -12,7 +13,7 @@ import 'server_card.dart';
 /// 总览页（Tab 1，M9.2 落地）。
 ///
 /// 消费 GET /api/bootstrap：服务器卡片列表（名/状态/指标摘要）+ 顶部未读告警数 + 版本。
-/// 下拉刷新重拉；前台轮询（OverviewNotifier 30s + onResumed）更新未读告警（满足 B2）。
+/// 右上角刷新按钮重拉；前台轮询（OverviewNotifier 30s + onResumed）更新未读告警（满足 B2）。
 class OverviewPage extends ConsumerWidget {
   const OverviewPage({super.key});
 
@@ -70,6 +71,9 @@ class OverviewPage extends ConsumerWidget {
                 ),
               ),
             ),
+          RefreshIconButton(
+            onRefresh: () => ref.read(overviewProvider.notifier).refresh(),
+          ),
         ],
       ),
       body: bootstrap.when(
@@ -100,73 +104,69 @@ class _OverviewContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cacheAt = ref.watch(overviewCacheAtProvider);
-    return RefreshIndicator(
-      onRefresh: () => ref.read(overviewProvider.notifier).refresh(),
-      child: CustomScrollView(
-        slivers: <Widget>[
-          if (cacheAt != null)
-            SliverToBoxAdapter(
-              child: Container(
-                width: double.infinity,
-                color: AppColors.accentSoft,
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  AppSpacing.sm,
-                  AppSpacing.lg,
-                  AppSpacing.sm,
-                ),
-                child: Row(
-                  children: <Widget>[
-                    const Icon(Icons.history,
-                        size: 14, color: AppColors.accent),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        '显示缓存数据（${_hhmm(cacheAt)}）· 正在刷新…',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: AppColors.accent),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+    return CustomScrollView(
+      slivers: <Widget>[
+        if (cacheAt != null)
           SliverToBoxAdapter(
-            child: Padding(
+            child: Container(
+              width: double.infinity,
+              color: AppColors.accentSoft,
               padding: const EdgeInsets.fromLTRB(
                 AppSpacing.lg,
-                AppSpacing.md,
+                AppSpacing.sm,
                 AppSpacing.lg,
-                AppSpacing.xs,
+                AppSpacing.sm,
               ),
-              child: Text(
-                '版本 ${data.version} · schema ${data.schema}',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: AppColors.muted),
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.history, size: 14, color: AppColors.accent),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '显示缓存数据（${_hhmm(cacheAt)}）· 正在刷新…',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: AppColors.accent),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          if (data.servers.isEmpty)
-            const SliverFillRemaining(
-              child: Center(child: Text('暂无被管服务器')),
-            )
-          else
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final server = data.servers[index];
-                  final metric = data.metrics[server.id.toString()];
-                  return ServerCard(server: server, metric: metric);
-                },
-                childCount: data.servers.length,
-              ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.xs,
             ),
-        ],
-      ),
+            child: Text(
+              '版本 ${data.version} · schema ${data.schema}',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: AppColors.muted),
+            ),
+          ),
+        ),
+        if (data.servers.isEmpty)
+          const SliverFillRemaining(
+            child: Center(child: Text('暂无被管服务器')),
+          )
+        else
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final server = data.servers[index];
+                final metric = data.metrics[server.id.toString()];
+                return ServerCard(server: server, metric: metric);
+              },
+              childCount: data.servers.length,
+            ),
+          ),
+      ],
     );
   }
 }

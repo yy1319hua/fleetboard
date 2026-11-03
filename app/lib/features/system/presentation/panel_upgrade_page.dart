@@ -7,6 +7,7 @@ import '../../../core/constants.dart';
 import '../../../core/errors/api_exception.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/async_state_view.dart';
+import '../../../core/widgets/refresh_icon_button.dart';
 import '../application/upgrade_run_notifier.dart';
 import '../data/upgrade_repository.dart';
 import '../domain/panel_upgrade.dart';
@@ -67,10 +68,12 @@ class _PanelUpgradePageState extends ConsumerState<PanelUpgradePage> {
           // 升级窗口内不提供「刷新版本信息」：这段时间面板正在停机，
           // 这个按钮必然失败，摆在那里只会把用户引向一个错误页。
           if (run == null || run.phase.isTerminal)
-            IconButton(
+            RefreshIconButton(
               tooltip: '刷新版本信息',
-              onPressed: () => ref.invalidate(panelUpgradeInfoProvider),
-              icon: const Icon(Icons.refresh),
+              onRefresh: () async {
+                ref.invalidate(panelUpgradeInfoProvider);
+                await ref.read(panelUpgradeInfoProvider.future);
+              },
             ),
           IconButton(
             tooltip: '升级历史',

@@ -63,8 +63,6 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab>
         _PathBar(
           path: state.path,
           onUp: () => ref.read(fileBrowserProvider(_serverId).notifier).up(),
-          onRefresh: () =>
-              ref.read(fileBrowserProvider(_serverId).notifier).refresh(),
           onSort: () => _pickSort(state),
           onUpload: () => _pickAndUpload(state),
         ),
@@ -671,14 +669,12 @@ class _PathBar extends StatelessWidget {
   const _PathBar({
     required this.path,
     required this.onUp,
-    required this.onRefresh,
     required this.onSort,
     required this.onUpload,
   });
 
   final String path;
   final VoidCallback onUp;
-  final VoidCallback onRefresh;
   final VoidCallback onSort;
   final VoidCallback onUpload;
 
@@ -722,11 +718,6 @@ class _PathBar extends StatelessWidget {
               tooltip: '排序',
               onPressed: onSort,
             ),
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: '刷新',
-              onPressed: onRefresh,
-            ),
           ],
         ),
       ),
@@ -750,8 +741,8 @@ class _FileList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final showMore = listing.hasMore;
-    // 刷新入口在 AppBar（本段已注册 refreshTab）与路径栏的刷新图标，
-    // 不再叠一层下拉：三处入口做同一件事只会让人怀疑哪个没生效。
+    // 刷新入口只有 AppBar 一个（本段已注册 refreshTab）：路径栏曾经也有一个
+    // 同一动作的图标，两个按钮挨着放只会让人猜哪个才是刷新的。
     return ListView.separated(
       // 给底部的上传队列卡片留出空间，否则最后一条永远被压住。
       padding: const EdgeInsets.only(bottom: 104),

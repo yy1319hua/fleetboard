@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/async_state_view.dart';
+import '../../../core/widgets/refresh_icon_button.dart';
 import '../application/upgrade_history_notifier.dart';
 import '../domain/panel_upgrade.dart';
 
@@ -130,10 +131,9 @@ class _UpgradeHistoryPageState extends ConsumerState<UpgradeHistoryPage> {
               style:
                   theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
             ),
-          IconButton(
+          RefreshIconButton(
             tooltip: '刷新',
-            onPressed: notifier.loadFirst,
-            icon: const Icon(Icons.refresh),
+            onRefresh: notifier.loadFirst,
           ),
           const SizedBox(width: AppSpacing.xs),
         ],

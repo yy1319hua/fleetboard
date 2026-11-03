@@ -73,8 +73,8 @@ class _ServerOverviewTabState extends ConsumerState<ServerOverviewTab>
         final server = data.servers.firstWhere((s) => s.id == widget.serverId);
         final metric = data.metrics['${widget.serverId}'];
         // 刷新入口统一收到 AppBar 按钮（本段通过 TabRefreshScope 注册了
-        // refreshTab），这里不再套 RefreshIndicator：两个入口做同一件事，
-        // 反而让人以为「下拉」和「按钮」刷的不是一份数据。
+        // refreshTab）：这里不再套 RefreshIndicator，两个入口做同一件事，
+        // 反而让人以为刷的不是一份数据。
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
           children: [

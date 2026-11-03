@@ -11,7 +11,7 @@ import '../domain/bootstrap.dart';
 /// 轮询策略（M9.2，满足 B2 告警到达，不建 WS）：
 ///  - 构造即首拉一次；
 ///  - 每 30s 拉一次（前台；后台被系统节流，回前台由 App 的 onResumed 补拉）；
-///  - 下拉刷新触发 [refresh]；
+///  - 右上角刷新按钮触发 [refresh]；
 ///  - App 生命周期 resumed 亦触发 [refresh]（app.dart 调用）。
 ///
 /// 缓存优先（v0.4.3）：构造时并行读本地快照，先渲染旧数据（顶部标注时间），

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/server_tabs.dart';
+import '../../../core/widgets/refresh_icon_button.dart';
 import '../../../core/widgets/status_dot.dart';
 import '../../../core/widgets/tab_active_scope.dart';
 import '../../../core/widgets/tab_refresh_scope.dart';
@@ -127,10 +128,9 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
                 }
               },
             ),
-          IconButton(
+          RefreshIconButton(
             tooltip: '刷新当前分段',
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshCurrentTab,
+            onRefresh: _refreshCurrentTab,
           ),
         ],
         bottom: TabBar(

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants.dart';
 import '../../../core/errors/api_exception.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/refresh_icon_button.dart';
 import '../../overview/application/overview_notifier.dart';
 import '../../overview/domain/bootstrap.dart';
 import '../../settings/presentation/settings_common.dart';
@@ -33,6 +34,7 @@ class _ServersPageState extends ConsumerState<ServersPage> {
       appBar: AppBar(
         title: const Text('服务器纳管'),
         actions: <Widget>[
+          RefreshIconButton(onRefresh: _refresh),
           IconButton(
             onPressed: () => _openWizard(),
             icon: const Icon(Icons.add),
@@ -52,31 +54,31 @@ class _ServersPageState extends ConsumerState<ServersPage> {
     );
   }
 
+  /// 刷新列表。等新值到达才返回——进度圈的消失时刻就是数据到手的时刻，
+  /// 否则会出现「圈停了但列表还是旧的」。
+  Future<void> _refresh() async {
+    ref.invalidate(serversProvider);
+    await ref.read(serversProvider.future);
+  }
+
   Widget _list(List<Server> list) {
     if (list.isEmpty) return _empty();
-    return RefreshIndicator(
-      onRefresh: () async {
-        ref.invalidate(serversProvider);
-        // 等新值到达再收起指示器，否则会有「刷新了个寂寞」的观感。
-        await ref.read(serversProvider.future);
+    return ListView.separated(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      itemCount: list.length,
+      separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
+      itemBuilder: (BuildContext context, int i) {
+        final s = list[i];
+        final busy = _busyId == s.id;
+        return _ServerTile(
+          server: s,
+          busy: busy,
+          onOpen: () => context.push('/servers/${s.id}'),
+          onEdit: () => _edit(s),
+          onTest: () => _test(s),
+          onDelete: () => _confirmDelete(s),
+        );
       },
-      child: ListView.separated(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        itemCount: list.length,
-        separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
-        itemBuilder: (BuildContext context, int i) {
-          final s = list[i];
-          final busy = _busyId == s.id;
-          return _ServerTile(
-            server: s,
-            busy: busy,
-            onOpen: () => context.push('/servers/${s.id}'),
-            onEdit: () => _edit(s),
-            onTest: () => _test(s),
-            onDelete: () => _confirmDelete(s),
-          );
-        },
-      ),
     );
   }
 

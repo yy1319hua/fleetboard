@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/async_state_view.dart';
+import '../../../core/widgets/refresh_icon_button.dart';
 import '../data/resources_repository.dart';
 import '../domain/docker_resource.dart';
 import 'image_actions.dart';
@@ -100,10 +101,12 @@ class _ImagesView extends ConsumerWidget {
                 label: const Text('拉取镜像'),
               ),
               const Spacer(),
-              IconButton(
+              RefreshIconButton(
                 tooltip: '刷新列表',
-                onPressed: () => ref.invalidate(provider),
-                icon: const Icon(Icons.refresh),
+                onRefresh: () async {
+                  ref.invalidate(provider);
+                  await ref.read(provider.future);
+                },
               ),
             ],
           ),
@@ -115,47 +118,40 @@ class _ImagesView extends ConsumerWidget {
             onRetry: () => ref.invalidate(provider),
             emptyHint: '这台机器上还没有镜像。点上方「拉取镜像」输入 repo:tag '
                 '（例如 nginx:alpine）下载，拉取完成后会出现在这里。',
-            builder: (images) => RefreshIndicator(
-              onRefresh: () async => ref.invalidate(provider),
-              child: ListView.separated(
-                // 底部留白：详情页有底部导航，最后一行不该被盖住。
-                padding: const EdgeInsets.only(bottom: 88),
-                itemCount: images.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final image = images[index];
-                  return ListTile(
-                    leading: Icon(
-                      image.isDangling
-                          ? Icons.link_off
-                          : Icons.layers_outlined,
-                      color: image.isDangling
-                          ? theme.colorScheme.outline
-                          : null,
-                    ),
-                    title: Text(
-                      image.reference,
-                      style: const TextStyle(fontFamily: 'monospace'),
-                    ),
-                    subtitle: Text(
-                      [
-                        if (image.size.isNotEmpty) image.size,
-                        if (image.createdSince.isNotEmpty) image.createdSince,
-                      ].join(' · '),
-                    ),
-                    // 长按删除：误触时手指抬不起来，比"点了弹出确认框"更能拦住手滑。
-                    onLongPress: () async {
-                      final deleted = await showDeleteImageSheet(
-                        context,
-                        serverId: serverId,
-                        image: image,
-                      );
-                      if (deleted) ref.invalidate(provider);
-                    },
-                    onTap: () => _showImageDetail(context, image),
-                  );
-                },
-              ),
+            builder: (images) => ListView.separated(
+              // 底部留白：详情页有底部导航，最后一行不该被盖住。
+              padding: const EdgeInsets.only(bottom: 88),
+              itemCount: images.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final image = images[index];
+                return ListTile(
+                  leading: Icon(
+                    image.isDangling ? Icons.link_off : Icons.layers_outlined,
+                    color: image.isDangling ? theme.colorScheme.outline : null,
+                  ),
+                  title: Text(
+                    image.reference,
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
+                  subtitle: Text(
+                    [
+                      if (image.size.isNotEmpty) image.size,
+                      if (image.createdSince.isNotEmpty) image.createdSince,
+                    ].join(' · '),
+                  ),
+                  // 长按删除：误触时手指抬不起来，比"点了弹出确认框"更能拦住手滑。
+                  onLongPress: () async {
+                    final deleted = await showDeleteImageSheet(
+                      context,
+                      serverId: serverId,
+                      image: image,
+                    );
+                    if (deleted) ref.invalidate(provider);
+                  },
+                  onTap: () => _showImageDetail(context, image),
+                );
+              },
             ),
           ),
         ),
@@ -255,10 +251,12 @@ class _NetworksView extends ConsumerWidget {
         ),
         Align(
           alignment: Alignment.centerRight,
-          child: IconButton(
+          child: RefreshIconButton(
             tooltip: '刷新列表',
-            onPressed: () => ref.invalidate(provider),
-            icon: const Icon(Icons.refresh),
+            onRefresh: () async {
+              ref.invalidate(provider);
+              await ref.read(provider.future);
+            },
           ),
         ),
         Expanded(
@@ -269,28 +267,25 @@ class _NetworksView extends ConsumerWidget {
             emptyHint: '没有查到任何网络。正常情况下至少有 bridge / host / none 三个，'
                 '如果一个都没有，通常是 Docker 服务没起来——到「容器」页看一眼，'
                 '或在机器上执行 systemctl status docker 排查。',
-            builder: (networks) => RefreshIndicator(
-              onRefresh: () async => ref.invalidate(provider),
-              child: ListView.separated(
-                padding: const EdgeInsets.only(bottom: 88),
-                itemCount: networks.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final network = networks[index];
-                  return ListTile(
-                    leading: const Icon(Icons.hub_outlined),
-                    title: Text(
-                      network.name,
-                      style: const TextStyle(fontFamily: 'monospace'),
-                    ),
-                    subtitle: Text(
-                      '驱动 ${network.driver.isEmpty ? '—' : network.driver}'
-                      ' · 范围 ${network.scope.isEmpty ? '—' : network.scope}'
-                      '${network.id.isEmpty ? '' : ' · ${_shortId(network.id)}'}',
-                    ),
-                  );
-                },
-              ),
+            builder: (networks) => ListView.separated(
+              padding: const EdgeInsets.only(bottom: 88),
+              itemCount: networks.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final network = networks[index];
+                return ListTile(
+                  leading: const Icon(Icons.hub_outlined),
+                  title: Text(
+                    network.name,
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
+                  subtitle: Text(
+                    '驱动 ${network.driver.isEmpty ? '—' : network.driver}'
+                    ' · 范围 ${network.scope.isEmpty ? '—' : network.scope}'
+                    '${network.id.isEmpty ? '' : ' · ${_shortId(network.id)}'}',
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -329,10 +324,12 @@ class _VolumesView extends ConsumerWidget {
                   ),
                 ),
               ),
-              IconButton(
+              RefreshIconButton(
                 tooltip: '刷新列表',
-                onPressed: () => ref.invalidate(provider),
-                icon: const Icon(Icons.refresh),
+                onRefresh: () async {
+                  ref.invalidate(provider);
+                  await ref.read(provider.future);
+                },
               ),
             ],
           ),
@@ -344,70 +341,67 @@ class _VolumesView extends ConsumerWidget {
             onRetry: () => ref.invalidate(provider),
             emptyHint: '没有数据卷。compose 里声明的具名卷会在第一次 docker compose up '
                 '时自动创建，创建后会出现在这里。',
-            builder: (volumes) => RefreshIndicator(
-              onRefresh: () async => ref.invalidate(provider),
-              child: ListView.separated(
-                padding: const EdgeInsets.only(bottom: 88),
-                itemCount: volumes.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final volume = volumes[index];
-                  Future<void> askDelete() async {
-                    final deleted = await showDeleteVolumeSheet(
-                      context,
-                      serverId: serverId,
-                      volume: volume,
-                    );
-                    if (deleted) {
-                      // 删卷同时改变 df 数字与未使用卷清单，一并失效。
-                      ref.invalidate(provider);
-                      ref.invalidate(diskUsageProvider(serverId));
-                      ref.invalidate(unusedVolumesProvider(serverId));
-                    }
-                  }
-
-                  return ListTile(
-                    leading: const Icon(Icons.storage_outlined),
-                    title: Text(
-                      volume.name,
-                      style: const TextStyle(fontFamily: 'monospace'),
-                    ),
-                    subtitle: Text(
-                      '驱动 ${volume.driver.isEmpty ? '—' : volume.driver}'
-                      '${volume.mountpoint.isEmpty ? '' : '\n${volume.mountpoint}'}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    isThreeLine: volume.mountpoint.isNotEmpty,
-                    onLongPress: askDelete,
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (volume.mountpoint.isNotEmpty)
-                          IconButton(
-                            tooltip: '复制挂载点',
-                            icon: const Icon(Icons.copy, size: 18),
-                            onPressed: () async {
-                              final messenger =
-                                  ScaffoldMessenger.maybeOf(context);
-                              await Clipboard.setData(
-                                ClipboardData(text: volume.mountpoint),
-                              );
-                              messenger?.showSnackBar(
-                                const SnackBar(content: Text('已复制挂载点路径')),
-                              );
-                            },
-                          ),
-                        IconButton(
-                          tooltip: '删除卷',
-                          icon: const Icon(Icons.delete_outline, size: 18),
-                          onPressed: askDelete,
-                        ),
-                      ],
-                    ),
+            builder: (volumes) => ListView.separated(
+              padding: const EdgeInsets.only(bottom: 88),
+              itemCount: volumes.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final volume = volumes[index];
+                Future<void> askDelete() async {
+                  final deleted = await showDeleteVolumeSheet(
+                    context,
+                    serverId: serverId,
+                    volume: volume,
                   );
-                },
-              ),
+                  if (deleted) {
+                    // 删卷同时改变 df 数字与未使用卷清单，一并失效。
+                    ref.invalidate(provider);
+                    ref.invalidate(diskUsageProvider(serverId));
+                    ref.invalidate(unusedVolumesProvider(serverId));
+                  }
+                }
+
+                return ListTile(
+                  leading: const Icon(Icons.storage_outlined),
+                  title: Text(
+                    volume.name,
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
+                  subtitle: Text(
+                    '驱动 ${volume.driver.isEmpty ? '—' : volume.driver}'
+                    '${volume.mountpoint.isEmpty ? '' : '\n${volume.mountpoint}'}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  isThreeLine: volume.mountpoint.isNotEmpty,
+                  onLongPress: askDelete,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (volume.mountpoint.isNotEmpty)
+                        IconButton(
+                          tooltip: '复制挂载点',
+                          icon: const Icon(Icons.copy, size: 18),
+                          onPressed: () async {
+                            final messenger =
+                                ScaffoldMessenger.maybeOf(context);
+                            await Clipboard.setData(
+                              ClipboardData(text: volume.mountpoint),
+                            );
+                            messenger?.showSnackBar(
+                              const SnackBar(content: Text('已复制挂载点路径')),
+                            );
+                          },
+                        ),
+                      IconButton(
+                        tooltip: '删除卷',
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        onPressed: askDelete,
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -494,7 +488,6 @@ String _summarizeReclaimable(List<DockerDiskUsage> rows) {
   if (total <= 0) return '';
   return formatSizeBytes(total);
 }
-
 
 /// 只读提示条：明确「为什么这里没有写操作」，而不是把按钮置灰。
 class _ReadOnlyNotice extends StatelessWidget {

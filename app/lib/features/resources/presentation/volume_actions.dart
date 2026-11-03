@@ -337,7 +337,7 @@ class _DockerCleanupSheetState extends ConsumerState<_DockerCleanupSheet> {
                         ?.copyWith(color: theme.colorScheme.error),
                   ),
                   Text(
-                    '部分项目可能已删除成功，请下拉刷新列表确认。',
+                    '部分项目可能已删除成功，请点右上角刷新确认。',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -632,7 +632,7 @@ class _CleanupResults extends StatelessWidget {
         for (final r in results) _row(context, r),
         if (unreported)
           Text(
-            '请关闭后下拉刷新列表确认。',
+            '请关闭后点右上角刷新确认。',
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/async_state_view.dart';
+import '../../../core/widgets/refresh_icon_button.dart';
 import '../application/compose_file_notifier.dart';
 import '../domain/compose_models.dart';
 import 'compose_file_page.dart';
@@ -28,6 +29,13 @@ class _ComposePageState extends ConsumerState<ComposePage> {
 
   void _reload() => ref.invalidate(composeListingProvider(_key));
 
+  /// 刷新按钮用：invalidate 只是「作废」，不会等新目录列完，
+  /// 进度圈会在数据还没回来时就停——所以这里显式等一次新值。
+  Future<void> _reloadAndWait() async {
+    ref.invalidate(composeListingProvider(_key));
+    await ref.read(composeListingProvider(_key).future);
+  }
+
   void _enter(String path) => setState(() => _dir = path);
 
   void _openFile(ComposeFileItem file) {
@@ -52,9 +60,8 @@ class _ComposePageState extends ConsumerState<ComposePage> {
       appBar: AppBar(
         title: const Text('Compose 编排'),
         actions: [
-          IconButton(
-            onPressed: _reload,
-            icon: const Icon(Icons.refresh),
+          RefreshIconButton(
+            onRefresh: _reloadAndWait,
             tooltip: '重新列目录',
           ),
         ],
@@ -87,47 +94,44 @@ class _ComposePageState extends ConsumerState<ComposePage> {
                     _Entry.dir(name: name, path: _joinPath(data.dir, name)),
                   for (final file in data.files) _Entry.file(file),
                 ];
-                return RefreshIndicator(
-                  onRefresh: () async => _reload(),
-                  child: ListView.separated(
-                    padding: const EdgeInsets.only(bottom: 32),
-                    itemCount: entries.length + (data.skipped > 0 ? 1 : 0),
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      if (index == entries.length) {
-                        return Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                          child: Text(
-                            '本目录另有 ${data.skipped} 个条目不是 compose 文件，未显示',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
+                return ListView.separated(
+                  padding: const EdgeInsets.only(bottom: 32),
+                  itemCount: entries.length + (data.skipped > 0 ? 1 : 0),
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    if (index == entries.length) {
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        child: Text(
+                          '本目录另有 ${data.skipped} 个条目不是 compose 文件，未显示',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
-                        );
-                      }
-                      final entry = entries[index];
-                      if (entry.isDir) {
-                        return ListTile(
-                          leading: const Icon(Icons.folder_outlined),
-                          title: Text(entry.name),
-                          subtitle: const Text('目录 · 点开继续下钻'),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _enter(entry.path),
-                        );
-                      }
-                      final file = entry.file!;
-                      return ListTile(
-                        leading: const Icon(Icons.description_outlined),
-                        title: Text(file.name),
-                        subtitle: Text(
-                          '${formatComposeSize(file.size)} · '
-                          '${formatComposeTime(file.modTime)}',
                         ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _openFile(file),
                       );
-                    },
-                  ),
+                    }
+                    final entry = entries[index];
+                    if (entry.isDir) {
+                      return ListTile(
+                        leading: const Icon(Icons.folder_outlined),
+                        title: Text(entry.name),
+                        subtitle: const Text('目录 · 点开继续下钻'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => _enter(entry.path),
+                      );
+                    }
+                    final file = entry.file!;
+                    return ListTile(
+                      leading: const Icon(Icons.description_outlined),
+                      title: Text(file.name),
+                      subtitle: Text(
+                        '${formatComposeSize(file.size)} · '
+                        '${formatComposeTime(file.modTime)}',
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _openFile(file),
+                    );
+                  },
                 );
               },
             ),
@@ -184,8 +188,7 @@ class _BrowserHeader extends StatelessWidget {
             child: Row(
               children: [
                 for (var i = 0; i < crumbs.length; i++) ...[
-                  if (i > 0)
-                    const Icon(Icons.chevron_right, size: 16),
+                  if (i > 0) const Icon(Icons.chevron_right, size: 16),
                   TextButton(
                     style: TextButton.styleFrom(
                       // 最后一段是当前目录，不可点（点了也是原地刷新）。

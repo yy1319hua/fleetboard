@@ -76,7 +76,7 @@ class AuditNotifier extends StateNotifier<AuditState> {
     await _fetch(state.limit);
   }
 
-  /// 下拉刷新：保留旧数据直到新数据到手，避免「刷新时列表闪空」。
+  /// 刷新：保留旧数据直到新数据到手，避免「刷新时列表闪空」。
   Future<void> refresh() async {
     try {
       final items = await _repo.list(state.limit);

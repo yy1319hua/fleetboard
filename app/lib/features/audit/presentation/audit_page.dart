@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/api_exception.dart';
 import '../../../core/widgets/async_state_view.dart';
+import '../../../core/widgets/refresh_icon_button.dart';
 import '../../../core/widgets/status_dot.dart';
 import '../application/audit_notifier.dart';
 import '../data/audit_repository.dart';
@@ -39,7 +40,9 @@ class _AuditPageState extends ConsumerState<AuditPage> {
 
     final filtered = state.items.where((entry) {
       if (_method != null && entry.method != _method) return false;
-      if (_result != null && entry.result.toLowerCase() != _result) return false;
+      if (_result != null && entry.result.toLowerCase() != _result) {
+        return false;
+      }
       return true;
     }).toList(growable: false);
 
@@ -62,10 +65,9 @@ class _AuditPageState extends ConsumerState<AuditPage> {
       appBar: AppBar(
         title: const Text('操作审计'),
         actions: [
-          IconButton(
+          RefreshIconButton(
             tooltip: '刷新',
-            onPressed: notifier.refresh,
-            icon: const Icon(Icons.refresh),
+            onRefresh: notifier.refresh,
           ),
         ],
       ),
@@ -94,22 +96,19 @@ class _AuditPageState extends ConsumerState<AuditPage> {
                       '把筛选改回「全部」看看，或加载更多条数后再筛。'
                   : '还没有审计记录。App 与 Web 的每个已鉴权请求都会由中间件写一条；'
                       '刚部署完的话，先做一次操作（打开容器、改配置）再回来看。',
-              builder: (entries) => RefreshIndicator(
-                onRefresh: notifier.refresh,
-                child: ListView.separated(
-                  padding: const EdgeInsets.only(bottom: 24),
-                  itemCount: entries.length + 1,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    if (index == entries.length) {
-                      return _ListFooter(state: state, notifier: notifier);
-                    }
-                    return _AuditTile(
-                      entry: entries[index],
-                      onTap: () => _showDetail(entries[index]),
-                    );
-                  },
-                ),
+              builder: (entries) => ListView.separated(
+                padding: const EdgeInsets.only(bottom: 24),
+                itemCount: entries.length + 1,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  if (index == entries.length) {
+                    return _ListFooter(state: state, notifier: notifier);
+                  }
+                  return _AuditTile(
+                    entry: entries[index],
+                    onTap: () => _showDetail(entries[index]),
+                  );
+                },
               ),
             ),
           ),
@@ -374,9 +373,8 @@ class _ListFooter extends StatelessWidget {
         child: OutlinedButton.icon(
           onPressed: notifier.loadMore,
           icon: const Icon(Icons.expand_more, size: 18),
-          label: Text('加载更多（${
-              state.limit + 100 > AuditRepository.maxLimit ? AuditRepository.maxLimit : state.limit + 100
-          } 条窗口）'),
+          label: Text(
+              '加载更多（${state.limit + 100 > AuditRepository.maxLimit ? AuditRepository.maxLimit : state.limit + 100} 条窗口）'),
         ),
       );
     }
@@ -410,9 +408,12 @@ class _AuditDetailSheet extends StatelessWidget {
       ('result', entry.result.isEmpty ? '—' : entry.result),
       ('user_id', '${entry.userId}'),
       ('server_id', entry.serverId == null ? 'null（未记录）' : '${entry.serverId}'),
-      ('created_at（原始）', entry.createdAt == null
-          ? '—'
-          : entry.createdAt!.toUtc().toIso8601String()),
+      (
+        'created_at（原始）',
+        entry.createdAt == null
+            ? '—'
+            : entry.createdAt!.toUtc().toIso8601String()
+      ),
       ('created_at（本地）', formatAuditTimeFull(entry.createdAt)),
       ('method（从 action 拆出）', entry.method),
       ('路由模板（从 action 拆出）', entry.route),
@@ -485,7 +486,8 @@ class _AuditDetailSheet extends StatelessWidget {
                         'result': entry.result,
                         'user_id': entry.userId,
                         'server_id': entry.serverId,
-                        'created_at': entry.createdAt?.toUtc().toIso8601String(),
+                        'created_at':
+                            entry.createdAt?.toUtc().toIso8601String(),
                       },
                     );
                     // 先取 messenger 再 pop：pop 之后本层的 context 已失效。
