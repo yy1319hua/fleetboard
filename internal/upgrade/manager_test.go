@@ -376,7 +376,10 @@ func TestEmbedScriptMatchesSource(t *testing.T) {
 	path := filepath.Join("..", "..", "deploy", "upgrade.sh")
 	src, err := os.ReadFile(path)
 	if err != nil {
-		t.Skipf("跳过：读不到源脚本 %s（%v）", path, err)
+		// 不能用 Skip：Skip 意味着「这段检查没跑」，而只带 internal/ 的构建环境
+		// （或打包后的源码树）恰好会走到这里，兜底就静默失效了。
+		// 读不到源脚本本身就是打包/工作区错误，必须显式失败。
+		t.Fatalf("读不到源脚本 %s（%v）——请在仓库根目录运行测试，或确认 deploy/ 已随源码一同检出", path, err)
 	}
 	if string(src) != string(scriptBytes) {
 		t.Fatalf("内嵌脚本与 %s 不一致（源 %d 字节 / 内嵌 %d 字节）——请运行 make sync-upgrade",

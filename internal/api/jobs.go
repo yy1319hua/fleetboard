@@ -128,11 +128,21 @@ func (s *JobStore) Create(kind string, serverID, uid int64) *Job {
 }
 
 // CreateWithOp 同 Create，但若提供了 opID 且存在活跃（pending/running）的同 opID job，
-// 直接返回既有 job（X-Client-Op-Id 幂等，避免重复 apt upgrade）。
+// 直接返回既有 job（X-Client-Op-Id 幂等）。
 func (s *JobStore) CreateWithOp(opID, kind string, serverID, uid int64) *Job {
+	j, _ := s.CreateWithOpReuse(opID, kind, serverID, uid)
+	return j
+}
+
+// CreateWithOpReuse 同 CreateWithOp，但额外返回「是否复用了既有任务」。
+//
+// 调用方必须据此决定要不要再执行副作用：幂等键要挡的不只是「返回同一个 jobID」，
+// 而是「同一个操作被真正执行两次」——弱网重试拿着同一 opID 再触发一次
+// apt 全量升级，是本项目最贵的一种重复执行。
+func (s *JobStore) CreateWithOpReuse(opID, kind string, serverID, uid int64) (*Job, bool) {
 	if opID != "" {
 		if j := s.GetByOp(opID); j != nil {
-			return j
+			return j, true
 		}
 	}
 
@@ -156,7 +166,7 @@ func (s *JobStore) CreateWithOp(opID, kind string, serverID, uid int64) *Job {
 		s.opIndex[opID] = j.JobID
 	}
 	s.mu.Unlock()
-	return j
+	return j, false
 }
 
 // Get 按 jobID 取 job（无则 nil）。
@@ -219,6 +229,13 @@ func (s *JobStore) sweep() {
 				j.mu.Unlock()
 				if stale {
 					delete(s.jobs, id)
+					// opIndex 也要跟着清：只删 jobs 会让每个 opId 的索引永久残留，
+					// 进程活得越久内存越涨。
+					for op, jobID := range s.opIndex {
+						if jobID == id {
+							delete(s.opIndex, op)
+						}
+					}
 				}
 			}
 			s.mu.Unlock()
@@ -233,6 +250,12 @@ func jobGetHandler() gin.HandlerFunc {
 		j := jobStore.Get(c.Param("id"))
 		if j == nil {
 			Fail(c, ErrNotFound("任务不存在"))
+			return
+		}
+		// 与 DELETE 一致：任务输出里含远端命令回显（路径、包名、偶尔的敏感参数），
+		// 不能让任一登录账号读到别人的任务。
+		if j.UID != CurrentUserID(c) {
+			Fail(c, ErrForbidden("无权查看该任务"))
 			return
 		}
 		OK(c, j.Snapshot())

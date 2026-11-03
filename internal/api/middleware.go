@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -57,6 +58,13 @@ func AuditMiddleware(d *sql.DB) gin.HandlerFunc {
 
 		uid := CurrentUserID(c)
 		if uid == 0 {
+			return
+		}
+		// 只审计写操作。GET/HEAD 是各端轮询（bootstrap、指标、日志列表），
+		// 每次都插一行会让 operation_log 一天涨几千行且永不清理，
+		// 真正要查的写操作反而被淹没。
+		switch c.Request.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
 			return
 		}
 		action := c.Request.Method + " " + c.FullPath()

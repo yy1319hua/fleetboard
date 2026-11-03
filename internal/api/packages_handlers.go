@@ -52,7 +52,7 @@ func packageUpdateHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.H
 
 		uid := CurrentUserID(c)
 		opID := c.GetHeader("X-Client-Op-Id")
-		job := jobStore.CreateWithOp(opID, "packages.update", id, uid)
+		job, reused := jobStore.CreateWithOpReuse(opID, "packages.update", id, uid)
 
 		// 双通道：立即 202 + Location，同时本请求保持 SSE 随进度流式推进。
 		c.Header("Content-Type", "text/event-stream")
@@ -104,32 +104,43 @@ func packageUpdateHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.H
 		if flusher != nil {
 			flusher.Flush()
 		}
-		send(gin.H{"event": "started", "message": "开始更新软件包", "jobId": job.JobID})
+		if reused {
+			// 幂等命中：同 opId 的任务已在跑。绝不能再起一个 apt upgrade，
+			// 只把已有输出补发一遍，然后跟到终态。
+			send(gin.H{"event": "started", "message": "复用进行中的更新任务", "jobId": job.JobID, "reused": true})
+			for _, line := range job.Snapshot().Lines {
+				send(gin.H{"event": "line", "line": line})
+			}
+		} else {
+			send(gin.H{"event": "started", "message": "开始更新软件包", "jobId": job.JobID})
+		}
 
 		// 后台跑升级：job ctx 独立于请求 ctx（context.Background 派生）。
-		go func() {
-			runErr := pkg.Upgrade(job.Context(), cli, func(line string) {
-				job.AppendLine(line)
-				send(gin.H{"event": "line", "line": line})
-			})
+		if !reused {
+			go func() {
+				runErr := pkg.Upgrade(job.Context(), cli, func(line string) {
+					job.AppendLine(line)
+					send(gin.H{"event": "line", "line": line})
+				})
 
-			switch {
-			case runErr == nil:
-				job.finish(JobDone, "")
-				send(gin.H{"event": "done", "ok": true})
-			case job.Context().Err() != nil:
-				// 显式取消（DELETE /api/jobs/:id）→ SIGINT 中断远端 apt
-				job.finish(JobCancelled, "已取消")
-				send(gin.H{"event": "done", "ok": false, "canceled": true})
-			default:
-				job.finish(JobFailed, errPackageUpdate)
-				log.Printf("apt 更新（server #%d）失败: %v", id, runErr)
-				send(gin.H{"event": "done", "ok": false, "error": errPackageUpdate})
-			}
+				switch {
+				case runErr == nil:
+					job.finish(JobDone, "")
+					send(gin.H{"event": "done", "ok": true})
+				case job.Context().Err() != nil:
+					// 显式取消（DELETE /api/jobs/:id）→ SIGINT 中断远端 apt
+					job.finish(JobCancelled, "已取消")
+					send(gin.H{"event": "done", "ok": false, "canceled": true})
+				default:
+					job.finish(JobFailed, errPackageUpdate)
+					log.Printf("apt 更新（server #%d）失败: %v", id, runErr)
+					send(gin.H{"event": "done", "ok": false, "error": errPackageUpdate})
+				}
 
-			sid := id
-			_ = db.InsertAudit(d, uid, &sid, "packages.update", "apt-get update && upgrade -y", string(job.Snapshot().Status))
-		}()
+				sid := id
+				_ = db.InsertAudit(d, uid, &sid, "packages.update", "apt-get update && upgrade -y", string(job.Snapshot().Status))
+			}()
+		}
 
 		// SSE 主循环：等待 job 终态；客户端断开则仅 detach（不取消 job ctx）。
 		ticker := time.NewTicker(300 * time.Millisecond)

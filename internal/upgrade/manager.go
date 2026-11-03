@@ -219,6 +219,15 @@ func (m *Manager) Start(targetVersion, opID string) error {
 	}
 	defer unlock()
 
+	// 拿到锁之后必须复查：上面的状态检查在锁外完成，两个并发请求可能都通过了
+	// 那道判断，然后各自提交一个 systemd-run unit，形成双升级。
+	// 锁是「唯一执行者」的凭据，只有持锁时读到的状态才可信。
+	if snap := m.Snapshot(); !isTerminal(snap.State) {
+		if snap.StartedAt.IsZero() || now().Sub(snap.StartedAt) < busyWindow {
+			return ErrBusy
+		}
+	}
+
 	script, err := m.expandScript()
 	if err != nil {
 		return fmt.Errorf("展开升级脚本失败: %w", err)

@@ -19,6 +19,7 @@ import (
 const (
 	wsPingInterval = 30 * time.Second
 	wsReadTimeout  = 90 * time.Second
+	wsWriteTimeout = 10 * time.Second
 )
 
 var logsUpgrader = websocket.Upgrader{
@@ -97,6 +98,11 @@ func containerLogsHandler(d *sql.DB, masterKey, secret string, pool *sshpool.Poo
 		write := func(p []byte) error {
 			writeMu.Lock()
 			defer writeMu.Unlock()
+			// 客户端 TCP 假死时 WriteMessage 会永久阻塞，SSH 会话与 goroutine
+			// 都不释放。写前设超时，失败即关连接。
+			if err := conn.SetWriteDeadline(time.Now().Add(wsWriteTimeout)); err != nil {
+				return err
+			}
 			return conn.WriteMessage(websocket.TextMessage, p)
 		}
 

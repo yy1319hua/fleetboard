@@ -7,7 +7,7 @@
  *   - {event:"started", message}
  *   - {event:"line", line}
  *   - {event:"done", ok, canceled?, error?}
- * - 取消：客户端 abort → 后端向远端 apt 发 SIGINT。
+ * - 取消：abort 前端流 + DELETE /api/jobs/:id（后端向远端 apt 发 SIGINT）。
  *
  * 用 fetch + ReadableStream 而非 EventSource：POST + Authorization 头，
  * token 不进 URL（与 WS 票据方案同理）。
@@ -24,6 +24,7 @@ interface SseFrame {
   event?: string;
   message?: string;
   line?: string;
+  jobId?: string;
   ok?: boolean;
   canceled?: boolean;
   error?: string;
@@ -36,6 +37,8 @@ export function streamPackageUpdate(
 ): { abort: () => void; done: Promise<void> } {
   const ctrl = new AbortController();
   let aborted = false;
+  // 后端在 started 帧里回 jobId；取消时必须用它调 DELETE，否则只是断开前端流。
+  let jobId: string | undefined;
   let finished = false;
   // done 只回调一次：abort 与服务端 done 帧可能竞态
   const finish = (r: { ok: boolean; canceled?: boolean; error?: string }) => {
@@ -88,6 +91,7 @@ export function streamPackageUpdate(
         }
         switch (frame.event) {
           case "started":
+            if (frame.jobId) jobId = frame.jobId;
             hooks.onStarted?.(frame.message ?? "开始更新软件包");
             break;
           case "line":
@@ -126,6 +130,20 @@ export function streamPackageUpdate(
     abort: () => {
       aborted = true;
       ctrl.abort();
+      // 只 abort fetch 是不够的：后端把断连当作 detach，远端 apt 仍在改系统，
+      // 界面却已经提示「已取消」。真正取消要调 DELETE /api/jobs/:id，
+      // 与 App 的行为保持一致。
+      if (jobId) {
+        const id = jobId;
+        void (async () => {
+          try {
+            const { apiDelete } = await import("./api");
+            await apiDelete(`/api/jobs/${id}`);
+          } catch {
+            /* 任务可能刚好结束；取消请求失败不改变本地「已取消」状态 */
+          }
+        })();
+      }
     },
     done,
   };

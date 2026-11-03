@@ -101,6 +101,11 @@ func ValidateContainerID(id string) error {
 	if id == "" {
 		return errors.New("容器 ID 不能为空")
 	}
+	// 以 - 开头的名字会被 docker 当成命令行 flag 解析（如 --privileged），
+	// 即使字符集合法也不能放行。
+	if strings.HasPrefix(id, "-") {
+		return errors.New("容器 ID 不能以 - 开头")
+	}
 	for _, r := range id {
 		ok := (r >= 'a' && r <= 'z') ||
 			(r >= 'A' && r <= 'Z') ||
@@ -188,17 +193,6 @@ func ParseImageLine(line string) (*Image, error) {
 		Size:         p.Size,
 		CreatedSince: p.CreatedSince,
 	}, nil
-}
-
-// run 在 SSH 上执行命令并返回合并输出。
-func run(cli *ssh.Client, cmd string) (string, error) {
-	sess, err := cli.NewSession()
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = sess.Close() }()
-	out, _ := sess.CombinedOutput(sshpool.PrepareScript(sess, cmd))
-	return string(out), nil
 }
 
 // runErr 在 SSH 上执行命令，返回输出与错误。
