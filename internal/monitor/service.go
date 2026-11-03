@@ -2,6 +2,7 @@
 package monitor
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -47,19 +48,45 @@ func ParseMetricsLine(line string) (*Snapshot, error) {
 	}, nil
 }
 
-// Collect 采样一台主机的指标。
+// runScript 在一条新会话上执行脚本，并保证 ctx 取消时能真正中断远端命令。
 //
-// 脚本经 sshpool.PrepareScript 交给 /bin/sh 执行，而**不是**交给登录 shell：
-// metricsScript 依赖 `set -- $a $b` 的隐式分词，在 zsh（armbian 的 root 默认）
-// 下不分词，会直接报 `bad math expression`，采集 100% 失败。详见 sshpool.ShPath。
-func Collect(cli *ssh.Client) (*Snapshot, error) {
+// 只靠 context 是不够的：ssh.Session.Output 不接受 ctx，TCP 半开时它会一直
+// 阻塞到内核重传超时（可达数分钟）甚至永不返回——采集 goroutine 卡死，该机
+// 从此停采、停告警，且不会自愈。这里用 Close 会话触发远端 SIGHUP，让 Output
+// 尽快返回；channel 带缓冲，goroutine 不会因此泄漏。
+func runScript(ctx context.Context, cli *ssh.Client, script string) ([]byte, error) {
 	sess, err := cli.NewSession()
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = sess.Close() }()
 
-	out, err := sess.Output(sshpool.PrepareScript(sess, metricsScript))
+	type result struct {
+		out []byte
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, err := sess.Output(sshpool.PrepareScript(sess, script))
+		done <- result{out: out, err: err}
+	}()
+
+	select {
+	case r := <-done:
+		return r.out, r.err
+	case <-ctx.Done():
+		_ = sess.Close()
+		return nil, fmt.Errorf("脚本执行超时或被取消: %w", ctx.Err())
+	}
+}
+
+// Collect 采样一台主机的指标。
+//
+// 脚本经 sshpool.PrepareScript 交给 /bin/sh 执行，而**不是**交给登录 shell：
+// metricsScript 依赖 `set -- $a $b` 的隐式分词，在 zsh（armbian 的 root 默认）
+// 下不分词，会直接报 `bad math expression`，采集 100% 失败。详见 sshpool.ShPath。
+func Collect(ctx context.Context, cli *ssh.Client) (*Snapshot, error) {
+	out, err := runScript(ctx, cli, metricsScript)
 	if err != nil {
 		return nil, err
 	}

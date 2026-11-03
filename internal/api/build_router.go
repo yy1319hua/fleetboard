@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,6 +16,7 @@ import (
 	"github.com/yy1319hua/fleetboard/internal/monitor"
 	"github.com/yy1319hua/fleetboard/internal/settings"
 	"github.com/yy1319hua/fleetboard/internal/sshpool"
+	"golang.org/x/sync/errgroup"
 )
 
 // BuildVersion 由 main 在启动时从 -ldflags 注入，供 /api/bootstrap 与 /api/health 返回。
@@ -138,17 +140,30 @@ func runBackground(d *sql.DB, store *settings.Store, pool *sshpool.Pool, masterK
 
 	// 指标采集 + 告警评估
 	go func() {
+		// 冷却按设置热读一次；后台循环生命周期内不重读，改动间隔需重启生效。
+		engine := alert.NewEngine(time.Duration(store.Int("alert.cooldown_minutes", 10)) * time.Minute)
 		failCount := make(map[int64]int)
+		// 采集改并发后，failCount 与 factsAt 会被多个 goroutine 同时读写。
+		var stateMu sync.Mutex
 		// 失败只记首次与达到阈值那一次，避免每 30s 刷屏；成功清零后又从 1 开始记。
 		noteFail := func(s model.Server, stage string, err error) {
+			stateMu.Lock()
 			failCount[s.ID]++
 			n := failCount[s.ID]
+			stateMu.Unlock()
 			threshold := store.Int("monitor.offline_threshold", 2)
 			if n == 1 || n == threshold {
 				log.Printf("指标采集 #%d(%s) %s失败第 %d 次: %v", s.ID, s.Name, stage, n, err)
 			}
 			if n >= threshold {
 				_ = db.UpdateServerStatus(d, s.ID, "offline")
+				// 刚跨过阈值时报一次离线告警；此后由引擎冷却负责抑制，
+				// 不会每轮失败都重复通知。
+				if n == threshold {
+					if _, err := engine.EvaluateOffline(d, s.ID, store.GetOr("pushplus.token", pushPlusToken)); err != nil {
+						log.Printf("离线告警评估 #%d 失败: %v", s.ID, err)
+					}
+				}
 			}
 		}
 		// 配置采集的节流状态：成功后 1 小时再采，失败 5 分钟后重试。
@@ -165,84 +180,107 @@ func runBackground(d *sql.DB, store *settings.Store, pool *sshpool.Pool, masterK
 		}
 		factsAt := make(map[int64]factsState)
 
+		// 单机总预算：建连 + 采样 + 配置采集 + 告警评估。
+		const collectTimeout = 20 * time.Second
+		// 并发上限。串行时一台不通就吃掉整个周期——3 台不通即拖垮 30s 节奏，
+		// 其余机器的采样与告警跟着整体延迟。
+		const collectConcurrency = 4
+
+		// collectOne 采集并评估单台；任何失败只影响这一台。
+		collectOne := func(s model.Server) {
+			cred, err := db.GetDecryptedCredential(d, masterKey, s.ID)
+			if err != nil {
+				log.Printf("指标采集 #%d(%s) 读取凭据失败: %v", s.ID, s.Name, err)
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), collectTimeout)
+			defer cancel()
+			cli, err := pool.Get(ctx, s.ID, sshpool.Config{
+				Host:       s.Host,
+				Port:       s.Port,
+				User:       s.SSHUser,
+				AuthMethod: cred.AuthMethod,
+				Password:   cred.Password,
+				PrivateKey: cred.PrivateKey,
+				KeyPass:    cred.KeyPass,
+			})
+			if err != nil {
+				noteFail(s, "连接", err)
+				return
+			}
+
+			snap, err := monitor.Collect(ctx, cli)
+			if err != nil {
+				noteFail(s, "执行采样脚本", err)
+				return
+			}
+
+			stateMu.Lock()
+			failCount[s.ID] = 0
+			stateMu.Unlock()
+			if err := db.InsertMetric(d, s.ID, snap.CPUPct, snap.MemPct, snap.DiskPct, snap.Load1); err != nil {
+				log.Printf("指标采集：写入 #%d 失败: %v", s.ID, err)
+			}
+			_ = db.UpdateServerStatus(d, s.ID, "online")
+			// 恢复在线：复位离线通知状态，下次真离线能立刻再报。
+			engine.ClearOffline(s.ID)
+
+			// 静态配置：复用同一连接，按节流状态决定是否采。
+			// 失败只记日志，不影响 online 判定——配置采集失败通常是个别命令
+			// 缺失（如没有 systemd-detect-virt），不代表主机不可达。
+			stateMu.Lock()
+			st, seen := factsAt[s.ID]
+			stateMu.Unlock()
+			interval := factsOKInterval
+			if seen && !st.ok {
+				interval = factsRetryInterval
+			}
+			if !seen || time.Since(st.at) >= interval {
+				facts, ferr := monitor.CollectFacts(ctx, cli)
+				ok := ferr == nil
+				if ok {
+					facts.ServerID = s.ID
+					if uerr := db.UpsertFacts(d, facts); uerr != nil {
+						log.Printf("配置采集 #%d(%s) 写入失败: %v", s.ID, s.Name, uerr)
+						ok = false
+					}
+				} else {
+					log.Printf("配置采集 #%d(%s) 失败: %v", s.ID, s.Name, ferr)
+				}
+				stateMu.Lock()
+				factsAt[s.ID] = factsState{at: time.Now(), ok: ok}
+				stateMu.Unlock()
+			}
+
+			hits, err := engine.Evaluate(d, s.ID, &model.ServerMetric{
+				CPUPct:  snap.CPUPct,
+				MemPct:  snap.MemPct,
+				DiskPct: snap.DiskPct,
+				Load1:   snap.Load1,
+			}, store.GetOr("pushplus.token", pushPlusToken))
+			if err != nil {
+				log.Printf("告警评估 #%d 失败: %v", s.ID, err)
+			} else if hits > 0 {
+				log.Printf("告警评估 #%d：命中 %d 条规则", s.ID, hits)
+			}
+		}
+
 		collect := func() {
 			servers, err := db.ListServers(d)
 			if err != nil {
 				log.Printf("指标采集：列出服务器失败: %v", err)
 				return
 			}
+			var g errgroup.Group
+			g.SetLimit(collectConcurrency)
 			for _, s := range servers {
-				cred, err := db.GetDecryptedCredential(d, masterKey, s.ID)
-				if err != nil {
-					log.Printf("指标采集 #%d(%s) 读取凭据失败: %v", s.ID, s.Name, err)
-					continue
-				}
-				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-				cli, err := pool.Get(ctx, s.ID, sshpool.Config{
-					Host:       s.Host,
-					Port:       s.Port,
-					User:       s.SSHUser,
-					AuthMethod: cred.AuthMethod,
-					Password:   cred.Password,
-					PrivateKey: cred.PrivateKey,
-					KeyPass:    cred.KeyPass,
+				s := s
+				g.Go(func() error {
+					collectOne(s)
+					return nil
 				})
-				if err != nil {
-					cancel()
-					noteFail(s, "连接", err)
-					continue
-				}
-
-				snap, err := monitor.Collect(cli)
-				cancel()
-				if err != nil {
-					noteFail(s, "执行采样脚本", err)
-					continue
-				}
-
-				failCount[s.ID] = 0
-				if err := db.InsertMetric(d, s.ID, snap.CPUPct, snap.MemPct, snap.DiskPct, snap.Load1); err != nil {
-					log.Printf("指标采集：写入 #%d 失败: %v", s.ID, err)
-				}
-				_ = db.UpdateServerStatus(d, s.ID, "online")
-
-				// 静态配置：复用同一连接，按节流状态决定是否采。
-				// 失败只记日志，不影响 online 判定——配置采集失败通常是个别命令
-				// 缺失（如没有 systemd-detect-virt），不代表主机不可达。
-				st, seen := factsAt[s.ID]
-				interval := factsOKInterval
-				if seen && !st.ok {
-					interval = factsRetryInterval
-				}
-				if !seen || time.Since(st.at) >= interval {
-					facts, ferr := monitor.CollectFacts(cli)
-					switch {
-					case ferr != nil:
-						log.Printf("配置采集 #%d(%s) 失败: %v", s.ID, s.Name, ferr)
-						factsAt[s.ID] = factsState{at: time.Now(), ok: false}
-					default:
-						facts.ServerID = s.ID
-						if uerr := db.UpsertFacts(d, facts); uerr != nil {
-							log.Printf("配置采集 #%d(%s) 写入失败: %v", s.ID, s.Name, uerr)
-							factsAt[s.ID] = factsState{at: time.Now(), ok: false}
-						} else {
-							factsAt[s.ID] = factsState{at: time.Now(), ok: true}
-						}
-					}
-				}
-
-				hits, err := alert.Evaluate(d, s.ID, &model.ServerMetric{
-					CPUPct:  snap.CPUPct,
-					MemPct:  snap.MemPct,
-					DiskPct: snap.DiskPct,
-					Load1:   snap.Load1,
-				}, store.GetOr("pushplus.token", pushPlusToken))
-				if err != nil {
-					log.Printf("告警评估 #%d 失败: %v", s.ID, err)
-				} else if hits > 0 {
-					log.Printf("告警评估 #%d：命中 %d 条规则", s.ID, hits)
-				}
 			}
+			_ = g.Wait()
 		}
 
 		collect()

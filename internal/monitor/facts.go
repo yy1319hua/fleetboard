@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -8,7 +9,6 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/yy1319hua/fleetboard/internal/model"
-	"github.com/yy1319hua/fleetboard/internal/sshpool"
 )
 
 // factsScript 采集主机静态配置，输出 KEY=VALUE 行（DISK 行带 6 个竖线分隔字段）。
@@ -58,14 +58,8 @@ df -P -x tmpfs -x devtmpfs -x squashfs -x efivarfs 2>/dev/null \
     done`
 
 // CollectFacts 采集一台主机的静态配置。
-func CollectFacts(cli *ssh.Client) (*model.ServerFacts, error) {
-	sess, err := cli.NewSession()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = sess.Close() }()
-
-	out, err := sess.Output(sshpool.PrepareScript(sess, factsScript))
+func CollectFacts(ctx context.Context, cli *ssh.Client) (*model.ServerFacts, error) {
+	out, err := runScript(ctx, cli, factsScript)
 	if err != nil {
 		return nil, err
 	}
