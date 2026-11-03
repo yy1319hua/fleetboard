@@ -163,6 +163,65 @@ void main() {
     expect(find.text('文件页'), findsOneWidget);
   });
 
+  testWidgets('两张图各自的游标互不影响', (tester) async {
+    // v0.4.12 起四张图各拖各的：CPU 停在某刻不该把内存也拽过去。
+    // 断言方式：只拖第一张，第一张出现该时刻标签，第二张不出现。
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListView(
+            children: [
+              MetricChart(
+                title: 'CPU',
+                unit: '%',
+                points: _points(24),
+                valueOf: (p) => p.cpuPct,
+                fixedMax: 100,
+              ),
+              MetricChart(
+                title: '内存',
+                unit: '%',
+                points: _points(24),
+                valueOf: (p) => p.memPct,
+                fixedMax: 100,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final first = find.byType(LineChart).at(0);
+    final rect = tester.getRect(first);
+    // 24 个点、左轴占 34：目标索引 8（04:40，不在 x 轴 5 点间隔的刻度上，
+    // 避免和轴标签文本撞车）。
+    const targetIndex = 8;
+    final plotWidth = rect.width - 34;
+    final x = rect.left + 34 + plotWidth * targetIndex / 23;
+
+    final gesture = await tester.startGesture(Offset(x, rect.center.dy));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byType(MetricChart).at(0),
+        matching: find.text('04:40'),
+      ),
+      findsOneWidget,
+      reason: '第一张图应定位到拖动的那一点',
+    );
+    expect(
+      find.descendant(
+        of: find.byType(MetricChart).at(1),
+        matching: find.text('04:40'),
+      ),
+      findsNothing,
+      reason: '第二张图不应跟着第一张一起动',
+    );
+  });
+
   testWidgets('拖动到最左 / 最右时索引被夹在有效范围内', (tester) async {
     final seen = <int>[];
 
