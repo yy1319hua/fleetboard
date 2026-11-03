@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/errors/api_exception.dart';
 import '../../../core/widgets/async_state_view.dart';
+import '../../../core/widgets/tab_refresh_scope.dart';
 import '../application/file_browser_notifier.dart';
 import '../application/upload_queue_notifier.dart';
 import '../data/files_repository.dart';
@@ -36,7 +37,8 @@ class ServerFilesTab extends ConsumerStatefulWidget {
   ConsumerState<ServerFilesTab> createState() => _ServerFilesTabState();
 }
 
-class _ServerFilesTabState extends ConsumerState<ServerFilesTab> {
+class _ServerFilesTabState extends ConsumerState<ServerFilesTab>
+    with TabRefreshBinding<ServerFilesTab> {
   /// 上次看到的「队列完成计数」。
   ///
   /// 用它而不是监听某个任务：用户可能在上传期间离开了这个页面，Widget 重建后
@@ -44,6 +46,11 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab> {
   int? _lastDoneCount;
 
   int get _serverId => widget.serverId;
+
+  /// 本段的刷新：重拉当前目录（保留路径，不跳回根）。
+  @override
+  Future<void> refreshTab() =>
+      ref.read(fileBrowserProvider(_serverId).notifier).refresh();
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +127,8 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab> {
       return _ErrorPane(
         path: state.path,
         error: state.error!,
-        onRetry: () => ref.read(fileBrowserProvider(_serverId).notifier).refresh(),
+        onRetry: () =>
+            ref.read(fileBrowserProvider(_serverId).notifier).refresh(),
         onUp: state.path == '/'
             ? null
             : () => ref.read(fileBrowserProvider(_serverId).notifier).up(),
@@ -142,9 +150,8 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab> {
       listing: listing,
       loadingMore: state.loadingMore,
       onTapEntry: _onEntryTap,
-      onMore: () => ref.read(fileBrowserProvider(_serverId).notifier).loadMore(),
-      onRefresh: () =>
-          ref.read(fileBrowserProvider(_serverId).notifier).refresh(),
+      onMore: () =>
+          ref.read(fileBrowserProvider(_serverId).notifier).loadMore(),
     );
   }
 
@@ -204,7 +211,9 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab> {
     int? size;
     Object? failure;
     try {
-      size = await ref.read(filesRepositoryProvider).statSize(_serverId, entry.path);
+      size = await ref
+          .read(filesRepositoryProvider)
+          .statSize(_serverId, entry.path);
     } on Object catch (e) {
       failure = e;
     }
@@ -225,7 +234,8 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab> {
                 style: TextStyle(color: Theme.of(ctx).colorScheme.error),
               )
             else
-              Text('大小：${formatBytes(size ?? entry.size)}（${size ?? entry.size} 字节）'),
+              Text(
+                  '大小：${formatBytes(size ?? entry.size)}（${size ?? entry.size} 字节）'),
             Text('权限：${entry.mode}'),
             Text('属主：uid ${entry.uid} / gid ${entry.gid}'),
             Text('修改时间：${_fmt(entry.modTime)}'),
@@ -247,10 +257,13 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab> {
     if (!mounted || name == null || name.isEmpty) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(fileBrowserProvider(_serverId).notifier).rename(entry, name);
+      await ref
+          .read(fileBrowserProvider(_serverId).notifier)
+          .rename(entry, name);
     } on Object catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('重命名失败：${describeFilesError(e, path: entry.path)}')),
+        SnackBar(
+            content: Text('重命名失败：${describeFilesError(e, path: entry.path)}')),
       );
     }
   }
@@ -269,7 +282,8 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab> {
       messenger.showSnackBar(SnackBar(content: Text('已复制为 $name')));
     } on Object catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('复制失败：${describeFilesError(e, path: entry.path)}')),
+        SnackBar(
+            content: Text('复制失败：${describeFilesError(e, path: entry.path)}')),
       );
     }
   }
@@ -279,9 +293,7 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('删除 ${entry.name}？'),
-        content: Text(entry.dir
-            ? '这是目录，删除会连同其中所有内容一起递归删除，且不可撤销。'
-            : '删除后不可恢复。'),
+        content: Text(entry.dir ? '这是目录，删除会连同其中所有内容一起递归删除，且不可撤销。' : '删除后不可恢复。'),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -301,7 +313,8 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab> {
       messenger.showSnackBar(SnackBar(content: Text('已删除 ${entry.name}')));
     } on Object catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('删除失败：${describeFilesError(e, path: entry.path)}')),
+        SnackBar(
+            content: Text('删除失败：${describeFilesError(e, path: entry.path)}')),
       );
     }
   }
@@ -470,7 +483,8 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<String?> _askName(String initial, String title) {
@@ -726,57 +740,54 @@ class _FileList extends StatelessWidget {
     required this.loadingMore,
     required this.onTapEntry,
     required this.onMore,
-    required this.onRefresh,
   });
 
   final FileListing listing;
   final bool loadingMore;
   final Future<void> Function(FileEntry entry) onTapEntry;
   final VoidCallback onMore;
-  final Future<void> Function() onRefresh;
 
   @override
   Widget build(BuildContext context) {
     final showMore = listing.hasMore;
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      child: ListView.separated(
-        // 给底部的上传队列卡片留出空间，否则最后一条永远被压住。
-        padding: const EdgeInsets.only(bottom: 104),
-        itemCount: listing.entries.length + (showMore ? 1 : 0),
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (context, i) {
-          if (i >= listing.entries.length) {
-            return _LoadMoreTile(
-              loading: loadingMore,
-              loaded: listing.entries.length,
-              total: listing.total,
-              onMore: onMore,
-            );
-          }
-          final entry = listing.entries[i];
-          return ListTile(
-            dense: true,
-            leading: Icon(
-              entry.dir ? Icons.folder_outlined : _iconFor(entry.name),
-              color: entry.dir
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.outline,
-            ),
-            title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(
-              '${entry.mode}  ${_fmt(entry.modTime)}',
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-            ),
-            trailing: Text(
-              entry.sizeLabel,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-            ),
-            onTap: () => onTapEntry(entry),
-            onLongPress: () => onTapEntry(entry),
+    // 刷新入口在 AppBar（本段已注册 refreshTab）与路径栏的刷新图标，
+    // 不再叠一层下拉：三处入口做同一件事只会让人怀疑哪个没生效。
+    return ListView.separated(
+      // 给底部的上传队列卡片留出空间，否则最后一条永远被压住。
+      padding: const EdgeInsets.only(bottom: 104),
+      itemCount: listing.entries.length + (showMore ? 1 : 0),
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemBuilder: (context, i) {
+        if (i >= listing.entries.length) {
+          return _LoadMoreTile(
+            loading: loadingMore,
+            loaded: listing.entries.length,
+            total: listing.total,
+            onMore: onMore,
           );
-        },
-      ),
+        }
+        final entry = listing.entries[i];
+        return ListTile(
+          dense: true,
+          leading: Icon(
+            entry.dir ? Icons.folder_outlined : _iconFor(entry.name),
+            color: entry.dir
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.outline,
+          ),
+          title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            '${entry.mode}  ${_fmt(entry.modTime)}',
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+          ),
+          trailing: Text(
+            entry.sizeLabel,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+          ),
+          onTap: () => onTapEntry(entry),
+          onLongPress: () => onTapEntry(entry),
+        );
+      },
     );
   }
 

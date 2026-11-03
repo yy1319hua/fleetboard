@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/async_state_view.dart';
+import '../../../core/widgets/tab_refresh_scope.dart';
 import '../application/metrics_notifier.dart';
 import '../domain/metric_series.dart';
 
@@ -18,8 +19,20 @@ class ServerMonitorTab extends ConsumerStatefulWidget {
   ConsumerState<ServerMonitorTab> createState() => _ServerMonitorTabState();
 }
 
-class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
+class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab>
+    with TabRefreshBinding<ServerMonitorTab> {
   MetricRange _range = MetricRange.day;
+
+  /// 本段的刷新：只刷当前时间窗。
+  ///
+  /// 时间窗是分段内部状态（顶部 SegmentedButton 改的就是它），父级不知道；
+  /// 所以句柄在这里注册，执行时再取 `_range` 的当前值——不能在注册时把 key
+  /// 算死，否则用户换了时间窗，按钮还在刷旧窗口。
+  @override
+  Future<void> refreshTab() => ref
+      .read(
+          metricsProvider((serverId: widget.serverId, range: _range)).notifier)
+      .refresh();
 
   @override
   Widget build(BuildContext context) {
@@ -57,56 +70,54 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab> {
             onRetry: () => ref.read(metricsProvider(key).notifier).load(),
             builder: (series) {
               final points = downsample(series.points);
-              return RefreshIndicator(
-                onRefresh: () =>
-                    ref.read(metricsProvider(key).notifier).refresh(),
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 88),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                      child: Text(
-                        '每张图可单独左右拖动，查看该时刻的数值；四张图互不影响。',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.outline,
-                            ),
-                      ),
+              // 刷新入口统一在 AppBar（本段已注册 refreshTab），这里不再套
+              // RefreshIndicator：两个入口刷同一份数据，只会让人怀疑哪个没生效。
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 88),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                    child: Text(
+                      '每张图可单独左右拖动，查看该时刻的数值；四张图互不影响。',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
                     ),
-                    MetricChart(
-                      // key 带上时间窗：换窗时四张图各自重建，游标自动清空
-                      // （旧索引对新数据没有意义），也不需要父级再管状态。
-                      key: ValueKey('cpu-${_range.name}'),
-                      title: 'CPU',
-                      unit: '%',
-                      points: points,
-                      valueOf: (p) => p.cpuPct,
-                      fixedMax: 100,
-                    ),
-                    MetricChart(
-                      key: ValueKey('mem-${_range.name}'),
-                      title: '内存',
-                      unit: '%',
-                      points: points,
-                      valueOf: (p) => p.memPct,
-                      fixedMax: 100,
-                    ),
-                    MetricChart(
-                      key: ValueKey('disk-${_range.name}'),
-                      title: '磁盘',
-                      unit: '%',
-                      points: points,
-                      valueOf: (p) => p.diskPct,
-                      fixedMax: 100,
-                    ),
-                    MetricChart(
-                      key: ValueKey('load-${_range.name}'),
-                      title: '负载（1 分钟）',
-                      unit: '',
-                      points: points,
-                      valueOf: (p) => p.load1,
-                    ),
-                  ],
-                ),
+                  ),
+                  MetricChart(
+                    // key 带上时间窗：换窗时四张图各自重建，游标自动清空
+                    // （旧索引对新数据没有意义），也不需要父级再管状态。
+                    key: ValueKey('cpu-${_range.name}'),
+                    title: 'CPU',
+                    unit: '%',
+                    points: points,
+                    valueOf: (p) => p.cpuPct,
+                    fixedMax: 100,
+                  ),
+                  MetricChart(
+                    key: ValueKey('mem-${_range.name}'),
+                    title: '内存',
+                    unit: '%',
+                    points: points,
+                    valueOf: (p) => p.memPct,
+                    fixedMax: 100,
+                  ),
+                  MetricChart(
+                    key: ValueKey('disk-${_range.name}'),
+                    title: '磁盘',
+                    unit: '%',
+                    points: points,
+                    valueOf: (p) => p.diskPct,
+                    fixedMax: 100,
+                  ),
+                  MetricChart(
+                    key: ValueKey('load-${_range.name}'),
+                    title: '负载（1 分钟）',
+                    unit: '',
+                    points: points,
+                    valueOf: (p) => p.load1,
+                  ),
+                ],
               );
             },
           ),

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/errors/api_exception.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/status_dot.dart';
+import '../../../../core/widgets/tab_refresh_scope.dart';
 import '../../../overview/application/overview_notifier.dart';
 import '../../../overview/domain/bootstrap.dart';
 import '../../../servers/data/servers_repository.dart';
@@ -23,8 +24,21 @@ class ServerOverviewTab extends ConsumerStatefulWidget {
   ConsumerState<ServerOverviewTab> createState() => _ServerOverviewTabState();
 }
 
-class _ServerOverviewTabState extends ConsumerState<ServerOverviewTab> {
+class _ServerOverviewTabState extends ConsumerState<ServerOverviewTab>
+    with TabRefreshBinding<ServerOverviewTab> {
   bool _testing = false;
+
+  /// 本段的刷新：总览（身份 + 实时指标）重拉一次，系统配置重读一次。
+  ///
+  /// 系统配置由后台按小时采集，重读不会产生新的 SSH 采集，只是把「上次采集到
+  /// 的配置」重新取回来——但用户按了刷新却看到那一行纹丝不动会以为按钮坏了，
+  /// 所以这里显式失效一次，让时间戳和数据都走一遍网络。
+  @override
+  Future<void> refreshTab() async {
+    await ref.read(overviewProvider.notifier).refresh();
+    if (!mounted) return;
+    ref.invalidate(serverFactsProvider(widget.serverId));
+  }
 
   Future<void> _testConnection(Server server) async {
     setState(() => _testing = true);
@@ -58,36 +72,36 @@ class _ServerOverviewTabState extends ConsumerState<ServerOverviewTab> {
       builder: (data) {
         final server = data.servers.firstWhere((s) => s.id == widget.serverId);
         final metric = data.metrics['${widget.serverId}'];
-        return RefreshIndicator(
-          onRefresh: () => ref.read(overviewProvider.notifier).refresh(),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
-            children: [
-              _IdentityCard(server: server),
-              const SizedBox(height: 12),
-              _MetricsCard(metric: metric),
-              const SizedBox(height: 12),
-              _FactsCard(state: ref.watch(serverFactsProvider(widget.serverId))),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _testing ? null : () => _testConnection(server),
-                icon: _testing
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.cable_outlined, size: 18),
-                label: Text(_testing ? '正在测试连接…' : '测试 SSH 连接'),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '连接测试会真实拨号 SSH，用于确认凭据是否仍然有效；'
-                '结果同时写回连接状态。',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
+        // 刷新入口统一收到 AppBar 按钮（本段通过 TabRefreshScope 注册了
+        // refreshTab），这里不再套 RefreshIndicator：两个入口做同一件事，
+        // 反而让人以为「下拉」和「按钮」刷的不是一份数据。
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+          children: [
+            _IdentityCard(server: server),
+            const SizedBox(height: 12),
+            _MetricsCard(metric: metric),
+            const SizedBox(height: 12),
+            _FactsCard(state: ref.watch(serverFactsProvider(widget.serverId))),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _testing ? null : () => _testConnection(server),
+              icon: _testing
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.cable_outlined, size: 18),
+              label: Text(_testing ? '正在测试连接…' : '测试 SSH 连接'),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '连接测试会真实拨号 SSH，用于确认凭据是否仍然有效；'
+              '结果同时写回连接状态。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         );
       },
     );
@@ -266,8 +280,8 @@ class _MetricsCard extends StatelessWidget {
               const Spacer(),
               Text(
                 '${pct.toStringAsFixed(1)}%',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+                style: theme.textTheme.bodySmall?.copyWith(
+                    fontFeatures: const [FontFeature.tabularFigures()]),
               ),
             ],
           ),
@@ -345,8 +359,7 @@ class _FactsCard extends StatelessWidget {
               )
             else ...[
               _kv(theme, 'CPU', facts.cpuModel.isEmpty ? '—' : facts.cpuModel),
-              if (facts.cpuCores > 0)
-                _kv(theme, '线程数', '${facts.cpuCores}'),
+              if (facts.cpuCores > 0) _kv(theme, '线程数', '${facts.cpuCores}'),
               _kv(
                 theme,
                 '内存',
@@ -412,7 +425,9 @@ class _FactsCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  d.mount.isEmpty ? (d.device.isEmpty ? '—' : d.device) : d.mount,
+                  d.mount.isEmpty
+                      ? (d.device.isEmpty ? '—' : d.device)
+                      : d.mount,
                   style: theme.textTheme.bodySmall,
                   overflow: TextOverflow.ellipsis,
                 ),

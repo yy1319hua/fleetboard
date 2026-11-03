@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/router/server_tabs.dart';
 import '../../../core/widgets/status_dot.dart';
 import '../../../core/widgets/tab_active_scope.dart';
+import '../../../core/widgets/tab_refresh_scope.dart';
 import '../../overview/application/overview_notifier.dart';
 
 /// 服务器详情页：五段 Tab（概览 / 容器 / 监控 / 文件 / 运维）。
@@ -41,6 +42,29 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
   /// TabController.index 在 animateTo 开始时就已变成目标值，所以监听器里
   /// 必须自己比一次，否则每帧动画都会 setState。
   late int _tabIndex = _controller.index;
+
+  /// 每个分段一个刷新句柄，由分段自己注册（见 TabRefreshScope）。
+  ///
+  /// 为什么不让父级直接调各 provider：监控段的时间窗、文件段的当前目录都是
+  /// 分段内部状态，父级根本不知道要传什么参数。句柄是唯一不需要父级偷看子级
+  /// 状态的接法。
+  late final List<TabRefreshSlot> _slots = List.generate(
+    serverTabs.length,
+    (_) => TabRefreshSlot(),
+  );
+
+  /// AppBar 刷新按钮：刷「当前这一段」。
+  ///
+  /// 没注册句柄的分段（运维段没有可刷新的列表）退回刷新概览——按钮按下去
+  /// 总要有反馈，不能出现「点了什么都不发生」的情况。
+  Future<void> _refreshCurrentTab() async {
+    final slot = _slots[_tabIndex];
+    if (slot.hasHandler) {
+      await slot.run();
+      return;
+    }
+    await ref.read(overviewProvider.notifier).refresh();
+  }
 
   void _handleTabChanged() {
     if (_tabIndex == _controller.index) return;
@@ -104,9 +128,9 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
               },
             ),
           IconButton(
-            tooltip: '刷新',
+            tooltip: '刷新当前分段',
             icon: const Icon(Icons.refresh),
-            onPressed: () => ref.read(overviewProvider.notifier).refresh(),
+            onPressed: _refreshCurrentTab,
           ),
         ],
         bottom: TabBar(
@@ -146,7 +170,10 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
             // 也没有「切回来从头加载」。
             _KeepAlive(
               active: _tabIndex == i,
-              child: serverTabs[i].builder(sid),
+              child: TabRefreshScope(
+                slot: _slots[i],
+                child: serverTabs[i].builder(sid),
+              ),
             ),
         ],
       ),
