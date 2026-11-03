@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/router/server_tabs.dart';
 import '../../../core/widgets/status_dot.dart';
+import '../../../core/widgets/tab_active_scope.dart';
 import '../../overview/application/overview_notifier.dart';
 
 /// 服务器详情页：五段 Tab（概览 / 容器 / 监控 / 文件 / 运维）。
@@ -140,9 +141,9 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
             : null,
         children: [
           for (var i = 0; i < serverTabs.length; i++)
-            // KeepAlive 让来回切 Tab 不重拉数据；active 让非当前段不构建子树，
-            // 从而停掉容器列表/统计那两条 30s SSH 轮询——它们原本在别的段
-            // 仍然照跑，等于白开两条远端连接。
+            // 子树始终保留（切回来不重拉、滚动位置不丢），可见性单独下传：
+            // 各段据此停掉自己的轮询。两者拆开之后，既没有「切走还在打 SSH」，
+            // 也没有「切回来从头加载」。
             _KeepAlive(
               active: _tabIndex == i,
               child: serverTabs[i].builder(sid),
@@ -165,7 +166,7 @@ class _KeepAlive extends StatefulWidget {
   const _KeepAlive({required this.child, this.active = true});
   final Widget child;
 
-  /// false 时只保留占位：子树不构建、不 watch provider，轮询随之停止。
+  /// 该段当前是否可见；仅用于向下传递，不影响子树是否构建。
   final bool active;
 
   @override
@@ -180,7 +181,9 @@ class _KeepAliveState extends State<_KeepAlive>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    if (!widget.active) return const SizedBox.shrink();
-    return widget.child;
+    // 注意：即使 !active 也不返回占位。销毁子树会丢掉滚动位置与已加载的数据，
+    // 用户切回来看到从头加载的空白列表——比多跑两条定时器更糟。
+    // 停轮询交给 TabActiveScope 的接收方自己处理。
+    return TabActiveScope(active: widget.active, child: widget.child);
   }
 }

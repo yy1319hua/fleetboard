@@ -13,13 +13,36 @@ import '../domain/container.dart';
 class ContainersNotifier extends StateNotifier<AsyncValue<List<Container>>> {
   ContainersNotifier(this._repo, this._serverId)
       : super(const AsyncValue.loading()) {
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) => refresh());
+    _startTimer();
     load();
   }
 
   final ContainersRepository _repo;
   final int _serverId;
-  late final Timer _timer;
+
+  /// 可为 null：所在分段不可见时停掉轮询（见 [setActive]）。
+  Timer? _timer;
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) => refresh());
+  }
+
+  /// 分段可见性变化：不可见时停轮询，重新可见时先补拉一次再恢复节奏。
+  ///
+  /// 之所以不在切走时直接销毁 provider：详情页用 KeepAlive 保留了子树，
+  /// 销毁会连带丢掉列表数据与滚动位置，用户切回来看到从头加载的空白。
+  /// 保留数据、只停远端请求，才是这两件事的正确切分。
+  void setActive(bool active) {
+    if (active) {
+      if (_timer != null) return; // 已经活跃，避免每次 didChangeDependencies 都补拉
+      _startTimer();
+      refresh();
+      return;
+    }
+    _timer?.cancel();
+    _timer = null;
+  }
 
   Future<void> load() async {
     state = const AsyncValue.loading();
@@ -44,7 +67,7 @@ class ContainersNotifier extends StateNotifier<AsyncValue<List<Container>>> {
 
   @override
   void dispose() {
-    _timer.cancel();
+    _timer?.cancel();
     super.dispose();
   }
 }
@@ -54,8 +77,8 @@ class ContainersNotifier extends StateNotifier<AsyncValue<List<Container>>> {
 /// 详情页内用 KeepAlive 保证 Tab 来回切换不重拉；一旦离开详情页，
 /// 所有监听者消失，autoDispose 触发 [ContainersNotifier.dispose] 停掉轮询。
 /// 这两者不矛盾：KeepAlive 管「页面内」，autoDispose 管「页面外」。
-final containersProvider = StateNotifierProvider.autoDispose.family<
-    ContainersNotifier, AsyncValue<List<Container>>, int>(
+final containersProvider = StateNotifierProvider.autoDispose
+    .family<ContainersNotifier, AsyncValue<List<Container>>, int>(
   (ref, serverId) =>
       ContainersNotifier(ref.watch(containersRepositoryProvider), serverId),
 );

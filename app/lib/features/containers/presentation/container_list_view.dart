@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide Container;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/async_state_view.dart';
+import '../../../core/widgets/tab_active_scope.dart';
 import '../../../core/widgets/status_dot.dart';
 import '../application/container_stats_notifier.dart';
 import '../application/containers_notifier.dart';
@@ -23,13 +24,35 @@ StatusKind statusKindFromState(String state) => switch (state) {
 /// 从 [ContainersPage] 抽出，是因为详情页把它作为五个 Tab 之一内嵌——
 /// 如果 Tab 里再套一个 Scaffold，会出现双层 AppBar，且 Tab 切换时
 /// 底部导航栏高度会被算两遍。独立全屏路由仍复用本视图，保证两处行为一致。
-class ContainerListView extends ConsumerWidget {
+class ContainerListView extends ConsumerStatefulWidget {
   const ContainerListView({super.key, required this.serverId});
 
   final int serverId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ContainerListView> createState() => _ContainerListViewState();
+}
+
+class _ContainerListViewState extends ConsumerState<ContainerListView> {
+  bool? _active;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 详情页会通过 TabActiveScope 告知本段是否可见；独立路由页没有这个
+    // scope，of() 返回 true，行为与以前一致。
+    final active = TabActiveScope.of(context);
+    if (_active == active) return;
+    _active = active;
+    ref.read(containersProvider(widget.serverId).notifier).setActive(active);
+    ref
+        .read(containerStatsProvider(widget.serverId).notifier)
+        .setActive(active);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final serverId = widget.serverId;
     final state = ref.watch(containersProvider(serverId));
     // 资源占用与列表分开监听：stats 是「锦上添花」，它的加载态不该影响列表渲染，
     // 所以这里不 watch 它的 AsyncValue（它是 Map，失败时保持上次值或空）。
@@ -111,7 +134,8 @@ Future<void> openContainerActions(
   return showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
-    builder: (_) => ContainerActionsSheet(serverId: serverId, container: container),
+    builder: (_) =>
+        ContainerActionsSheet(serverId: serverId, container: container),
   );
 }
 
@@ -123,7 +147,8 @@ Future<void> openContainerLogs(
 ) {
   return Navigator.of(context).push<void>(
     MaterialPageRoute<void>(
-      builder: (_) => ContainerLogsPage(serverId: serverId, container: container),
+      builder: (_) =>
+          ContainerLogsPage(serverId: serverId, container: container),
     ),
   );
 }

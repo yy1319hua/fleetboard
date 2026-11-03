@@ -15,13 +15,33 @@ import '../domain/container_stat.dart';
 /// 否则每访问过一台机器就永久留一个后台定时器（还会额外开 SSH 执行 docker stats）。
 class ContainerStatsNotifier extends StateNotifier<Map<String, ContainerStat>> {
   ContainerStatsNotifier(this._repo, this._serverId) : super(const {}) {
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) => refresh());
+    _startTimer();
     refresh();
   }
 
   final ContainersRepository _repo;
   final int _serverId;
-  late final Timer _timer;
+
+  /// 可为 null：所在分段不可见时停掉轮询（见 [setActive]）。
+  Timer? _timer;
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) => refresh());
+  }
+
+  /// 分段可见性变化：不可见时停轮询，重新可见时补拉一次再恢复节奏。
+  /// 占用数据比列表更「过期即无意义」，所以回来时补拉是必要的。
+  void setActive(bool active) {
+    if (active) {
+      if (_timer != null) return;
+      _startTimer();
+      refresh();
+      return;
+    }
+    _timer?.cancel();
+    _timer = null;
+  }
 
   /// 返回 key 为 12 位短容器 ID 的映射，便于列表按短 ID 直接命中。
   Future<void> refresh() async {
@@ -39,7 +59,7 @@ class ContainerStatsNotifier extends StateNotifier<Map<String, ContainerStat>> {
 
   @override
   void dispose() {
-    _timer.cancel();
+    _timer?.cancel();
     super.dispose();
   }
 }
