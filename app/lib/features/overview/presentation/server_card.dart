@@ -40,7 +40,11 @@ class ServerCard extends StatelessWidget {
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  StatusDot(statusFromConnection(server.connectionStatus)),
+                  StatusDot(
+                    statusFromConnection(server.connectionStatus),
+                    semanticLabel:
+                        connectionStatusLabel(server.connectionStatus),
+                  ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
@@ -52,7 +56,7 @@ class ServerCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    server.connectionStatus,
+                    connectionStatusLabel(server.connectionStatus),
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: AppColors.muted),
                   ),
@@ -113,7 +117,10 @@ class _MetricCell extends StatelessWidget {
         ),
         Text(
           value,
-          style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.text),
+          // 等宽数字：轮询刷新时百分比不会左右跳动（DESIGN.md §3）。
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: AppColors.text)
+              .merge(AppTextStyles.numeric),
         ),
       ],
     );

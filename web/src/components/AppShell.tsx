@@ -55,12 +55,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="flex min-h-full flex-col bg-bg lg:flex-row">
+    <div className="flex min-h-full flex-col bg-bg md:flex-row">
       {/* 桌面侧栏 */}
-      <aside className="hidden w-[216px] shrink-0 border-r border-border bg-surface-1 lg:flex lg:flex-col">
-        <div className="flex h-14 items-center gap-2 border-b border-border px-4">
+      <aside className="hidden w-16 shrink-0 border-r border-border bg-surface-1 md:flex md:flex-col lg:w-[200px] xl:w-[216px]">
+        <div className="flex h-14 items-center justify-center gap-2 border-b border-border px-2 lg:justify-start lg:px-4">
           <span className="inline-block h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
-          <span className="text-h3 tracking-tight text-text">Fleetboard</span>
+          <span className="hidden text-h3 tracking-tight text-text lg:inline">Fleetboard</span>
         </div>
 
         <nav className="flex-1 space-y-0.5 p-2" aria-label="主导航">
@@ -71,7 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               end={item.to === "/"}
               className={({ isActive }) =>
                 cn(
-                  "relative flex items-center gap-2.5 rounded-control px-2.5 py-2 text-body transition-colors duration-ui ease-ui",
+                  "relative flex items-center justify-center gap-2.5 rounded-control px-2.5 py-2 text-body transition-colors duration-ui ease-ui md:justify-center lg:justify-start",
                   isActive
                     ? "bg-accent-soft text-text before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:rounded-full before:bg-accent"
                     : "text-text-muted hover:bg-surface-2 hover:text-text",
@@ -79,9 +79,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               }
             >
               {item.icon}
-              {item.label}
+              <span className="hidden lg:inline">{item.label}</span>
               {item.to === "/alerts" && unreadCount > 0 ? (
-                <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-pill bg-danger px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white tabular">
+                <span className="ml-auto hidden min-w-5 items-center justify-center rounded-pill bg-danger px-1.5 py-0.5 text-caption font-semibold leading-none text-white tabular lg:inline-flex">
                   {unreadCount > 99 ? "99+" : unreadCount}
                 </span>
               ) : null}
@@ -90,25 +90,25 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="border-t border-border p-2">
-          <div className="px-2.5 py-1.5 text-caption text-text-faint">
+          <div className="hidden px-2.5 py-1.5 text-caption text-text-faint lg:block">
             {username ? `已登录：${username}` : "未登录"}
           </div>
           <button
             type="button"
             onClick={handleLogout}
-            className="flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-body text-text-muted transition-colors duration-ui ease-ui hover:bg-surface-2 hover:text-text"
+            className="flex w-full items-center justify-center gap-2.5 rounded-control px-2.5 py-2 text-body text-text-muted transition-colors duration-ui ease-ui hover:bg-surface-2 hover:text-text lg:justify-start"
           >
             <IconLogout />
-            退出登录
+            <span className="hidden lg:inline">退出登录</span>
           </button>
-          <div className="px-2.5 pb-2 pt-1 text-[10px] text-text-faint">
+          <div className="hidden px-2.5 pb-2 pt-1 text-caption text-text-faint lg:block">
             {version.data?.version ? `v${version.data.version.replace(/^v/, "")}` : "…"}
           </div>
         </div>
       </aside>
 
       {/* 移动端顶栏 */}
-      <header className="flex h-12 items-center justify-between border-b border-border bg-surface-1 px-3 lg:hidden">
+      <header className="flex h-12 items-center justify-between border-b border-border bg-surface-1 px-3 md:hidden">
         <div className="flex items-center gap-2">
           <span className="inline-block h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
           <span className="text-h3 tracking-tight text-text">Fleetboard</span>
@@ -124,9 +124,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       {/* 内容区：移动端为底部 Tab 预留安全区 */}
-      <main className="min-w-0 flex-1 pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0">
+      <main className="min-w-0 flex-1 pb-[calc(56px+env(safe-area-inset-bottom))] md:pb-0">
         <div className="mx-auto w-full max-w-[1440px] px-3 py-4 sm:px-5 sm:py-6">{children}</div>
-        <div className="pb-3 pt-2 text-center text-[10px] text-text-faint lg:hidden">
+        <div className="pb-3 pt-2 text-center text-caption text-text-faint md:hidden">
           Fleetboard {version.data?.version ? version.data.version.replace(/^v/, "") : "…"}
         </div>
       </main>
@@ -134,7 +134,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* 移动端底部 Tab */}
       <nav
         aria-label="底部导航"
-        className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface-1 pb-[env(safe-area-inset-bottom)] lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface-1 pb-[env(safe-area-inset-bottom)] md:hidden"
       >
         <div className="flex">
           {NAV.filter((i) => i.mobile).map((item) => (

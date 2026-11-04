@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/theme/app_theme.dart';
+import 'core/widgets/responsive.dart';
 import 'features/account/presentation/account_page.dart';
 import 'features/alert_rules/presentation/alert_rules_page.dart';
 import 'features/alerts/presentation/alert_detail_page.dart';
@@ -356,25 +357,62 @@ class AppShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final unread = ref.watch(overviewProvider).value?.unreadAlerts ?? 0;
     final index = _currentIndex;
-    return Scaffold(
-      body: child,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (i) => context.go(_tabs[i].path),
-        destinations: _tabs
-            .map(
-              (t) => NavigationDestination(
-                icon: t.path == '/alerts' && unread > 0
-                    ? Badge.count(
-                        count: unread,
-                        child: Icon(t.icon),
-                      )
-                    : Icon(t.icon),
-                label: t.label,
+
+    Icon navIcon(_TabItem t) => Icon(t.icon);
+    Widget iconWithBadge(_TabItem t) => t.path == '/alerts' && unread > 0
+        ? Badge.count(count: unread, child: navIcon(t))
+        : navIcon(t);
+
+    // 三档断点（DESIGN.md §8）：
+    //   <600  底部 Tab（手机，现状）
+    //   600–1024 窄侧栏，仅选中项显示文字
+    //   ≥1024  侧栏常显文字 + 内容区限宽 1440
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        if (AppBreakpoints.isCompact(width)) {
+          return Scaffold(
+            body: child,
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: index,
+              onDestinationSelected: (i) => context.go(_tabs[i].path),
+              destinations: _tabs
+                  .map(
+                    (t) => NavigationDestination(
+                      icon: iconWithBadge(t),
+                      label: t.label,
+                    ),
+                  )
+                  .toList(),
+            ),
+          );
+        }
+        return Scaffold(
+          body: Row(
+            children: <Widget>[
+              NavigationRail(
+                selectedIndex: index,
+                onDestinationSelected: (i) => context.go(_tabs[i].path),
+                labelType: AppBreakpoints.isExpanded(width)
+                    ? NavigationRailLabelType.all
+                    : NavigationRailLabelType.selected,
+                backgroundColor: AppColors.s1,
+                indicatorColor: AppColors.accentSoft,
+                destinations: _tabs
+                    .map(
+                      (t) => NavigationRailDestination(
+                        icon: iconWithBadge(t),
+                        label: Text(t.label),
+                      ),
+                    )
+                    .toList(),
               ),
-            )
-            .toList(),
-      ),
+              const VerticalDivider(width: 1),
+              Expanded(child: ResponsiveContent(child: child)),
+            ],
+          ),
+        );
+      },
     );
   }
 }

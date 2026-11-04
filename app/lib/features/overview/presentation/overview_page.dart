@@ -5,6 +5,7 @@ import '../../../core/constants.dart';
 import '../../../core/storage/bootstrap_cache.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/refresh_icon_button.dart';
+import '../../../core/widgets/responsive.dart';
 import '../../auth/application/auth_notifier.dart';
 import '../application/overview_notifier.dart';
 import '../domain/bootstrap.dart';
@@ -156,14 +157,28 @@ class _OverviewContent extends ConsumerWidget {
             child: Center(child: Text('暂无被管服务器')),
           )
         else
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final server = data.servers[index];
-                final metric = data.metrics[server.id.toString()];
-                return ServerCard(server: server, metric: metric);
+          SliverToBoxAdapter(
+            // 三档断点：<600 单列 / 600–1024 双栏 / ≥1024 三栏。
+            // 用 Wrap + 固定宽度 SizedBox 而不是 SliverGrid(childAspectRatio)：
+            // ServerCard 高度随「有没有指标」变化，固定宽高比会裁切内容。
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final columns =
+                    AppBreakpoints.overviewColumns(constraints.maxWidth);
+                final cardWidth = constraints.maxWidth / columns;
+                return Wrap(
+                  children: <Widget>[
+                    for (final server in data.servers)
+                      SizedBox(
+                        width: cardWidth,
+                        child: ServerCard(
+                          server: server,
+                          metric: data.metrics[server.id.toString()],
+                        ),
+                      ),
+                  ],
+                );
               },
-              childCount: data.servers.length,
             ),
           ),
       ],

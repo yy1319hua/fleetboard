@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/async_state_view.dart';
 import '../../../core/widgets/tab_refresh_scope.dart';
 import '../application/metrics_notifier.dart';
@@ -244,13 +245,17 @@ class _MetricChartState extends State<MetricChart> {
                   if (showingCursor) ...[
                     Text(
                       _hhmm(active.ts),
-                      style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                      style: AppTextStyles.eyebrow
+                          .copyWith(color: theme.colorScheme.onSurfaceVariant)
+                          .merge(AppTextStyles.numeric),
                     ),
                     const SizedBox(width: 8),
                   ],
                   Text(
                     '${valueOf(active).toStringAsFixed(1)}$unit',
-                    style: theme.textTheme.titleSmall?.copyWith(color: color),
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(color: color)
+                        .merge(AppTextStyles.numeric),
                   ),
                 ],
               ),
@@ -271,21 +276,21 @@ class _MetricChartState extends State<MetricChart> {
                       horizontalInterval: fixedMax == null ? null : 25,
                       getDrawingHorizontalLine: (_) => FlLine(
                         color: theme.colorScheme.outlineVariant,
-                        strokeWidth: 0.5,
+                        strokeWidth: 1,
                       ),
                     ),
                     borderData: FlBorderData(show: false),
                     // 游标：一条琥珀色虚线竖线 + 落点圆点。
-                    // 原来用 outline 灰（和网格线同一亮度），深底上几乎看不见，
-                    // 所以改主色 + 1.5 宽；虚线段也拉长，避免远看糊成一条灰影。
+                    // 用 100% 不透明主色 + 2px + [5,3]：此前 60% alpha + 1.5px
+                    // 叠在卡片上实际只有约 3.4:1，正是「虚线看不清」的根因。
                     extraLinesData: showingCursor
                         ? ExtraLinesData(
                             verticalLines: [
                               VerticalLine(
                                 x: activeIndex.toDouble(),
-                                color: theme.colorScheme.primary.withAlpha(153),
-                                strokeWidth: 1.5,
-                                dashArray: const [4, 4],
+                                color: theme.colorScheme.primary,
+                                strokeWidth: 2,
+                                dashArray: const [5, 3],
                               ),
                             ],
                           )
@@ -304,8 +309,12 @@ class _MetricChartState extends State<MetricChart> {
                           interval: fixedMax == null ? null : 50,
                           getTitlesWidget: (value, meta) => Text(
                             '${value.toInt()}$unit',
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(fontSize: 10),
+                            // 契约最小字号 11px：原来 10px 在深底上偏小，
+                            // 并入 eyebrow 档并统一等宽数字。
+                            style: AppTextStyles.eyebrow
+                                .copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant)
+                                .merge(AppTextStyles.numeric),
                           ),
                         ),
                       ),
@@ -388,7 +397,7 @@ class _MetricChartState extends State<MetricChart> {
   static Color _colorFor(ThemeData theme, double v, double? fixedMax) {
     if (fixedMax == null) return theme.colorScheme.primary;
     if (v >= 90) return theme.colorScheme.error;
-    if (v >= 80) return const Color(0xFFB26A00);
+    if (v >= 80) return AppColors.warn;
     return theme.colorScheme.primary;
   }
 }
