@@ -58,6 +58,16 @@ jobs:
         working-directory: web
         run: npm run build
 
+  design-tokens:
+    name: Design tokens (single source of truth)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 校验三处生成物与 design/tokens.json 一致，并断言全部文本组合 >= 4.5:1。
+      # 这是 AGENTS.md「交付物一致性判据」的代码化：源改了副本没改会直接红。
+      - name: check
+        run: python3 scripts/gen_design_tokens.py --check
+
   contract:
     name: Contract (OpenAPI route sentinel)
     runs-on: ubuntu-latest

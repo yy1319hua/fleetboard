@@ -3,6 +3,7 @@ export default {
   darkMode: "class",
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
+    /* === BEGIN GENERATED TOKENS (design/tokens.json) === */
     extend: {
       colors: {
         bg: "var(--bg)",
@@ -11,6 +12,7 @@ export default {
         "surface-3": "var(--surface-3)",
         border: "var(--border)",
         "border-strong": "var(--border-strong)",
+        terminal: "var(--terminal)",
         text: "var(--text)",
         "text-muted": "var(--text-muted)",
         "text-faint": "var(--text-faint)",
@@ -23,13 +25,14 @@ export default {
         danger: "var(--danger)",
         info: "var(--info)",
         idle: "var(--idle)",
+        scrim: "var(--scrim)",
+        "scrim-strong": "var(--scrim-strong)",
       },
       fontFamily: {
         sans: ["Geist Variable", "-apple-system", "Segoe UI", "Noto Sans SC", "sans-serif"],
         mono: ["JetBrains Mono Variable", "Menlo", "Consolas", "monospace"],
       },
       fontSize: {
-        // 对应 DESIGN.md 第 3 节的字号层级
         display: ["30px", { lineHeight: "1.2", fontWeight: "600" }],
         h1: ["22px", { lineHeight: "1.3", fontWeight: "600" }],
         h2: ["18px", { lineHeight: "1.35", fontWeight: "600" }],
@@ -49,21 +52,19 @@ export default {
         pill: "999px",
       },
       spacing: {
-        // 4px 基准，显式给出大间距语义
         section: "32px",
       },
       boxShadow: {
-        // 唯一允许的投影：模态/命令面板
         modal: "0 8px 24px rgba(0,0,0,.4)",
       },
       transitionTimingFunction: {
-        // 只做 ease-out，禁止回弹
         ui: "cubic-bezier(0.2, 0, 0, 1)",
       },
       transitionDuration: {
         ui: "160ms",
       },
     },
+    /* === END GENERATED TOKENS === */
   },
   plugins: [],
 };

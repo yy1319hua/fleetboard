@@ -1,5 +1,23 @@
 # fleetboard · UI 设计方案（DESIGN.md 草案 v0.1）
 
+> 🔴 **值的唯一真源是 `design/tokens.json`**（2026-11-05 起）。
+> `web/src/index.css` 的 `:root`、`web/tailwind.config.js` 的 `theme.extend`、
+> `app/lib/core/theme/design_tokens.dart` 三处均由 `scripts/gen_design_tokens.py`
+> 生成，CI 用 `--check` 校验不漂移。本文件只描述**设计意图与语义**，
+> 数值以 tokens.json 为准；改色板请改 tokens.json 后跑 `--write`。
+>
+> **2026-11-05 复核修正**（原草案值与实现不符或对比度不达标的部分）：
+> - `--text-faint` 由 `#6b7480` 提亮为 `#808A98`：原值在表面色上仅 3.37–3.99:1，
+>   低于本文件 §7 自定的 4.5:1；新值 4.56–5.40:1，且与 `--text-muted` 仍有层次差。
+> - `--warn` 统一为 `#d29922`（App 曾用 `#E3B341`）、`--idle` 统一为 `#8b949e`
+>   （App 曾用 `#6B7480`）——两端此前不一致，现同源。
+> - 补入 App 缺失的 `--surface-3` / `--border-strong` / `--terminal`。
+> - **字体**：Web 已通过 `@fontsource-variable/geist` / `jetbrains-mono` 打包字体
+>   （family 名为 `Geist Variable` / `JetBrains Mono Variable`）；**App 未打包字体
+>   文件**（省 2–4MB），仅声明优先名 + 显式 `fontFamilyFallback` 回退链。
+>   这是有意的偏差，App 端实际落到系统字体，将来打包字体即可消除。
+> - **浅色主题**（§2 可选项）仍未实现，暂缓。
+>
 > 参考来源：
 > - **impeccable**（`pbakaus/impeccable`，Apache-2.0）：取其「设计契约」方法论与 **61 条反模式护栏**（禁 Inter、禁紫蓝渐变、禁纯黑/纯灰、禁卡片嵌套、禁彩色底灰字、禁弹跳缓动）。
 > - **awesome-design-md**（`VoltAgent/awesome-design-md`，MIT）：取其 **Stitch 9 段 DESIGN.md 格式**；风格上参考 **Sentry**（暗色数据密集仪表盘）与 **Linear**（精确间距/克制边框），但**不照搬其品牌色**。
