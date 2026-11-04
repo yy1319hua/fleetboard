@@ -65,9 +65,9 @@ function tickLabel(iso: string, range: Range): string {
 }
 
 const SERIES = [
-  { key: "cpu_pct", label: "CPU %", color: "#e8a33d" },
-  { key: "mem_pct", label: "内存 %", color: "#58a6ff" },
-  { key: "disk_pct", label: "磁盘 %", color: "#3fb950" },
+  { key: "cpu_pct", label: "CPU %", color: "var(--chart-accent)" },
+  { key: "mem_pct", label: "内存 %", color: "var(--chart-info)" },
+  { key: "disk_pct", label: "磁盘 %", color: "var(--chart-ok)" },
 ] as const;
 
 export function ServerMonitorTab() {
@@ -183,39 +183,39 @@ export function ServerMonitorTab() {
                   }}
                   onMouseLeave={() => setCursorIdx(null)}
                 >
-                  <CartesianGrid stroke="#2a303b" strokeDasharray="2 4" vertical={false} />
+                  <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="2 4" vertical={false} />
                   <XAxis
                     dataKey="ts"
                     tickFormatter={(v: string) => tickLabel(v, range)}
-                    stroke="#6b7480"
-                    tick={{ fontSize: 11, fill: "#9aa4b2" }}
+                    stroke="var(--chart-axis)"
+                    tick={{ fontSize: 11, fill: "var(--chart-tick)" }}
                     minTickGap={40}
                   />
                   <YAxis
                     domain={[0, 100]}
-                    stroke="#6b7480"
-                    tick={{ fontSize: 11, fill: "#9aa4b2" }}
+                    stroke="var(--chart-axis)"
+                    tick={{ fontSize: 11, fill: "var(--chart-tick)" }}
                     width={48}
                     tickFormatter={(v: number) => `${v}%`}
                   />
                   <Tooltip
                     contentStyle={{
-                      background: "#1d222b",
-                      border: "1px solid #3a4250",
+                      background: "var(--chart-tooltip-bg)",
+                      border: "1px solid var(--chart-tooltip-border)",
                       borderRadius: 6,
                       fontSize: 12,
                     }}
-                    labelStyle={{ color: "#9aa4b2" }}
+                    labelStyle={{ color: "var(--chart-tick)" }}
                     labelFormatter={(v: string) => new Date(v).toLocaleString("zh-CN")}
                     formatter={(value: number, name: string) => [`${value.toFixed(1)}%`, name]}
                   />
                   <Legend
                     verticalAlign="top"
                     height={28}
-                    formatter={(v: string) => <span style={{ color: "#9aa4b2", fontSize: 12 }}>{v}</span>}
+                    formatter={(v: string) => <span style={{ color: "var(--chart-tick)", fontSize: 12 }}>{v}</span>}
                   />
                   {cursorPoint ? (
-                    <ReferenceLine x={cursorPoint.ts} stroke="#9aa4b2" strokeDasharray="3 3" />
+                    <ReferenceLine x={cursorPoint.ts} stroke="var(--chart-tick)" strokeDasharray="3 3" />
                   ) : null}
                   {SERIES.map((s) => (
                     <Line

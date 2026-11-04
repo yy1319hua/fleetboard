@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants.dart';
 import '../../../core/widgets/async_state_view.dart';
 import '../../../core/widgets/refresh_icon_button.dart';
 import '../application/compose_file_notifier.dart';
@@ -192,9 +193,8 @@ class _BrowserHeader extends StatelessWidget {
                   TextButton(
                     style: TextButton.styleFrom(
                       // 最后一段是当前目录，不可点（点了也是原地刷新）。
-                      minimumSize: const Size(0, 32),
+                      minimumSize: const Size(0, touchMin),
                       padding: const EdgeInsets.symmetric(horizontal: 6),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     onPressed: i == crumbs.length - 1
                         ? null

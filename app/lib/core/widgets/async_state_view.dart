@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../errors/api_exception.dart';
+import 'refresh_icon_button.dart';
 
 /// 四态合一的异步视图（加载 / 错误 / 空 / 有数据）。
 ///
@@ -129,10 +130,10 @@ class _EmptyState extends StatelessWidget {
             ),
             if (onRetry != null) ...[
               const SizedBox(height: 12),
-              TextButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('刷新'),
+              RefreshIconButton(
+                onRefresh: () async => onRetry?.call(),
+                tooltip: '刷新',
+                iconSize: 18,
               ),
             ],
           ],

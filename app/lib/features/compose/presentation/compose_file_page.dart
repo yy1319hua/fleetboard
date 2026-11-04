@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants.dart';
 import '../../../core/errors/api_exception.dart';
 import '../../../core/widgets/code_editor.dart';
 import '../../../core/widgets/hold_to_confirm.dart';
@@ -645,7 +646,8 @@ class _ModeBar extends StatelessWidget {
               showSelectedIcon: false,
               style: const ButtonStyle(
                 visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                minimumSize:
+                    WidgetStatePropertyAll<Size>(Size(touchMin, touchMin)),
               ),
               onSelectionChanged: (value) => onChanged(value.first),
             ),
@@ -658,7 +660,7 @@ class _ModeBar extends StatelessWidget {
               label: const Text('编辑'),
               style: FilledButton.styleFrom(
                 visualDensity: VisualDensity.compact,
-                minimumSize: const Size(0, 40),
+                minimumSize: const Size(0, touchMin),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
               ),
             ),
@@ -769,7 +771,7 @@ class _ActionBar extends StatelessWidget {
       label: Text(label),
       style: OutlinedButton.styleFrom(
         visualDensity: VisualDensity.compact,
-        minimumSize: const Size(0, 40),
+        minimumSize: const Size(0, touchMin),
         padding: const EdgeInsets.symmetric(horizontal: 12),
       ),
     );

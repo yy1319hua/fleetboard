@@ -174,7 +174,10 @@ class _RuleTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ListTile(
-      leading: StatusDot(alertSeverityKind(rule.severity)),
+      leading: StatusDot(
+        alertSeverityKind(rule.severity),
+        semanticLabel: statusKindLabel(alertSeverityKind(rule.severity)),
+      ),
       title: Text(
         rule.title,
         style: TextStyle(

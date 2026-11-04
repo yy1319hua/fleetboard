@@ -51,7 +51,7 @@ export function Dialog({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div
-        className="absolute inset-0 bg-[#05070a]/70"
+        className="absolute inset-0 bg-scrim-strong"
         onClick={onClose}
         aria-hidden="true"
       />

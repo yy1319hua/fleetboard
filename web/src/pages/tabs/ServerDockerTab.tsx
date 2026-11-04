@@ -463,7 +463,7 @@ export function ServerDockerTab() {
 
       {logsFor ? (
         <div className="fixed inset-0 z-40 flex justify-end">
-          <div className="absolute inset-0 bg-[#05070a]/60" onClick={() => setLogsFor(null)} aria-hidden="true" />
+          <div className="absolute inset-0 bg-scrim" onClick={() => setLogsFor(null)} aria-hidden="true" />
           <div
             role="dialog"
             aria-modal="true"

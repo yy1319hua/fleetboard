@@ -84,7 +84,10 @@ class _ContainerListViewState extends ConsumerState<ContainerListView>
           // 显示出来是误导（用户会以为它在跑但没负载）。
           final st = c.state == 'running' ? statFor(stats, c.id) : null;
           return ListTile(
-            leading: StatusDot(statusKindFromState(c.state)),
+            leading: StatusDot(
+              statusKindFromState(c.state),
+              semanticLabel: containerStateLabel(c.state),
+            ),
             title: Text(c.name.isEmpty ? c.id : c.name),
             isThreeLine: st != null,
             subtitle: Column(
@@ -93,8 +96,9 @@ class _ContainerListViewState extends ConsumerState<ContainerListView>
               children: <Widget>[
                 Text(
                   c.ports.isEmpty
-                      ? '${c.image} · ${c.status}'
-                      : '${c.image} · ${c.status} · ${c.ports}',
+                      ? '${containerStateLabel(c.state)} · ${c.image} · ${c.status}'
+                      : '${containerStateLabel(c.state)} · ${c.image} · '
+                          '${c.status} · ${c.ports}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),

@@ -68,7 +68,7 @@ export function EditorDrawer({
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
-      <div className="absolute inset-0 bg-[#05070a]/60" onClick={requestClose} aria-hidden="true" />
+      <div className="absolute inset-0 bg-scrim" onClick={requestClose} aria-hidden="true" />
 
       <div
         role="dialog"

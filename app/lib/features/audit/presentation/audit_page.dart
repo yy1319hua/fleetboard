@@ -247,7 +247,10 @@ class _AuditTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ListTile(
-      leading: StatusDot(entry.ok ? StatusKind.ok : StatusKind.danger),
+      leading: StatusDot(
+        entry.ok ? StatusKind.ok : StatusKind.danger,
+        semanticLabel: entry.ok ? '成功' : '失败',
+      ),
       title: Row(
         children: [
           _MethodBadge(method: entry.method),
@@ -432,7 +435,10 @@ class _AuditDetailSheet extends StatelessWidget {
         children: [
           Row(
             children: [
-              StatusDot(entry.ok ? StatusKind.ok : StatusKind.danger),
+              StatusDot(
+                entry.ok ? StatusKind.ok : StatusKind.danger,
+                semanticLabel: entry.ok ? '成功' : '失败',
+              ),
               const SizedBox(width: 8),
               Text(
                 '${entry.method} · ${entry.resultLabel}',

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/constants.dart';
 import '../domain/compose_document.dart';
 
 /// 按服务列出的表单编辑区。
@@ -40,7 +41,8 @@ class ComposeFormView extends StatefulWidget {
 }
 
 class _ComposeFormViewState extends State<ComposeFormView> {
-  final Map<String, Map<ComposeFieldKey, TextEditingController>> _controllers = {};
+  final Map<String, Map<ComposeFieldKey, TextEditingController>> _controllers =
+      {};
 
   /// 上一次**成功写进草稿**的文本，用于失败回填与"没变就不提交"判断。
   final Map<String, Map<ComposeFieldKey, String>> _applied = {};
@@ -107,7 +109,8 @@ class _ComposeFormViewState extends State<ComposeFormView> {
     String text,
   ) {
     return switch (key) {
-      ComposeFieldKey.image => ServiceEdit(serviceName: serviceName, image: text),
+      ComposeFieldKey.image =>
+        ServiceEdit(serviceName: serviceName, image: text),
       ComposeFieldKey.restart =>
         ServiceEdit(serviceName: serviceName, restart: text),
       ComposeFieldKey.command =>
@@ -224,7 +227,8 @@ class _ServiceSection extends StatelessWidget {
       initiallyExpanded: initiallyExpanded,
       title: Text(
         service.name,
-        style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600),
+        style: const TextStyle(
+            fontFamily: 'monospace', fontWeight: FontWeight.w600),
       ),
       subtitle: image.isEmpty
           ? null
@@ -297,8 +301,7 @@ class _FieldTile extends StatelessWidget {
                   onPressed: onRequestSourceEdit,
                   style: TextButton.styleFrom(
                     padding: EdgeInsets.zero,
-                    minimumSize: const Size(0, 32),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    minimumSize: const Size(0, touchMin),
                   ),
                   child: const Text('用「原文」编辑这个字段'),
                 ),

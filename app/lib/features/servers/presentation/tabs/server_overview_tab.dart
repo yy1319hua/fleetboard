@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/errors/api_exception.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/status_dot.dart';
@@ -124,7 +125,10 @@ class _IdentityCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                StatusDot(online ? StatusKind.ok : StatusKind.idle),
+                StatusDot(
+                  online ? StatusKind.ok : StatusKind.idle,
+                  semanticLabel: online ? '在线' : '未知',
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -267,7 +271,7 @@ class _MetricsCard extends StatelessWidget {
     final color = pct >= 90
         ? theme.colorScheme.error
         : pct >= 80
-            ? const Color(0xFFB26A00)
+            ? AppColors.warn
             : theme.colorScheme.primary;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -414,7 +418,7 @@ class _FactsCard extends StatelessWidget {
     final color = pct >= 90
         ? theme.colorScheme.error
         : pct >= 80
-            ? const Color(0xFFB26A00)
+            ? AppColors.warn
             : theme.colorScheme.primary;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),

@@ -54,7 +54,10 @@ class AlertsPage extends ConsumerWidget {
             itemBuilder: (context, i) {
               final a = list[i];
               return ListTile(
-                leading: StatusDot(_kindFromSeverity(a.severity)),
+                leading: StatusDot(
+                  _kindFromSeverity(a.severity),
+                  semanticLabel: statusKindLabel(_kindFromSeverity(a.severity)),
+                ),
                 title: Text(
                   a.title,
                   style: TextStyle(

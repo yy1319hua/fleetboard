@@ -102,6 +102,7 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
                 server.connectionStatus == 'online'
                     ? StatusKind.ok
                     : StatusKind.idle,
+                semanticLabel: connectionStatusLabel(server.connectionStatus),
               ),
               const SizedBox(width: 8),
             ],

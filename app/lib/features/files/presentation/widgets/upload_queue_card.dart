@@ -40,7 +40,7 @@ class _UploadQueueCardState extends ConsumerState<UploadQueueCard> {
         padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
         child: Material(
           color: theme.colorScheme.surfaceContainerHigh,
-          elevation: 6,
+          elevation: 0,
           borderRadius: BorderRadius.circular(14),
           clipBehavior: Clip.antiAlias,
           child: Column(
@@ -93,16 +93,17 @@ class _UploadQueueCardState extends ConsumerState<UploadQueueCard> {
         padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
         child: Row(
           children: <Widget>[
-            StatusDot(_kindOf(headline.status)),
+            StatusDot(
+              _kindOf(headline.status),
+              semanticLabel: statusKindLabel(_kindOf(headline.status)),
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Text(
-                    _expanded
-                        ? '上传队列 · ${mine.length} 项'
-                        : headline.name,
+                    _expanded ? '上传队列 · ${mine.length} 项' : headline.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium,
@@ -183,7 +184,10 @@ class _UploadQueueCardState extends ConsumerState<UploadQueueCard> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              StatusDot(_kindOf(task.status)),
+              StatusDot(
+                _kindOf(task.status),
+                semanticLabel: statusKindLabel(_kindOf(task.status)),
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
