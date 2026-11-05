@@ -91,3 +91,20 @@ class AppTextStyles {
     fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
   );
 }
+
+/// 字号常量（字阶 10 档的唯一真源入口，DESIGN.md §3）。
+/// 页面禁止再写裸 fontSize 数字：CI 以 --check 扫描 lib/ 断言无硬编码，
+/// 所有局部微调也必须引用这里的常量，避免同一语义出现多种字号。
+class AppFontSizes {
+  const AppFontSizes._();
+  static const double display = 30;
+  static const double h1 = 22;
+  static const double h2 = 18;
+  static const double h3 = 15;
+  static const double body = 14;
+  static const double bodySm = 13;
+  static const double caption = 12;
+  static const double eyebrow = 11;
+  static const double mono = 13;
+  static const double monoSm = 12;
+}

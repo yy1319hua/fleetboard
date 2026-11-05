@@ -63,7 +63,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # 校验三处生成物与 design/tokens.json 一致，并断言全部文本组合 >= 4.5:1。
+      # 校验三处生成物与 design/tokens.json 一致，并断言：
+      #  - 全部文本组合对比度 >= 4.5:1
+      #  - app/lib 下无裸 fontSize 数字（字号必须引用 AppFontSizes）
+      #  - Web 表格响应式列的 th/td 断点类成对（防止加列时列错位）
       # 这是 AGENTS.md「交付物一致性判据」的代码化：源改了副本没改会直接红。
       - name: check
         run: python3 scripts/gen_design_tokens.py --check

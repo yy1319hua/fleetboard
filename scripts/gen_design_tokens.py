@@ -275,7 +275,16 @@ def render_dart(t: dict) -> str:
         "  );",
         "}",
         "",
+        "/// 字号常量（字阶 10 档的唯一真源入口，DESIGN.md §3）。",
+        "/// 页面禁止再写裸 fontSize 数字：CI 以 --check 扫描 lib/ 断言无硬编码，",
+        "/// 所有局部微调也必须引用这里的常量，避免同一语义出现多种字号。",
+        "class AppFontSizes {",
+        "  const AppFontSizes._();",
     ]
+    for name, s in t["type_scale"].items():
+        field = re.sub(r"-([a-z])", lambda mo: mo.group(1).upper(), name)
+        L.append(f"  static const double {field} = {s['size']};")
+    L += ["}", ""]
     return "\n".join(L)
 
 
@@ -344,6 +353,61 @@ def check(t: dict) -> list[str]:
     elif DART_TOKENS.read_text(encoding="utf-8").strip() != render_dart(t).strip():
         errors.append("design_tokens.dart 与 tokens.json 不一致（需 --write）")
     errors.extend(check_contrast(t))
+    errors.extend(check_font_sizes())
+    errors.extend(check_table_columns())
+    return errors
+
+
+def check_table_columns() -> list[str]:
+    """CI 断言：Web 表格的响应式列 th/td 必须成对，否则列会错位。
+
+    加了 `hidden lg:table-cell` / `hidden xl:table-cell` 的表头，
+    tbody 里必须有同样数量的单元格使用同一断点类。
+    """
+    pages = ROOT / "web" / "src" / "pages"
+    if not pages.is_dir():
+        return []
+    errors: list[str] = []
+    for path in sorted(pages.rglob("*.tsx")):
+        text = path.read_text(encoding="utf-8")
+        for bp in ("lg:table-cell", "xl:table-cell"):
+            n_th = sum(
+                1 for line in text.splitlines()
+                if bp in line and ("<th" in line or "th(" in line)
+            )
+            n_td = sum(
+                1 for line in text.splitlines()
+                if bp in line and "<td" in line
+            )
+            if n_th != n_td:
+                errors.append(
+                    f"{path.relative_to(ROOT)}: {bp} 表头 {n_th} 个 / "
+                    f"单元格 {n_td} 个，不成对会列错位"
+                )
+    return errors
+
+
+def check_font_sizes() -> list[str]:
+    """CI 断言：lib/ 下业务代码不得再写裸 fontSize 数字（生成物除外）。
+
+    字号必须引用 AppFontSizes，值由 tokens.json 的 10 档字阶统一给出，
+    避免同一语义在不同页面出现多种字号、以及低于 11px 下限的写法回潮。
+    """
+    lib = ROOT / "app" / "lib"
+    if not lib.is_dir():
+        return []
+    excluded = {"design_tokens.dart"}
+    bare = re.compile(r"fontSize:\s*\d")
+    errors: list[str] = []
+    for path in sorted(lib.rglob("*.dart")):
+        if path.name in excluded or path.name.endswith((".freezed.dart", ".g.dart")):
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if bare.search(line):
+                errors.append(
+                    f"{path.relative_to(ROOT)}:{lineno} 仍有裸 fontSize 数字，"
+                    f"应引用 AppFontSizes：{line.strip()[:80]}"
+                )
     return errors
 
 
