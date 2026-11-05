@@ -296,10 +296,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    const StatusDot(
-                      StatusKind.info,
-                      size: 14,
-                      semanticLabel: '信息',
+                    const StatusLabel(
+                      kind: StatusKind.info,
+                      label: '信息',
+                      compact: true,
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     // 隐藏改址入口：连点此标题 7 次。

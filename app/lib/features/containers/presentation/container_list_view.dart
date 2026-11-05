@@ -84,9 +84,10 @@ class _ContainerListViewState extends ConsumerState<ContainerListView>
           // 显示出来是误导（用户会以为它在跑但没负载）。
           final st = c.state == 'running' ? statFor(stats, c.id) : null;
           return ListTile(
-            leading: StatusDot(
-              statusKindFromState(c.state),
-              semanticLabel: containerStateLabel(c.state),
+            leading: StatusLabel(
+              kind: statusKindFromState(c.state),
+              label: containerStateLabel(c.state),
+              compact: true,
             ),
             title: Text(c.name.isEmpty ? c.id : c.name),
             isThreeLine: st != null,

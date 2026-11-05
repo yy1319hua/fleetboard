@@ -5,4 +5,4 @@
 // 色板 AppColors / 字体 AppFonts 仍从 app_theme.dart 导出（历史引用路径），
 // 因此这里不重复导出，避免同名符号冲突。
 export 'theme/design_tokens.dart'
-    show AppSpacing, AppRadius, AppMotion, touchMin;
+    show AppSpacing, AppRadius, AppMotion, AppFontSizes, touchMin;

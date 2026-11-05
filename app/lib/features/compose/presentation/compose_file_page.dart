@@ -438,7 +438,8 @@ class _ComposeFilePageState extends ConsumerState<ComposeFilePage> {
             SelectableText(
               "docker compose -f '${widget.path}' "
               "--project-directory '$_projectDir' $args",
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              style: const TextStyle(
+                  fontFamily: 'monospace', fontSize: AppFontSizes.caption),
             ),
           ],
         ),
@@ -504,7 +505,7 @@ class _ComposeFilePageState extends ConsumerState<ComposeFilePage> {
                       output.isEmpty ? '（没有输出）' : output,
                       style: const TextStyle(
                         fontFamily: 'monospace',
-                        fontSize: 12,
+                        fontSize: AppFontSizes.caption,
                       ),
                     ),
                   ),
@@ -578,7 +579,8 @@ class _PathBar extends StatelessWidget {
                   path,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  style: const TextStyle(
+                      fontFamily: 'monospace', fontSize: AppFontSizes.caption),
                 ),
               ),
             ],
@@ -869,7 +871,8 @@ class _LoadErrorBody extends StatelessWidget {
             Text(
               path,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              style: const TextStyle(
+                  fontFamily: 'monospace', fontSize: AppFontSizes.caption),
             ),
             const SizedBox(height: 12),
             FilledButton.tonalIcon(

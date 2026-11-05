@@ -325,7 +325,8 @@ class _FieldTile extends StatelessWidget {
         enableSuggestions: false,
         smartDashesType: SmartDashesType.disabled,
         smartQuotesType: SmartQuotesType.disabled,
-        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+        style: const TextStyle(
+            fontFamily: 'monospace', fontSize: AppFontSizes.bodySm),
         decoration: InputDecoration(
           isDense: true,
           labelText: fieldKey.label,

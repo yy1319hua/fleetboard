@@ -98,11 +98,11 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
         title: Row(
           children: [
             if (server != null) ...[
-              StatusDot(
-                server.connectionStatus == 'online'
+              StatusLabel(
+                kind: server.connectionStatus == 'online'
                     ? StatusKind.ok
                     : StatusKind.idle,
-                semanticLabel: connectionStatusLabel(server.connectionStatus),
+                label: connectionStatusLabel(server.connectionStatus),
               ),
               const SizedBox(width: 8),
             ],

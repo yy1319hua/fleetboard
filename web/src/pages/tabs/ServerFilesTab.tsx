@@ -342,15 +342,15 @@ export function ServerFilesTab() {
           <>
             {/* 桌面表格 */}
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[880px] border-collapse">
+              <table className="w-full min-w-[560px] border-collapse xl:min-w-[880px]">
                 <thead className="bg-surface-2">
                   <tr className="border-b border-border">
                     {th("名称", "name")}
-                    {th("大小", "size", "w-24 text-right")}
-                    <th className="w-32 whitespace-nowrap px-3 py-2 text-left">
+                    {th("大小", "size", "hidden w-24 text-right lg:table-cell")}
+                    <th className="hidden w-32 whitespace-nowrap px-3 py-2 text-left xl:table-cell">
                       <span className="eyebrow">权限</span>
                     </th>
-                    {th("修改时间", "mod_time", "w-[172px] whitespace-nowrap")}
+                    {th("修改时间", "mod_time", "hidden w-[172px] whitespace-nowrap lg:table-cell")}
                     <th className="w-[300px] whitespace-nowrap px-3 py-2 text-right">
                       <span className="eyebrow">操作</span>
                     </th>
@@ -369,11 +369,11 @@ export function ServerFilesTab() {
                           <span className="truncate font-mono text-mono">{e.name}</span>
                         </button>
                       </td>
-                      <td className="tabular whitespace-nowrap px-3 text-right font-mono text-mono-sm text-text-muted">
+                      <td className="tabular hidden whitespace-nowrap px-3 text-right font-mono text-mono-sm text-text-muted lg:table-cell">
                         {e.dir ? "—" : formatBytes(e.size)}
                       </td>
-                      <td className="whitespace-nowrap px-3 font-mono text-mono-sm text-text-faint">{e.mode}</td>
-                      <td className="tabular whitespace-nowrap px-3 font-mono text-mono-sm text-text-muted">
+                      <td className="hidden whitespace-nowrap px-3 font-mono text-mono-sm text-text-faint xl:table-cell">{e.mode}</td>
+                      <td className="tabular hidden whitespace-nowrap px-3 font-mono text-mono-sm text-text-muted lg:table-cell">
                         {formatDateTime(e.mod_time)}
                       </td>
                       <td className="px-3 text-right">

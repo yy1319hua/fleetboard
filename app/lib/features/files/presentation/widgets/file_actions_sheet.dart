@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../domain/file_entry.dart';
 import '../../domain/file_kind.dart';
 import '../../domain/file_sizes.dart';
+import '../../../../core/constants.dart';
 
 /// 文件/目录操作项。
 enum FileAction { download, edit, properties, rename, copy, remove }
@@ -13,8 +14,9 @@ enum FileAction { download, edit, properties, rename, copy, remove }
 /// 长按浮出的气泡宽度有限，副标题（大小、能否编辑）会被截断。
 Future<FileAction?> showFileActions(BuildContext context, FileEntry entry) {
   final theme = Theme.of(context);
-  final editable =
-      !entry.dir && entry.size <= maxEditableBytes && looksLikeTextFile(entry.name);
+  final editable = !entry.dir &&
+      entry.size <= maxEditableBytes &&
+      looksLikeTextFile(entry.name);
   final tooBigToEdit = !entry.dir &&
       entry.size > maxEditableBytes &&
       looksLikeTextFile(entry.name);
@@ -38,7 +40,8 @@ Future<FileAction?> showFileActions(BuildContext context, FileEntry entry) {
                 '${entry.dir ? '目录' : formatBytes(entry.size)} · ${entry.path}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                style: const TextStyle(
+                    fontFamily: 'monospace', fontSize: AppFontSizes.eyebrow),
               ),
             ),
             const Divider(height: 1),

@@ -8,6 +8,7 @@ import '../data/resources_repository.dart';
 import '../domain/docker_resource.dart';
 import 'image_actions.dart';
 import 'volume_actions.dart';
+import '../../../core/constants.dart';
 
 /// 服务器详情 · 资源域（镜像 / 网络 / 卷）。
 ///
@@ -220,7 +221,8 @@ class _ImagesView extends ConsumerWidget {
           Expanded(
             child: SelectableText(
               value,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              style: const TextStyle(
+                  fontFamily: 'monospace', fontSize: AppFontSizes.caption),
             ),
           ),
         ],

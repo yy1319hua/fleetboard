@@ -291,14 +291,14 @@ export function ServerDockerTab() {
             />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] border-collapse">
+              <table className="w-full min-w-[600px] border-collapse xl:min-w-[900px]">
                 <thead className="bg-surface-2">
                   <tr className="border-b border-border">
                     <th className="px-3 py-2 text-left"><span className="eyebrow">名称</span></th>
-                    <th className="px-3 py-2 text-left"><span className="eyebrow">镜像</span></th>
+                    <th className="hidden px-3 py-2 text-left xl:table-cell"><span className="eyebrow">镜像</span></th>
                     <th className="w-32 px-3 py-2 text-left"><span className="eyebrow">状态</span></th>
-                    <th className="w-28 px-3 py-2 text-right"><span className="eyebrow">CPU</span></th>
-                    <th className="w-32 px-3 py-2 text-right"><span className="eyebrow">内存</span></th>
+                    <th className="hidden w-28 px-3 py-2 text-right lg:table-cell"><span className="eyebrow">CPU</span></th>
+                    <th className="hidden w-32 px-3 py-2 text-right lg:table-cell"><span className="eyebrow">内存</span></th>
                     <th className="w-[320px] px-3 py-2 text-right"><span className="eyebrow">操作</span></th>
                   </tr>
                 </thead>
@@ -313,14 +313,14 @@ export function ServerDockerTab() {
                           <div className="truncate font-mono text-mono text-text">{c.name}</div>
                           <div className="truncate font-mono text-caption text-text-faint">{c.id.slice(0, 12)}</div>
                         </td>
-                        <td className="px-3">
+                        <td className="hidden px-3 xl:table-cell">
                           <span className="block max-w-[220px] truncate font-mono text-mono-sm text-text-muted">{c.image}</span>
                         </td>
                         <td className="px-3"><StatusBadge tone={tone.tone} label={tone.label} /></td>
-                        <td className="tabular whitespace-nowrap px-3 text-right font-mono text-mono-sm text-text-muted">
+                        <td className="tabular hidden whitespace-nowrap px-3 text-right font-mono text-mono-sm text-text-muted lg:table-cell">
                           {running ? (st?.cpu_perc ?? "—") : "—"}
                         </td>
-                        <td className="tabular whitespace-nowrap px-3 text-right font-mono text-mono-sm text-text-muted">
+                        <td className="tabular hidden whitespace-nowrap px-3 text-right font-mono text-mono-sm text-text-muted lg:table-cell">
                           {running ? (st?.mem_perc ?? "—") : "—"}
                         </td>
                         <td className="px-3">
@@ -373,13 +373,13 @@ export function ServerDockerTab() {
             <EmptyState title="没有镜像" description="可点右上角「拉取镜像」按引用拉取。" />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] border-collapse">
+              <table className="w-full min-w-[520px] border-collapse xl:min-w-[760px]">
                 <thead className="bg-surface-2">
                   <tr className="border-b border-border">
                     <th className="px-3 py-2 text-left"><span className="eyebrow">仓库</span></th>
                     <th className="w-28 px-3 py-2 text-left"><span className="eyebrow">标签</span></th>
-                    <th className="w-24 px-3 py-2 text-right"><span className="eyebrow">大小</span></th>
-                    <th className="w-32 px-3 py-2 text-left"><span className="eyebrow">创建</span></th>
+                    <th className="hidden w-24 px-3 py-2 text-right lg:table-cell"><span className="eyebrow">大小</span></th>
+                    <th className="hidden w-32 px-3 py-2 text-left xl:table-cell"><span className="eyebrow">创建</span></th>
                     <th className="w-24 px-3 py-2 text-right"><span className="eyebrow">操作</span></th>
                   </tr>
                 </thead>
@@ -391,8 +391,8 @@ export function ServerDockerTab() {
                         <span className="font-mono text-caption text-text-faint">{img.id.replace("sha256:", "").slice(0, 12)}</span>
                       </td>
                       <td className="px-3 font-mono text-mono-sm text-text-muted">{img.tag}</td>
-                      <td className="tabular px-3 text-right font-mono text-mono-sm text-text-muted">{img.size}</td>
-                      <td className="px-3 font-mono text-mono-sm text-text-faint">{img.created_since}</td>
+                      <td className="tabular hidden px-3 text-right font-mono text-mono-sm text-text-muted lg:table-cell">{img.size}</td>
+                      <td className="hidden px-3 font-mono text-mono-sm text-text-faint xl:table-cell">{img.created_since}</td>
                       <td className="px-3 text-right">
                         <Button
                           size="sm"

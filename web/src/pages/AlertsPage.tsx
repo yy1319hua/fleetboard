@@ -244,13 +244,13 @@ export function AlertsPage() {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] border-collapse">
+            <table className="w-full min-w-[560px] border-collapse xl:min-w-[820px]">
               <thead className="bg-surface-2">
                 <tr className="border-b border-border">
                   <th className="px-3 py-2 text-left"><span className="eyebrow">对象</span></th>
-                  <th className="w-36 px-3 py-2 text-left"><span className="eyebrow">条件</span></th>
+                  <th className="hidden w-36 px-3 py-2 text-left lg:table-cell"><span className="eyebrow">条件</span></th>
                   <th className="w-24 px-3 py-2 text-left"><span className="eyebrow">级别</span></th>
-                  <th className="w-40 px-3 py-2 text-left"><span className="eyebrow">通道</span></th>
+                  <th className="hidden w-40 px-3 py-2 text-left xl:table-cell"><span className="eyebrow">通道</span></th>
                   <th className="w-24 px-3 py-2 text-left"><span className="eyebrow">状态</span></th>
                   <th className="w-24 px-3 py-2 text-right"><span className="eyebrow">操作</span></th>
                 </tr>
@@ -262,13 +262,13 @@ export function AlertsPage() {
                       <span className="text-body text-text">{r.server_id ? serverName.get(r.server_id) ?? `#${r.server_id}` : "全部服务器"}</span>
                       <span className="ml-2 text-caption text-text-faint">{METRIC_LABEL[r.metric] ?? r.metric}</span>
                     </td>
-                    <td className="tabular whitespace-nowrap px-3 font-mono text-mono-sm text-text-muted">
+                    <td className="tabular hidden whitespace-nowrap px-3 font-mono text-mono-sm text-text-muted lg:table-cell">
                       {r.metric === "offline" ? "不可达" : `${r.operator} ${r.threshold}`}
                     </td>
                     <td className="px-3">
                       <StatusBadge tone={severityTone(r.severity)} label={SEVERITY_LABEL[r.severity] ?? r.severity} />
                     </td>
-                    <td className="px-3 text-body-sm text-text-muted">
+                    <td className="hidden px-3 text-body-sm text-text-muted xl:table-cell">
                       {parseChannels(r.notify_channels)
                         .map((c) => CHANNEL_LABEL[c] ?? c)
                         .join(" · ") || "—"}

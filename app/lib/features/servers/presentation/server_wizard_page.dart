@@ -276,7 +276,8 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
               title: const Text('凭据已保存'),
               subtitle: Text(
                 '留空则保持不变。改名称、地址、端口或标签都不必重填凭据。',
-                style: theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
+                style:
+                    theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
               ),
             ),
           ),
@@ -356,7 +357,8 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
           autocorrect: false,
           enableSuggestions: false,
           decoration: fieldDecoration('（BEGIN 行）…（END 行）'),
-          style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 12),
+          style: const TextStyle(
+              fontFamily: 'JetBrains Mono', fontSize: AppFontSizes.caption),
           onChanged: _recheck,
         ),
         if (check != null) ...<Widget>[
@@ -412,9 +414,7 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            widget.isEdit
-                ? '新配置已生效，可以查看指标与容器。'
-                : '服务器已加入总览，可以查看指标与容器。',
+            widget.isEdit ? '新配置已生效，可以查看指标与容器。' : '服务器已加入总览，可以查看指标与容器。',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
           ),
@@ -458,14 +458,14 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   '$_failure',
-                  style:
-                      theme.textTheme.bodySmall?.copyWith(color: AppColors.muted),
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: AppColors.muted),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   '服务器没有被加入总览，改好后再点一次「测试并保存」。',
-                  style:
-                      theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: AppColors.faint),
                 ),
               ],
             ),

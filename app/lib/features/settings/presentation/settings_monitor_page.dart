@@ -212,7 +212,7 @@ class _SettingsMonitorPageState extends ConsumerState<SettingsMonitorPage> {
                             fieldDecoration('/opt/stacks\n/home/me/docker'),
                         style: const TextStyle(
                           fontFamily: 'JetBrains Mono',
-                          fontSize: 13,
+                          fontSize: AppFontSizes.bodySm,
                         ),
                         onChanged: (_) => _refresh(),
                       ),

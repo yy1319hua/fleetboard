@@ -21,6 +21,7 @@ import 'download_flow.dart';
 import 'file_editor_page.dart';
 import 'widgets/file_actions_sheet.dart';
 import 'widgets/upload_queue_card.dart';
+import '../../../core/constants.dart';
 
 /// 服务器详情 · 文件段。
 ///
@@ -332,7 +333,8 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab>
                 '上传到 ${state.path}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                style: const TextStyle(
+                    fontFamily: 'monospace', fontSize: AppFontSizes.caption),
               ),
             ),
             const Divider(height: 1),
@@ -769,11 +771,13 @@ class _FileList extends StatelessWidget {
           title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(
             '${entry.mode}  ${_fmt(entry.modTime)}',
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+            style: const TextStyle(
+                fontFamily: 'monospace', fontSize: AppFontSizes.eyebrow),
           ),
           trailing: Text(
             entry.sizeLabel,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+            style: const TextStyle(
+                fontFamily: 'monospace', fontSize: AppFontSizes.eyebrow),
           ),
           onTap: () => onTapEntry(entry),
           onLongPress: () => onTapEntry(entry),

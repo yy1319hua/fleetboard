@@ -153,7 +153,7 @@ class _UpdateTaskPageState extends ConsumerState<UpdateTaskPage> {
         lines[i],
         style: const TextStyle(
           fontFamily: AppFonts.mono,
-          fontSize: 12,
+          fontSize: AppFontSizes.caption,
           height: 1.4,
           color: AppColors.text,
         ),

@@ -93,9 +93,10 @@ class _UploadQueueCardState extends ConsumerState<UploadQueueCard> {
         padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
         child: Row(
           children: <Widget>[
-            StatusDot(
-              _kindOf(headline.status),
-              semanticLabel: statusKindLabel(_kindOf(headline.status)),
+            StatusLabel(
+              kind: _kindOf(headline.status),
+              label: statusKindLabel(_kindOf(headline.status)),
+              compact: true,
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -184,9 +185,10 @@ class _UploadQueueCardState extends ConsumerState<UploadQueueCard> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              StatusDot(
-                _kindOf(task.status),
-                semanticLabel: statusKindLabel(_kindOf(task.status)),
+              StatusLabel(
+                kind: _kindOf(task.status),
+                label: statusKindLabel(_kindOf(task.status)),
+                compact: true,
               ),
               const SizedBox(width: 8),
               Expanded(

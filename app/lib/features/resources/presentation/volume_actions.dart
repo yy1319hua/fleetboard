@@ -5,6 +5,7 @@ import '../../../core/errors/api_exception.dart';
 import '../../../core/widgets/hold_to_confirm.dart';
 import '../data/resources_repository.dart';
 import '../domain/docker_resource.dart';
+import '../../../core/constants.dart';
 
 /// 删除数据卷确认层（长按触发）。成功返回 true。
 ///
@@ -78,7 +79,8 @@ class _DeleteVolumeSheetState extends ConsumerState<_DeleteVolumeSheet> {
           const SizedBox(height: 8),
           Text(
             widget.volume.name,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            style: const TextStyle(
+                fontFamily: 'monospace', fontSize: AppFontSizes.bodySm),
           ),
           if (widget.volume.mountpoint.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -343,7 +345,8 @@ class _DockerCleanupSheetState extends ConsumerState<_DockerCleanupSheet> {
                     ),
                   ),
                 ],
-                if (_results != null) _CleanupResults(run: _run!, results: _results!),
+                if (_results != null)
+                  _CleanupResults(run: _run!, results: _results!),
                 const SizedBox(height: 16),
                 if (_busy)
                   const Row(
@@ -572,7 +575,7 @@ class _UnusedVolumePreview extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontFamily: 'monospace',
-                      fontSize: 12,
+                      fontSize: AppFontSizes.caption,
                     ),
                   ),
                 ),
@@ -677,7 +680,8 @@ class _CleanupResults extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.info_outline, size: 16, color: theme.colorScheme.outline),
+            Icon(Icons.info_outline,
+                size: 16, color: theme.colorScheme.outline),
             const SizedBox(width: 6),
             Expanded(
               child: Column(
@@ -698,7 +702,8 @@ class _CleanupResults extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(
           children: [
-            Icon(Icons.help_outline, size: 16, color: theme.colorScheme.outline),
+            Icon(Icons.help_outline,
+                size: 16, color: theme.colorScheme.outline),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
@@ -740,7 +745,7 @@ class _CleanupResults extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontFamily: 'monospace',
-                      fontSize: 11,
+                      fontSize: AppFontSizes.eyebrow,
                     ),
                   ),
               ],

@@ -11,6 +11,7 @@ import '../../servers/application/servers_provider.dart';
 import '../application/alert_rules_notifier.dart';
 import '../domain/alert_rule.dart';
 import 'alert_rule_edit_page.dart';
+import '../../../core/constants.dart';
 
 /// 告警规则管理（列表 + 开关 + 新建/编辑/删除）。
 ///
@@ -174,9 +175,10 @@ class _RuleTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ListTile(
-      leading: StatusDot(
-        alertSeverityKind(rule.severity),
-        semanticLabel: statusKindLabel(alertSeverityKind(rule.severity)),
+      leading: StatusLabel(
+        kind: alertSeverityKind(rule.severity),
+        label: statusKindLabel(alertSeverityKind(rule.severity)),
+        compact: true,
       ),
       title: Text(
         rule.title,
@@ -221,7 +223,7 @@ class _DeleteRuleSheet extends StatelessWidget {
         children: [
           Text('删除告警规则', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
-          Text(rule.title, style: const TextStyle(fontSize: 14)),
+          Text(rule.title, style: const TextStyle(fontSize: AppFontSizes.body)),
           const SizedBox(height: 4),
           Text(
             '规则 #${rule.id} · ${rule.scopeLabel}',

@@ -6,7 +6,8 @@ import 'design_tokens.dart';
 // 现在 re-export 生成物，保证引用点不用改、值只有一份。
 // 只导出这三类：间距/圆角/动效仍由 core/constants.dart 提供，
 // 否则同时 import 两个文件的页面会报 unnecessary_import。
-export 'design_tokens.dart' show AppColors, AppFonts, AppTextStyles;
+export 'design_tokens.dart'
+    show AppColors, AppFonts, AppTextStyles, AppFontSizes;
 
 /// 焦点环：契约 §4 要求 2px 琥珀描边、键盘可见。
 /// Flutter 没有全局 focus outline，这里把「聚焦时换 shape.side」抽成共享构造器，

@@ -818,7 +818,7 @@ class _LogTailPanelState extends State<_LogTailPanel> {
               widget.lines[index],
               style: theme.textTheme.bodySmall?.copyWith(
                 fontFamily: AppFonts.mono,
-                fontSize: 11,
+                fontSize: AppFontSizes.eyebrow,
                 height: 1.35,
                 color: AppColors.muted,
               ),
@@ -851,7 +851,7 @@ class _LogTailPanelState extends State<_LogTailPanel> {
                 widget.lines.join('\n'),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontFamily: AppFonts.mono,
-                      fontSize: 12,
+                      fontSize: AppFontSizes.caption,
                       height: 1.4,
                       color: AppColors.text,
                     ),
@@ -895,7 +895,7 @@ class _CommandBlock extends StatelessWidget {
               command,
               style: theme.textTheme.bodySmall?.copyWith(
                 fontFamily: AppFonts.mono,
-                fontSize: 12,
+                fontSize: AppFontSizes.caption,
                 color: AppColors.text,
               ),
             ),

@@ -226,7 +226,7 @@ class _BrowserHeader extends StatelessWidget {
                         root,
                         style: const TextStyle(
                           fontFamily: 'monospace',
-                          fontSize: 12,
+                          fontSize: AppFontSizes.caption,
                         ),
                       ),
                       visualDensity: VisualDensity.compact,

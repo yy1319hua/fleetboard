@@ -6,6 +6,7 @@ import '../../../core/errors/api_exception.dart';
 import '../../../core/widgets/hold_to_confirm.dart';
 import '../data/resources_repository.dart';
 import '../domain/docker_resource.dart';
+import '../../../core/constants.dart';
 
 /// 拉取镜像。成功返回 true（调用方据此刷新列表）。
 ///
@@ -68,9 +69,9 @@ class _PullImageDialogState extends ConsumerState<_PullImageDialog> {
       _output = '';
     });
     try {
-      final output = await ref
-          .read(resourcesRepositoryProvider)
-          .pullImage(widget.serverId, _controller.text.trim(), cancelToken: _cancelToken);
+      final output = await ref.read(resourcesRepositoryProvider).pullImage(
+          widget.serverId, _controller.text.trim(),
+          cancelToken: _cancelToken);
       if (!mounted) return;
       setState(() {
         _phase = _Phase.done;
@@ -127,7 +128,8 @@ class _PullImageDialogState extends ConsumerState<_PullImageDialog> {
                 errorText: _phase == _Phase.failed ? _error : null,
                 border: const OutlineInputBorder(),
               ),
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+              style: const TextStyle(
+                  fontFamily: 'monospace', fontSize: AppFontSizes.bodySm),
             ),
             if (running) ...[
               const SizedBox(height: 16),
@@ -135,7 +137,7 @@ class _PullImageDialogState extends ConsumerState<_PullImageDialog> {
               const SizedBox(height: 8),
               const Text(
                 '正在拉取…大镜像可能要几分钟，请不要退出。',
-                style: TextStyle(fontSize: 12),
+                style: TextStyle(fontSize: AppFontSizes.caption),
               ),
             ],
             if (done) ...[
@@ -155,7 +157,8 @@ class _PullImageDialogState extends ConsumerState<_PullImageDialog> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: SingleChildScrollView(
@@ -163,7 +166,7 @@ class _PullImageDialogState extends ConsumerState<_PullImageDialog> {
                       _output,
                       style: const TextStyle(
                         fontFamily: 'monospace',
-                        fontSize: 11,
+                        fontSize: AppFontSizes.eyebrow,
                       ),
                     ),
                   ),
@@ -279,7 +282,8 @@ class _DeleteImageSheetState extends ConsumerState<_DeleteImageSheet> {
           const SizedBox(height: 8),
           Text(
             widget.image.reference,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            style: const TextStyle(
+                fontFamily: 'monospace', fontSize: AppFontSizes.bodySm),
           ),
           const SizedBox(height: 4),
           Text(

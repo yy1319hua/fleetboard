@@ -125,9 +125,10 @@ class _IdentityCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                StatusDot(
-                  online ? StatusKind.ok : StatusKind.idle,
-                  semanticLabel: online ? '在线' : '未知',
+                StatusLabel(
+                  kind: online ? StatusKind.ok : StatusKind.idle,
+                  label: online ? '在线' : '离线',
+                  compact: true,
                 ),
                 const SizedBox(width: 8),
                 Expanded(

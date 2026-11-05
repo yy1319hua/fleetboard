@@ -34,7 +34,7 @@ class OverviewPage extends ConsumerWidget {
               Text(
                 'Fleetboard',
                 style: TextStyle(
-                  fontSize: 22,
+                  fontSize: AppFontSizes.h1,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5,
                   color: AppColors.text,
@@ -86,7 +86,8 @@ class OverviewPage extends ConsumerWidget {
               SizedBox(height: 16),
               Text(
                 '正在连接面板…',
-                style: TextStyle(fontSize: 13, color: AppColors.muted),
+                style: TextStyle(
+                    fontSize: AppFontSizes.bodySm, color: AppColors.muted),
               ),
             ],
           ),

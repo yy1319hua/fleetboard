@@ -17,12 +17,22 @@ class RefreshIconButton extends StatefulWidget {
     required this.onRefresh,
     this.tooltip = '刷新',
     this.iconSize = 22,
+    this.label,
+    this.inline = false,
   });
 
   /// 刷新动作。应当等到数据真正到手再返回——进度圈的消失时刻就是它完成的时刻。
   final Future<void> Function() onRefresh;
   final String tooltip;
   final double iconSize;
+
+  /// 非空时渲染带文字的按钮，文字即此值（错误态的「重试」）。
+  /// 为空时是纯图标按钮（空态）。两种形态共享同一套转圈 + 触觉反馈。
+  final String? label;
+
+  /// [label] 非空且 inline=true 时用轻量 TextButton.icon（行内错误条），
+  /// 否则用 FilledButton.tonalIcon（整页错误态，更醒目）。
+  final bool inline;
 
   /// 进度圈的最短显示时长。
   static const Duration minSpin = Duration(milliseconds: 600);
@@ -59,28 +69,49 @@ class _RefreshIconButtonState extends State<RefreshIconButton> {
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.primary;
-    return IconButton(
-      tooltip: _busy ? '正在刷新…' : widget.tooltip,
-      onPressed: _busy ? null : _run,
-      icon: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 150),
-        child: _busy
-            ? SizedBox(
-                key: const ValueKey<String>('busy'),
-                width: widget.iconSize - 3,
-                height: widget.iconSize - 3,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.2,
-                  // 禁用态的 IconButton 会降低不透明度，进度圈要自己给足对比度。
-                  color: color,
-                ),
-              )
-            : Icon(
-                key: const ValueKey<String>('idle'),
-                Icons.refresh,
-                size: widget.iconSize,
+    final icon = AnimatedSwitcher(
+      duration: const Duration(milliseconds: 150),
+      child: _busy
+          ? SizedBox(
+              key: const ValueKey<String>('busy'),
+              width: widget.iconSize - 3,
+              height: widget.iconSize - 3,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                // 禁用态按钮会降低不透明度，进度圈要自己给足对比度。
+                color: color,
               ),
-      ),
+            )
+          : Icon(
+              key: const ValueKey<String>('idle'),
+              Icons.refresh,
+              size: widget.iconSize,
+            ),
+    );
+    final onPressed = _busy ? null : _run;
+    final tooltip = _busy ? '正在刷新…' : widget.tooltip;
+
+    final label = widget.label;
+    if (label != null) {
+      // 带文字形态：错误态 / 行内错误条。保留可见文案，同时接管
+      // 600ms 转圈与触觉反馈，避免「同一产品两种刷新手感」。
+      if (widget.inline) {
+        return TextButton.icon(
+          onPressed: onPressed,
+          icon: icon,
+          label: Text(label),
+        );
+      }
+      return FilledButton.tonalIcon(
+        onPressed: onPressed,
+        icon: icon,
+        label: Text(label),
+      );
+    }
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: icon,
     );
   }
 }

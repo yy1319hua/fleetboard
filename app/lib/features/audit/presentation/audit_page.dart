@@ -11,6 +11,7 @@ import '../../../core/widgets/status_dot.dart';
 import '../application/audit_notifier.dart';
 import '../data/audit_repository.dart';
 import '../domain/audit_entry.dart';
+import '../../../core/constants.dart';
 
 /// 操作审计（只读）。
 ///
@@ -247,9 +248,10 @@ class _AuditTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ListTile(
-      leading: StatusDot(
-        entry.ok ? StatusKind.ok : StatusKind.danger,
-        semanticLabel: entry.ok ? '成功' : '失败',
+      leading: StatusLabel(
+        kind: entry.ok ? StatusKind.ok : StatusKind.danger,
+        label: entry.ok ? '成功' : '失败',
+        compact: true,
       ),
       title: Row(
         children: [
@@ -260,7 +262,8 @@ class _AuditTile extends StatelessWidget {
               entry.detail.isEmpty ? entry.route : entry.detail,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+              style: const TextStyle(
+                  fontFamily: 'monospace', fontSize: AppFontSizes.bodySm),
             ),
           ),
         ],
@@ -296,7 +299,7 @@ class _MethodBadge extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        StatusDot(color, size: 6),
+        StatusLabel(kind: color, label: method, compact: true),
         const SizedBox(width: 5),
         Text(
           method,
@@ -435,9 +438,10 @@ class _AuditDetailSheet extends StatelessWidget {
         children: [
           Row(
             children: [
-              StatusDot(
-                entry.ok ? StatusKind.ok : StatusKind.danger,
-                semanticLabel: entry.ok ? '成功' : '失败',
+              StatusLabel(
+                kind: entry.ok ? StatusKind.ok : StatusKind.danger,
+                label: entry.ok ? '成功' : '失败',
+                compact: true,
               ),
               const SizedBox(width: 8),
               Text(
@@ -468,7 +472,7 @@ class _AuditDetailSheet extends StatelessWidget {
                             row.$2.isEmpty ? '（空）' : row.$2,
                             style: const TextStyle(
                               fontFamily: 'monospace',
-                              fontSize: 12,
+                              fontSize: AppFontSizes.caption,
                             ),
                           ),
                         ],

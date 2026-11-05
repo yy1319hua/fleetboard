@@ -40,10 +40,10 @@ class ServerCard extends StatelessWidget {
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  StatusDot(
-                    statusFromConnection(server.connectionStatus),
-                    semanticLabel:
-                        connectionStatusLabel(server.connectionStatus),
+                  StatusLabel(
+                    kind: statusFromConnection(server.connectionStatus),
+                    label: connectionStatusLabel(server.connectionStatus),
+                    compact: true,
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(

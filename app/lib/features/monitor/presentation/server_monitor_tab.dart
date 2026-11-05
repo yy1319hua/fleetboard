@@ -335,7 +335,7 @@ class _MetricChartState extends State<MetricChart> {
                                 '${t.hour.toString().padLeft(2, '0')}:'
                                 '${t.minute.toString().padLeft(2, '0')}',
                                 style: theme.textTheme.bodySmall
-                                    ?.copyWith(fontSize: 10),
+                                    ?.copyWith(fontSize: AppFontSizes.eyebrow),
                               ),
                             );
                           },

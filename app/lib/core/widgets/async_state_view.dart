@@ -178,10 +178,10 @@ class _ErrorState extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             if (onRetry != null)
-              FilledButton.tonalIcon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('重试'),
+              RefreshIconButton(
+                onRefresh: () async => onRetry?.call(),
+                label: '重试',
+                iconSize: 18,
               ),
             if (extraAction != null) ...[
               const SizedBox(height: 8),
@@ -231,9 +231,11 @@ class InlineErrorBar extends StatelessWidget {
               ),
             ),
             if (onRetry != null)
-              TextButton(
-                onPressed: onRetry,
-                child: const Text('重试'),
+              RefreshIconButton(
+                onRefresh: () async => onRetry?.call(),
+                label: '重试',
+                inline: true,
+                iconSize: 18,
               ),
           ],
         ),

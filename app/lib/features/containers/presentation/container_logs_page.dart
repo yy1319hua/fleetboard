@@ -134,7 +134,7 @@ class _ContainerLogsPageState extends ConsumerState<ContainerLogsPage> {
                         c.text,
                         style: TextStyle(
                           fontFamily: AppFonts.mono,
-                          fontSize: 12,
+                          fontSize: AppFontSizes.caption,
                           height: 1.4,
                           color: c.stream == 'stderr'
                               ? AppColors.warn

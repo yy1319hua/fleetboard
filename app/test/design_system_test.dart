@@ -1,9 +1,12 @@
 import 'package:app/core/constants.dart';
 import 'package:app/core/theme/app_theme.dart';
+import 'package:app/core/widgets/async_state_view.dart';
+import 'package:app/core/widgets/refresh_icon_button.dart';
 import 'package:app/core/widgets/responsive.dart';
 import 'package:app/core/widgets/status_dot.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// 设计系统回归：令牌落地、状态语义、响应式断点。
 void main() {
@@ -132,6 +135,108 @@ void main() {
         home: const Scaffold(body: ResponsiveContent(child: Text('内容'))),
       ));
       expect(find.text('内容'), findsOneWidget);
+    });
+  });
+
+  group('P0-1 字阶单一真源', () {
+    test('AppFontSizes 10 档与 TextTheme 完全一致，最小值 >= 11', () {
+      final t = buildAppTheme().textTheme;
+      expect(t.displaySmall!.fontSize, AppFontSizes.display);
+      expect(t.headlineMedium!.fontSize, AppFontSizes.h1);
+      expect(t.titleLarge!.fontSize, AppFontSizes.h2);
+      expect(t.titleMedium!.fontSize, AppFontSizes.h3);
+      expect(t.bodyLarge!.fontSize, AppFontSizes.body);
+      expect(t.bodyMedium!.fontSize, AppFontSizes.bodySm);
+      expect(t.bodySmall!.fontSize, AppFontSizes.caption);
+      expect(t.labelSmall!.fontSize, AppFontSizes.eyebrow);
+      const all = <double>[
+        AppFontSizes.display,
+        AppFontSizes.h1,
+        AppFontSizes.h2,
+        AppFontSizes.h3,
+        AppFontSizes.body,
+        AppFontSizes.bodySm,
+        AppFontSizes.caption,
+        AppFontSizes.eyebrow,
+        AppFontSizes.mono,
+        AppFontSizes.monoSm,
+      ];
+      expect(all.every((s) => s >= 11), isTrue,
+          reason: '契约下限 11px，不得再出现 10px 这类违规值');
+      expect(AppFontSizes.eyebrow, 11);
+    });
+  });
+
+  group('P1-2 StatusLabel 统一入口', () {
+    testWidgets('compact 形态只画点但读屏仍有中文语义、不重复文字', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: const Scaffold(
+          body: StatusLabel(
+            kind: StatusKind.ok,
+            label: '在线',
+            compact: true,
+          ),
+        ),
+      ));
+      expect(find.text('在线'), findsNothing,
+          reason: '紧凑位靠相邻页面文案承担可见第二通道，不应重复文字');
+      expect(find.bySemanticsLabel('在线'), findsOneWidget);
+    });
+
+    testWidgets('完整形态显示 12px 中文状态词', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: const Scaffold(
+          body: StatusLabel(kind: StatusKind.ok, label: '在线'),
+        ),
+      ));
+      final text = tester.widget<Text>(find.text('在线'));
+      expect(text.style!.fontSize, AppFontSizes.caption);
+    });
+  });
+
+  group('P2-3 刷新反馈统一 600ms 转圈', () {
+    testWidgets('RefreshIconButton 带 label 时显示中文文案且按下转圈', (tester) async {
+      var calls = 0;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(
+          body: RefreshIconButton(
+            label: '重试',
+            onRefresh: () async => calls++,
+          ),
+        ),
+      ));
+      expect(find.text('重试'), findsOneWidget);
+      await tester.tap(find.text('重试'));
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget,
+          reason: '按下瞬间换成进度圈，先给「已收到」的反馈');
+      expect(calls, 1);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byType(CircularProgressIndicator), findsOneWidget,
+          reason: '接口很快也要把进度圈保持到 minSpin 600ms');
+      await tester.pumpAndSettle(const Duration(milliseconds: 700));
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    testWidgets('AsyncStateView 错误态重用 RefreshIconButton 而非裸按钮', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(
+          body: AsyncStateView<List<String>>(
+            value: const AsyncError<List<String>>('网络错误', StackTrace.empty),
+            emptyHint: '暂无数据',
+            onRetry: () {},
+            builder: (_) => const SizedBox.shrink(),
+          ),
+        ),
+      ));
+      expect(find.text('重试'), findsOneWidget);
+      expect(find.byType(RefreshIconButton), findsOneWidget);
+      expect(find.byIcon(Icons.refresh), findsOneWidget,
+          reason: '空闲态由统一组件渲染刷新图标，不再是 FilledButton.tonalIcon');
     });
   });
 }
