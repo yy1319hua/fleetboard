@@ -498,7 +498,7 @@ class _ComposeFilePageState extends ConsumerState<ComposeFilePage> {
                     color: Theme.of(dialogContext)
                         .colorScheme
                         .surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
                   ),
                   child: SingleChildScrollView(
                     child: SelectableText(

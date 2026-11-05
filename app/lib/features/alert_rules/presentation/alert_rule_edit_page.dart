@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/api_exception.dart';
+import '../../../core/theme/design_tokens.dart';
 import '../../../core/widgets/async_state_view.dart';
 import '../../servers/application/servers_provider.dart';
 import '../application/alert_rules_notifier.dart';
@@ -254,7 +255,7 @@ class _AlertRuleEditPageState extends ConsumerState<AlertRuleEditPage> {
             Container(
               decoration: BoxDecoration(
                 border: Border.all(color: theme.colorScheme.outlineVariant),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadius.md),
               ),
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
               child: Column(
@@ -307,7 +308,7 @@ class _AlertRuleEditPageState extends ConsumerState<AlertRuleEditPage> {
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
                 child: Text(
                   '保存失败：$_submitError',

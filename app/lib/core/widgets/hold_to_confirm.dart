@@ -1,3 +1,4 @@
+import '../theme/design_tokens.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -87,7 +88,7 @@ class _HoldToConfirmState extends State<HoldToConfirm>
                 height: widget.dense ? 40 : 48,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   border: Border.all(color: color.withAlpha(120)),
                   color: color.withAlpha(progress > 0 ? 24 : 10),
                 ),
@@ -110,7 +111,7 @@ class _HoldToConfirmState extends State<HoldToConfirm>
                   right: 0,
                   bottom: 0,
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
                     child: LinearProgressIndicator(
                       value: progress,
                       minHeight: 3,

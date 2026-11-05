@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/design_tokens.dart';
 import '../../../core/widgets/diff_view.dart';
 
 /// 改动预览确认层（保存写回、剪贴板整份导入共用）。
@@ -54,7 +55,7 @@ Future<bool> showDiffConfirm(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: theme.colorScheme.errorContainer,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,

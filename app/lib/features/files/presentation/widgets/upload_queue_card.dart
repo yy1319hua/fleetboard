@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/theme/design_tokens.dart';
 import '../../../../core/widgets/status_dot.dart';
 import '../../application/upload_queue_notifier.dart';
 import '../../domain/file_sizes.dart';
@@ -41,7 +42,7 @@ class _UploadQueueCardState extends ConsumerState<UploadQueueCard> {
         child: Material(
           color: theme.colorScheme.surfaceContainerHigh,
           elevation: 0,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           clipBehavior: Clip.antiAlias,
           child: Column(
             mainAxisSize: MainAxisSize.min,

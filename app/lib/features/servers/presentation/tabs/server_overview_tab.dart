@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/theme/app_theme.dart';
 import '../../../../core/errors/api_exception.dart';
+import '../../../../core/theme/design_tokens.dart';
 import '../../../../core/widgets/async_state_view.dart';
 import '../../../../core/widgets/status_dot.dart';
 import '../../../../core/widgets/tab_refresh_scope.dart';
@@ -292,7 +292,7 @@ class _MetricsCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(AppRadius.badge),
             child: LinearProgressIndicator(
               value: (pct / 100).clamp(0.0, 1.0),
               minHeight: 6,
@@ -447,7 +447,7 @@ class _FactsCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(AppRadius.badge),
             child: LinearProgressIndicator(
               value: pct / 100,
               minHeight: 4,

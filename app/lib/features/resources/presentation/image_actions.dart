@@ -159,7 +159,7 @@ class _PullImageDialogState extends ConsumerState<_PullImageDialog> {
                   decoration: BoxDecoration(
                     color:
                         Theme.of(context).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
                   ),
                   child: SingleChildScrollView(
                     child: SelectableText(

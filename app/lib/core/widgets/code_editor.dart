@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/design_tokens.dart';
 
 /// 带行号的等宽文本编辑器。
 ///
@@ -74,7 +75,7 @@ class _CodeEditorState extends State<CodeEditor> {
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Row(
