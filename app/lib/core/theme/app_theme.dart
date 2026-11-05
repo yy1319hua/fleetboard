@@ -27,6 +27,44 @@ WidgetStateProperty<OutlinedBorder> _focusableShape(
   });
 }
 
+/// 卡片形状：标准圆角矩形 + 顶部 1px 亮线（border-hi）。
+///
+/// 深色下四周边框对比仅 1.68:1，卡片与背景仍偏近；顶边加一条更亮的实色线，
+/// 相当于受光边缘，把卡片从背景里"托"出来一档。
+/// 只画线——不加投影、不加渐变、不加外发光（DESIGN.md 第 6 节）。
+/// 落在 CardTheme.shape 上，28 处 Card(...) 自动生效，无需逐页改。
+class AppCardBorder extends RoundedRectangleBorder {
+  const AppCardBorder({
+    super.side,
+    super.borderRadius,
+    this.highlight = AppColors.borderHi,
+  });
+
+  final Color highlight;
+
+  @override
+  ShapeBorder scale(double t) => AppCardBorder(
+        side: side.scale(t),
+        borderRadius: borderRadius * t,
+        highlight: highlight,
+      );
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
+    super.paint(canvas, rect, textDirection: textDirection);
+    final r = borderRadius.resolve(textDirection);
+    // 两端内缩圆角半径，避免亮线在圆角处探出卡片轮廓。
+    final y = rect.top + 0.5;
+    canvas.drawLine(
+      Offset(rect.left + r.topLeft.x, y),
+      Offset(rect.right - r.topRight.x, y),
+      Paint()
+        ..color = highlight
+        ..strokeWidth = 1,
+    );
+  }
+}
+
 /// 字阶 10 档落到 Material TextTheme（契约 §3 / 方案 §5.2）。
 ///
 /// 关键：不能从零 new 一个 TextTheme —— 现有页面大量使用 titleSmall / labelLarge
@@ -93,10 +131,12 @@ ThemeData buildAppTheme() {
       indicatorColor: AppColors.accentSoft,
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
     ),
+    // 卡片：surface-1 + 1px 边框 + 顶部 1px 亮线（border-hi），无投影、不嵌套。
+    // 28 处 Card(...) 全部走 cardTheme，一处改即全端生效。
     cardTheme: CardTheme(
       color: AppColors.s1,
       elevation: 0,
-      shape: RoundedRectangleBorder(
+      shape: AppCardBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
         side: const BorderSide(color: AppColors.border),
       ),

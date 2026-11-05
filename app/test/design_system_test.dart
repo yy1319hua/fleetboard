@@ -85,6 +85,25 @@ void main() {
       // v2 新增：卡片顶边 1px 亮线，Web 用它把卡片从背景里托出来一档。
       expect(AppColors.borderHi, const Color(0xFF4A5666));
     });
+
+    testWidgets('卡片走 AppCardBorder：顶边亮线生效且仍无投影', (tester) async {
+      final theme = buildAppTheme();
+      final shape = theme.cardTheme.shape;
+      expect(shape, isA<AppCardBorder>());
+      expect((shape! as AppCardBorder).highlight, AppColors.borderHi);
+      expect(theme.cardTheme.elevation, 0.0, reason: '深色卡片不加投影（DESIGN.md 第 6 节）');
+
+      // 真实挂载一张 Card：确认 28 处 Card(...) 走的形状就是这一套。
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: const Scaffold(body: Card(child: SizedBox(width: 120, height: 40))),
+        ),
+      );
+      expect(find.byType(Card), findsOneWidget);
+      final applied = tester.widget<Card>(find.byType(Card)).shape ?? theme.cardTheme.shape;
+      expect(applied, isA<AppCardBorder>());
+    });
   });
 
   group('状态信号不只靠颜色', () {
