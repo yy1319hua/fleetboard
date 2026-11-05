@@ -8,17 +8,18 @@ import 'package:flutter/material.dart';
 class AppColors {
   const AppColors._();
 
-  static const Color bg = Color(0xFF0F1115);
-  static const Color s1 = Color(0xFF161A21);
-  static const Color s2 = Color(0xFF1D222B);
-  static const Color s3 = Color(0xFF242A35);
-  static const Color border = Color(0xFF2A303B);
-  static const Color borderStrong = Color(0xFF3A4250);
+  static const Color bg = Color(0xFF0E1116);
+  static const Color s1 = Color(0xFF1A1F28);
+  static const Color s2 = Color(0xFF222935);
+  static const Color s3 = Color(0xFF2C3442);
+  static const Color border = Color(0xFF3A4453);
+  static const Color borderStrong = Color(0xFF4E5A6C);
+  static const Color borderHi = Color(0xFF4A5666);
   static const Color terminal = Color(0xFF0B0D10);
-  static const Color text = Color(0xFFE6E9EF);
-  static const Color muted = Color(0xFF9AA4B2);
-  static const Color faint = Color(0xFF808A98);
-  static const Color textInverse = Color(0xFF0F1115);
+  static const Color text = Color(0xFFEDF0F5);
+  static const Color muted = Color(0xFFA6B0BE);
+  static const Color faint = Color(0xFF919CAC);
+  static const Color textInverse = Color(0xFF0E1116);
   static const Color accent = Color(0xFFE8A33D);
   static const Color accentHover = Color(0xFFF0B45A);
   static const Color accentSoft = Color(0x24E8A33D);

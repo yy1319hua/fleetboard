@@ -39,6 +39,7 @@ COLOR_MAP = {
     "surface-3": ("--surface-3", "s3"),
     "border": ("--border", "border"),
     "border-strong": ("--border-strong", "borderStrong"),
+    "border-hi": ("--border-hi", "borderHi"),
     "terminal": ("--terminal", "terminal"),
     "text": ("--text", "text"),
     "text-muted": ("--text-muted", "muted"),
@@ -78,6 +79,33 @@ def css_color(value) -> str:
         r, g, b, a = value
         return f"rgba({r}, {g}, {b}, {a})"
     return value.lower()
+
+
+def resolve_derived(t: dict, spec: dict) -> str:
+    """把 tokens.json 的 derived 声明解析成 CSS 值。
+
+    derived 是**真源的一部分**：生成器不再内置任何派生规则，
+    改色板只需改 tokens.json，CI 以 --check 兜底，避免"改了 colors 忘了派生"。
+
+    支持三种写法：
+      {"value": "#333c49"}                                  直接给值（不随色板变）
+      {"from": "text-faint", "format": "hex"}               取色板某色（hex）
+      {"from": "accent", "format": "rgb"}                   取色转 rgb()（图表库要求）
+      {"from": "terminal", "format": "rgba", "alpha": 0.6}  取色 + alpha
+    """
+    if "value" in spec:
+        return str(spec["value"]).lower()
+    src = t["colors"][spec["from"]]
+    if isinstance(src, list):
+        r, g, b = src[0], src[1], src[2]
+    else:
+        r, g, b = hex_rgb(src)
+    fmt = spec.get("format", "hex")
+    if fmt == "rgb":
+        return f"rgb({r}, {g}, {b})"
+    if fmt == "rgba":
+        return f"rgba({r}, {g}, {b}, {spec['alpha']:.2f})"
+    return str(src).lower()
 
 
 def dart_color(value) -> str:
@@ -127,23 +155,12 @@ def render_css(t: dict) -> str:
     L.append(f"  --motion-ui: {m['web_ui_ms']}ms;")
     L.append(f"  --touch-min: {t['touch_min']}px;")
     L.append("")
-    # 派生变量：图表配色 / 遮罩 / 编辑器高亮。页面不再硬编码 hex 或 rgba，
-    # 都从这几个派生值取，值仍由 tokens.json 的色板算出。
-    ar, ag, ab = hex_rgb(t["colors"]["accent"])
-    tr, tg, tb = hex_rgb(t["colors"]["terminal"])
-    L.append(f"  --chart-accent: rgb({ar}, {ag}, {ab});")
-    L.append(f"  --chart-info: {css_color(t['colors']['info'])};")
-    L.append(f"  --chart-ok: {css_color(t['colors']['ok'])};")
-    L.append(f"  --chart-grid: {css_color(t['colors']['border'])};")
-    L.append(f"  --chart-axis: {css_color(t['colors']['faint'] if 'faint' in t['colors'] else t['colors']['text-faint'])};")
-    L.append(f"  --chart-tick: {css_color(t['colors']['text-muted'])};")
-    L.append(f"  --chart-tooltip-bg: {css_color(t['colors']['surface-2'])};")
-    L.append(f"  --chart-tooltip-border: {css_color(t['colors']['border-strong'])};")
-    L.append(f"  --scrim: rgba({tr}, {tg}, {tb}, 0.60);")
-    L.append(f"  --scrim-strong: rgba({tr}, {tg}, {tb}, 0.70);")
-    L.append(f"  --accent-wash-06: rgba({ar}, {ag}, {ab}, 0.06);")
-    L.append(f"  --accent-wash-10: rgba({ar}, {ag}, {ab}, 0.10);")
-    L.append(f"  --accent-wash-20: rgba({ar}, {ag}, {ab}, 0.20);")
+    # 派生变量：图表配色 / 遮罩 / 强调底色。全部来自 tokens.json 的 derived 段，
+    # 生成器不再内置派生规则 —— 改色板只改真源，CI 以 --check 兜底。
+    for name, spec in t["derived"].items():
+        if name.startswith("$"):
+            continue
+        L.append(f"  --{name}: {resolve_derived(t, spec)};")
     L.append("")
     L.append("  color-scheme: dark;")
     L += ["}", END]

@@ -74,14 +74,16 @@ void main() {
       expect(normal.side, BorderSide.none);
     });
 
-    test('色板两端修正值生效：warn / idle / faint 不再低对比', () {
+    test('色板 v2 层次优化值生效：faint / s3 / borderStrong 同步提亮', () {
       expect(AppColors.warn, const Color(0xFFD29922));
       expect(AppColors.idle, const Color(0xFF8B949E));
-      expect(AppColors.faint, const Color(0xFF808A98));
-      // 新增的三个表面色，App 此前缺失。
-      expect(AppColors.s3, const Color(0xFF242A35));
-      expect(AppColors.borderStrong, const Color(0xFF3A4250));
+      expect(AppColors.faint, const Color(0xFF919CAC));
+      // 表面与边框提亮：卡片与背景（1.08→1.14）、卡片与边框（1.32→1.68）分层不再糊在一起。
+      expect(AppColors.s3, const Color(0xFF2C3442));
+      expect(AppColors.borderStrong, const Color(0xFF4E5A6C));
       expect(AppColors.terminal, const Color(0xFF0B0D10));
+      // v2 新增：卡片顶边 1px 亮线，Web 用它把卡片从背景里托出来一档。
+      expect(AppColors.borderHi, const Color(0xFF4A5666));
     });
   });
 

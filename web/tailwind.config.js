@@ -12,6 +12,7 @@ export default {
         "surface-3": "var(--surface-3)",
         border: "var(--border)",
         "border-strong": "var(--border-strong)",
+        "border-hi": "var(--border-hi)",
         terminal: "var(--terminal)",
         text: "var(--text)",
         "text-muted": "var(--text-muted)",

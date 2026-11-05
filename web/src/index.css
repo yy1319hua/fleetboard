@@ -5,17 +5,18 @@
 /* 设计契约 token（web/DESIGN.md 第 2 节）。深色为基准。 */
 /* === BEGIN GENERATED TOKENS (design/tokens.json) === */
 :root {
-  --bg: #0f1115;
-  --surface-1: #161a21;
-  --surface-2: #1d222b;
-  --surface-3: #242a35;
-  --border: #2a303b;
-  --border-strong: #3a4250;
+  --bg: #0e1116;
+  --surface-1: #1a1f28;
+  --surface-2: #222935;
+  --surface-3: #2c3442;
+  --border: #3a4453;
+  --border-strong: #4e5a6c;
+  --border-hi: #4a5666;
   --terminal: #0b0d10;
-  --text: #e6e9ef;
-  --text-muted: #9aa4b2;
-  --text-faint: #808a98;
-  --text-inverse: #0f1115;
+  --text: #edf0f5;
+  --text-muted: #a6b0be;
+  --text-faint: #919cac;
+  --text-inverse: #0e1116;
   --accent: #e8a33d;
   --accent-hover: #f0b45a;
   --accent-soft: rgba(232, 163, 61, 0.14);
@@ -71,11 +72,11 @@
   --chart-accent: rgb(232, 163, 61);
   --chart-info: #58a6ff;
   --chart-ok: #3fb950;
-  --chart-grid: #2a303b;
-  --chart-axis: #808a98;
-  --chart-tick: #9aa4b2;
-  --chart-tooltip-bg: #1d222b;
-  --chart-tooltip-border: #3a4250;
+  --chart-grid: #333c49;
+  --chart-axis: #919cac;
+  --chart-tick: #a6b0be;
+  --chart-tooltip-bg: #222935;
+  --chart-tooltip-border: #4e5a6c;
   --scrim: rgba(11, 13, 16, 0.60);
   --scrim-strong: rgba(11, 13, 16, 0.70);
   --accent-wash-06: rgba(232, 163, 61, 0.06);
@@ -100,6 +101,33 @@ body {
   font-size: var(--fs-body);
   line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
+}
+
+/* 交互元素统一过渡：hover / focus / 展开不再硬切（DESIGN.md §7 动效 120–200ms、ease-out）。
+   一处覆盖全部原生交互元素，避免 20+ 组件各自补 transition 类而漏掉一部分。 */
+a,
+button,
+[role="button"],
+tr,
+summary,
+input,
+select,
+textarea {
+  transition-property: background-color, border-color, color, fill, stroke, opacity;
+  transition-duration: var(--motion-ui);
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* 无障碍硬要求：系统开启「减少动效」时，全部过渡/动画压到即时。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* 表格/监控数字对齐（DESIGN.md 第 3 节） */
