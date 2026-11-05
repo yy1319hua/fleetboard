@@ -17,7 +17,9 @@ import {
   listAlerts,
   markAlertRead,
   parseChannels,
+  updateAlertRule,
   type CreateRuleInput,
+  type UpdateRuleInput,
 } from "@/lib/alerts";
 import { formatDateTime } from "@/lib/format";
 import { useServers } from "@/lib/queries";
@@ -49,6 +51,8 @@ export function AlertsPage() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [ruleOpen, setRuleOpen] = useState(false);
   const [form, setForm] = useState(ruleInitial);
+  /** 非空表示编辑既有规则；为空表示新建。 */
+  const [editTarget, setEditTarget] = useState<AlertRule | null>(null);
 
   const alerts = useQuery({
     queryKey: ["alerts", unreadOnly],
@@ -92,6 +96,35 @@ export function AlertsPage() {
     onError: (e) => toast(e instanceof Error ? e.message : "创建失败", "danger"),
   });
 
+  const editRule = useMutation({
+    mutationFn: ({ id, ...input }: UpdateRuleInput & { id: number }) => updateAlertRule(id, input),
+    onSuccess: () => {
+      toast("规则已更新", "ok");
+      setRuleOpen(false);
+      setEditTarget(null);
+      setForm(ruleInitial);
+      void qc.invalidateQueries({ queryKey: ["alert-rules"] });
+    },
+    onError: (e) => toast(e instanceof Error ? e.message : "更新失败", "danger"),
+  });
+
+  /** 打开编辑：把规则回填到表单；作用对象锁定（后端不允许改归属）。 */
+  const openEdit = (r: AlertRule) => {
+    const ch = parseChannels(r.notify_channels);
+    setEditTarget(r);
+    setForm({
+      server_id: r.server_id ? String(r.server_id) : "",
+      metric: r.metric as CreateRuleInput["metric"],
+      operator: (r.operator === "<" ? "<" : ">") as CreateRuleInput["operator"],
+      threshold: String(r.threshold),
+      severity: r.severity as CreateRuleInput["severity"],
+      enabled: r.enabled,
+      inapp: ch.includes("inapp"),
+      pushplus: ch.includes("pushplus"),
+    });
+    setRuleOpen(true);
+  };
+
   const serverName = useMemo(() => {
     const map = new Map<number, string>();
     (servers.data ?? []).forEach((s) => map.set(s.id, s.name));
@@ -111,14 +144,21 @@ export function AlertsPage() {
       toast("至少选择一个通知通道", "danger");
       return;
     }
-    addRule.mutate({
-      server_id: form.server_id ? Number(form.server_id) : null,
+    const payload = {
       metric: form.metric,
       operator: form.operator,
       threshold: form.metric === "offline" ? 0 : threshold,
       severity: form.severity,
       enabled: form.enabled,
       notify_channels: channels,
+    };
+    if (editTarget) {
+      editRule.mutate({ id: editTarget.id, ...payload });
+      return;
+    }
+    addRule.mutate({
+      ...payload,
+      server_id: form.server_id ? Number(form.server_id) : null,
     });
   };
 
@@ -143,6 +183,8 @@ export function AlertsPage() {
             variant="primary"
             onClick={() => {
               setTab("rules");
+              setEditTarget(null);
+              setForm(ruleInitial);
               setRuleOpen(true);
             }}
           >
@@ -237,7 +279,14 @@ export function AlertsPage() {
             title="还没有告警规则"
             description="新建一条规则，例如「CPU > 80% 持续超限」或「服务器离线」，命中后会写入通知中心并按通道推送。"
             action={
-              <Button variant="primary" onClick={() => setRuleOpen(true)}>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setEditTarget(null);
+                  setForm(ruleInitial);
+                  setRuleOpen(true);
+                }}
+              >
                 新建规则
               </Button>
             }
@@ -277,17 +326,22 @@ export function AlertsPage() {
                       <StatusBadge tone={r.enabled ? "ok" : "idle"} label={r.enabled ? "启用" : "停用"} />
                     </td>
                     <td className="px-3 text-right">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-danger hover:text-danger"
-                        onClick={() => {
-                          if (!window.confirm("删除该规则？")) return;
-                          delRule.mutate(r.id);
-                        }}
-                      >
-                        删除
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
+                          编辑
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-danger hover:text-danger"
+                          onClick={() => {
+                            if (!window.confirm("删除该规则？")) return;
+                            delRule.mutate(r.id);
+                          }}
+                        >
+                          删除
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -299,23 +353,50 @@ export function AlertsPage() {
 
       <Dialog
         open={ruleOpen}
-        title="新建告警规则"
-        description="命中阈值后写入通知中心，并按所选通道推送。"
-        onClose={() => setRuleOpen(false)}
+        title={editTarget ? "编辑告警规则" : "新建告警规则"}
+        description={
+          editTarget
+            ? "只修改条件、级别与通道；作用对象不可改（如需变更请删除后重建）。"
+            : "命中阈值后写入通知中心，并按所选通道推送。"
+        }
+        onClose={() => {
+          setRuleOpen(false);
+          setEditTarget(null);
+        }}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setRuleOpen(false)} disabled={addRule.isPending}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setRuleOpen(false);
+                setEditTarget(null);
+              }}
+              disabled={addRule.isPending || editRule.isPending}
+            >
               取消
             </Button>
-            <Button variant="primary" onClick={submitRule} loading={addRule.isPending}>
-              创建
+            <Button
+              variant="primary"
+              onClick={submitRule}
+              loading={editTarget ? editRule.isPending : addRule.isPending}
+            >
+              {editTarget ? "保存" : "创建"}
             </Button>
           </>
         }
       >
         <div className="space-y-3.5">
-          <Field label="作用对象" htmlFor="rule-server" hint="留空表示对所有服务器生效">
-            <Select id="rule-server" value={form.server_id} onChange={(e) => setForm({ ...form, server_id: e.target.value })}>
+          <Field
+            label="作用对象"
+            htmlFor="rule-server"
+            hint={editTarget ? "编辑时不可变更作用对象" : "留空表示对所有服务器生效"}
+          >
+            <Select
+              id="rule-server"
+              value={form.server_id}
+              disabled={Boolean(editTarget)}
+              onChange={(e) => setForm({ ...form, server_id: e.target.value })}
+            >
               <option value="">全部服务器</option>
               {(servers.data ?? []).map((s) => (
                 <option key={s.id} value={String(s.id)}>

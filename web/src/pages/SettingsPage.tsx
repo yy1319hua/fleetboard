@@ -1,12 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
+import { AuditCard } from "@/components/settings/AuditCard";
+import { ChangeUsernameSection } from "@/components/settings/ChangeUsernameSection";
+import { PanelUpgradeCard } from "@/components/settings/PanelUpgradeCard";
+import { UpgradeHistoryCard } from "@/components/settings/UpgradeHistoryCard";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Field, Input, Textarea } from "@/components/ui/Form";
 import { toast } from "@/components/ui/Toast";
 import { changePassword, fetchSettings, revokeSessions, saveSettings, testPushChannel } from "@/lib/settings";
 import type { SecretView } from "@/lib/settings";
+import { fetchHealth } from "@/lib/system";
 import { useAuth } from "@/store/auth";
 
 /** 判断 settings 项是否为敏感掩码视图。 */
@@ -40,6 +45,9 @@ export function SettingsPage() {
     queryKey: ["settings"],
     queryFn: fetchSettings,
   });
+
+  // 面板版本与 schema：只读信息卡展示，与「面板更新」卡共用同一份 health 缓存。
+  const health = useQuery({ queryKey: ["health"], queryFn: fetchHealth, staleTime: 60_000 });
 
   // 表单状态：GET 到的值（敏感项为掩码）作为初始值，掩码原样回传后端会跳过
   const [pushplus, setPushplus] = useState("");
@@ -205,10 +213,17 @@ export function SettingsPage() {
         </CardBody>
       </Card>
 
+      {/* 面板更新 / 升级历史 / 操作审计（B2–B4，接口全部现成） */}
+      <PanelUpgradeCard />
+      <UpgradeHistoryCard />
+      <AuditCard />
+
       {/* 只读信息 */}
       <Card>
         <CardHeader title="只读信息" />
         <CardBody>
+          <CardRow label="面板版本" value={health.data?.version ?? "—"} />
+          <CardRow label="数据库 schema" value={health.data ? String(health.data.schema) : "—"} />
           <CardRow label="加密主密钥 KEY" value={`${data?.readonly?.key_masked ?? "****"}（不可查看与修改）`} />
           <CardRow label="JWT 密钥" value="已入库，仅尾 4 位可见" />
           <CardRow label="监听端口" value={`${data?.readonly?.port ?? "—"}（修改需编辑 .env 后重启）`} />
@@ -219,6 +234,8 @@ export function SettingsPage() {
       <Card>
         <CardHeader title="账号与安全" />
         <CardBody className="space-y-3">
+          <ChangeUsernameSection />
+          <div className="border-t border-border pt-3 text-body-sm text-text-muted">修改密码</div>
           <Field label="旧密码" htmlFor="old-pwd">
             <Input
               id="old-pwd"

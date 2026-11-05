@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost, withQuery } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPut, withQuery } from "@/lib/api";
 import type { AlertEvent, AlertRule } from "@/lib/types";
 
 export function listAlerts(opts: { unreadOnly?: boolean; limit?: number } = {}) {
@@ -34,6 +34,25 @@ export function createAlertRule(input: CreateRuleInput) {
 
 export function deleteAlertRule(id: number) {
   return apiDelete<{ deleted: number }>(`/api/alert-rules/${id}`);
+}
+
+/**
+ * 编辑规则（PUT /api/alert-rules/:id）。
+ *
+ * 后端为 PATCH 语义：只改传入的字段；**不支持改 server_id**（改归属等同删旧建新，
+ * 会让历史通知指向语义已变的规则），页面据此把「作用对象」锁死。
+ */
+export interface UpdateRuleInput {
+  metric?: CreateRuleInput["metric"];
+  operator?: ">" | "<";
+  threshold?: number;
+  severity?: CreateRuleInput["severity"];
+  enabled?: boolean;
+  notify_channels?: string;
+}
+
+export function updateAlertRule(id: number, input: UpdateRuleInput) {
+  return apiPut<AlertRule>(`/api/alert-rules/${id}`, input);
 }
 
 /** 指标 → 中文名。 */
