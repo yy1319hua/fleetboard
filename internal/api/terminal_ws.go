@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -127,25 +126,6 @@ func termSize(c *gin.Context) (cols, rows int) {
 	cols = clampInt(intQuery(c, "cols", termDefaultCols), termMinCols, termMaxCols)
 	rows = clampInt(intQuery(c, "rows", termDefaultRows), termMinRows, termMaxRows)
 	return cols, rows
-}
-
-// intQuery 读一个整数查询参数；缺省或非法时回退到 def。
-func intQuery(c *gin.Context, key string, def int) int {
-	v, err := strconv.Atoi(strings.TrimSpace(c.Query(key)))
-	if err != nil {
-		return def
-	}
-	return v
-}
-
-func clampInt(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }
 
 // serverTerminalHandler 把一条 SSH 交互会话桥接成 WebSocket。

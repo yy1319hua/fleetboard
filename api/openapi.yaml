@@ -361,6 +361,14 @@ paths:
       tags: [system]
       x-app-consumed: true
       summary: 升级阶段与日志尾（App 轮询跟踪）
+      parameters:
+        - name: log_lines
+          in: query
+          required: false
+          description: >
+            日志尾行数。默认 20（首屏小面板）；全屏查看日志时调大，
+            上限 2000（受 256KB 尾部读取窗口限制）。
+          schema: { type: integer, default: 20, minimum: 20, maximum: 2000 }
       responses:
         '200':
           description: 成功

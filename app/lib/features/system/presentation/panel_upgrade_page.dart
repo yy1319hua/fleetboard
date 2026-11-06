@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -39,7 +40,9 @@ class _PanelUpgradePageState extends ConsumerState<PanelUpgradePage> {
   }
 
   Future<void> _adoptRunningUpgrade() async {
-    final status = await ref.read(upgradeRepositoryProvider).statusOrNull();
+    final status = await ref
+        .read(upgradeRepositoryProvider)
+        .statusOrNull(logLines: UpgradeRepository.pollLogLines);
     if (!mounted || status == null) return;
     if (!isUpgradeInFlight(status.state)) return;
     ref.read(upgradeRunProvider.notifier).adopt(status);
@@ -756,17 +759,35 @@ class _LogTailPanel extends StatefulWidget {
 class _LogTailPanelState extends State<_LogTailPanel> {
   final ScrollController _controller = ScrollController();
 
+  /// 与全屏页共享的日志源。
+  ///
+  /// 原来全屏是 `widget.lines.join('\n')` 塞进 `Dialog.fullscreen`——dialog 挂在
+  /// 另一条 route 上，父级 setState 重建不到它，于是「打开全屏后日志就不动了」，
+  /// 看到的永远是点开那一刻的那几行。改成 notifier 后，轮询到的每一批新行都会
+  /// 推给全屏，两处渲染同一份数据。
+  final ValueNotifier<List<String>> _tail =
+      ValueNotifier<List<String>>(const <String>[]);
+
   @override
   void initState() {
     super.initState();
+    _tail.value = widget.lines;
     _scrollToBottomSoon();
   }
 
   @override
   void didUpdateWidget(covariant _LogTailPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _tail.value = widget.lines;
     // 每次新日志到达都跟到末尾：升级时用户盯的就是「最后一行停在哪一步」。
     if (oldWidget.lines.length != widget.lines.length) _scrollToBottomSoon();
+  }
+
+  @override
+  void dispose() {
+    _tail.dispose();
+    _controller.dispose();
+    super.dispose();
   }
 
   void _scrollToBottomSoon() {
@@ -774,12 +795,6 @@ class _LogTailPanelState extends State<_LogTailPanel> {
       if (!mounted || !_controller.hasClients) return;
       _controller.jumpTo(_controller.position.maxScrollExtent);
     });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
   }
 
   @override
@@ -832,31 +847,165 @@ class _LogTailPanelState extends State<_LogTailPanel> {
   void _openFullScreen() {
     showDialog<void>(
       context: context,
-      builder: (ctx) => Dialog.fullscreen(
-        child: Scaffold(
-          appBar: AppBar(
-            title: const Text('升级日志'),
-            actions: <Widget>[
-              IconButton(
-                tooltip: '关闭',
-                onPressed: () => Navigator.of(ctx).pop(),
-                icon: const Icon(Icons.close),
-              ),
-            ],
+      builder: (ctx) => LogFullScreen(tail: _tail),
+    );
+  }
+}
+
+/// 全屏日志：跟随尾部滚动，用户上滑即暂停跟随。
+///
+/// 为什么不无条件「每来一行就跳到底」：升级卡住时人会往回翻找报错，如果每
+/// 秒都被拽回底部，等于不让人看。所以只在「本来就在底部」时才跟随，一旦
+/// 用户往上滚就停下，右下角给一个「跳到最新」把它接回去。
+///
+/// 用 ListView.builder 而不是一次性 SelectableText 整段：300 行全排一次在
+/// 低端机上要几十毫秒，每秒一次就是持续掉帧。
+class LogFullScreen extends StatefulWidget {
+  const LogFullScreen({super.key, required this.tail});
+
+  final ValueListenable<List<String>> tail;
+
+  @override
+  State<LogFullScreen> createState() => _LogFullScreenState();
+}
+
+class _LogFullScreenState extends State<LogFullScreen> {
+  final ScrollController _controller = ScrollController();
+
+  /// 是否跟随最新一行。默认跟随，用户上滑后置 false。
+  bool _follow = true;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.tail.addListener(_onTailChanged);
+    _controller.addListener(_onScroll);
+    _jumpToBottomSoon();
+  }
+
+  @override
+  void dispose() {
+    widget.tail.removeListener(_onTailChanged);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onTailChanged() {
+    if (_follow) _jumpToBottomSoon();
+  }
+
+  void _onScroll() {
+    if (!_controller.hasClients) return;
+    final p = _controller.position;
+    // 24px 容差：底部的 padding 与「差一点点」都算在底部。
+    final atBottom = p.maxScrollExtent - p.pixels < 24;
+    if (atBottom != _follow) setState(() => _follow = atBottom);
+  }
+
+  void _jumpToBottomSoon() {
+    // 新行还没布局，maxScrollExtent 是旧的；等这一帧画完再跳。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      final target = _controller.position.maxScrollExtent;
+      if (target - _controller.position.pixels <= 0.5) return;
+      _controller.jumpTo(target);
+      // SelectableText 首次布局会在跳完之后再改一次高度，maxScrollExtent
+      // 随之变大，于是「跳到底」实际停在倒数第二行。补一次，别无脑循环。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_controller.hasClients) return;
+        _controller.jumpTo(_controller.position.maxScrollExtent);
+      });
+    });
+  }
+
+  Future<void> _copyAll() async {
+    final text = widget.tail.value.join('\n');
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('完整日志已复制'), duration: Duration(seconds: 2)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textStyle = theme.textTheme.bodySmall?.copyWith(
+      fontFamily: AppFonts.mono,
+      fontSize: AppFontSizes.caption,
+      height: 1.4,
+      color: AppColors.text,
+    );
+
+    return Dialog.fullscreen(
+      child: Scaffold(
+        appBar: AppBar(
+          title: ValueListenableBuilder<List<String>>(
+            valueListenable: widget.tail,
+            builder: (_, lines, __) => Text('升级日志（${lines.length} 行）'),
           ),
-          body: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: SelectableText(
-                widget.lines.join('\n'),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontFamily: AppFonts.mono,
-                      fontSize: AppFontSizes.caption,
-                      height: 1.4,
-                      color: AppColors.text,
-                    ),
-              ),
+          actions: <Widget>[
+            IconButton(
+              tooltip: '复制全部',
+              onPressed: _copyAll,
+              icon: const Icon(Icons.copy_all_outlined),
             ),
+            IconButton(
+              tooltip: '关闭',
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: ValueListenableBuilder<List<String>>(
+                  valueListenable: widget.tail,
+                  builder: (_, lines, __) {
+                    if (lines.isEmpty) {
+                      return Center(
+                        child: Text(
+                          '暂无日志',
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(color: AppColors.muted),
+                        ),
+                      );
+                    }
+                    return ListView.builder(
+                      controller: _controller,
+                      // 底部留出「跳到最新」按钮的高度，否则滚到底时最后
+                      // 两行正好被那颗浮动按钮压住。
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.md,
+                        AppSpacing.lg,
+                        88,
+                      ),
+                      itemCount: lines.length,
+                      itemBuilder: (_, i) => Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: SelectableText(lines[i], style: textStyle),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              if (!_follow)
+                Positioned(
+                  right: AppSpacing.lg,
+                  bottom: AppSpacing.lg,
+                  child: FloatingActionButton.extended(
+                    onPressed: () {
+                      setState(() => _follow = true);
+                      _jumpToBottomSoon();
+                    },
+                    icon: const Icon(Icons.arrow_downward),
+                    label: const Text('跳到最新'),
+                  ),
+                ),
+            ],
           ),
         ),
       ),

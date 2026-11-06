@@ -15,7 +15,11 @@ import '../domain/panel_upgrade.dart';
 const Duration upgradeUnreachableTolerance = Duration(seconds: 180);
 
 /// 轮询间隔。
-const Duration upgradePollInterval = Duration(seconds: 2);
+/// 轮询间隔。
+///
+/// 1 秒是为了让日志看起来是「流」而不是「跳」：curl 的进度条在日志里一行行
+/// 落盘，2 秒一次会一次涌进十来行，跳得看不清是卡住还是在跑。
+const Duration upgradePollInterval = Duration(seconds: 1);
 
 /// 无结论轮询的总上限：防止一个残留的「进行中」状态把 App 变成永动机。
 const Duration upgradePollGiveUpAfter = Duration(minutes: 10);
@@ -192,7 +196,8 @@ class UpgradeRunNotifier extends StateNotifier<UpgradeRunState?> {
     // 升级窗口内：两个请求的失败都在仓储层被吞成 null，这里不做任何提示。
     // 停服期间弹「网络错误」对用户是纯噪音——他刚刚被告知要等 10–30s。
     final healthVersion = await _repository.healthVersionOrNull();
-    final status = await _repository.statusOrNull();
+    final status =
+        await _repository.statusOrNull(logLines: UpgradeRepository.pollLogLines);
     if (_disposed || state == null) return;
 
     final elapsed = DateTime.now().difference(_startedAt ?? DateTime.now());

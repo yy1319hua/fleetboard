@@ -33,8 +33,12 @@ const (
 	DefaultUpgradeBaseDir  = "/opt/fleetboard"
 	DefaultUpgradeStateDir = "/var/lib/fleetboard"
 
-	// 日志尾行数：够看清卡在哪一步，又不至于把 App 首屏撑爆。
+	// 日志尾行数默认值：够看清卡在哪一步，又不至于把首屏撑爆。
+	//
+	// 全屏查看要更多行，由 ?log_lines= 覆盖；上限 2000 行（约 200KB），
+	// 与 Manager.LogTail 的 256KB 尾部读取窗口同一量级，再多也读不出来。
 	upgradeLogTailLines = 20
+	upgradeLogTailMax   = 2000
 	// 目标版本允许的字符集：与编排层的校验一致（纵深防御，给出更准确的 400 而非 409）。
 	upgradeVersionPattern = `^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`
 	// 升级查询整体超时（外呼自带 5s 上限，这里留一点解析余量）。
@@ -392,7 +396,7 @@ func triggerUpgradeHandler(svc *upgradeService, d *sql.DB) gin.HandlerFunc {
 		c.JSON(http.StatusAccepted, Response{
 			Code: CodeOK,
 			Msg:  "ok",
-			Data: buildStatusInfo(svc, snap, cur, target),
+			Data: buildStatusInfo(svc, snap, cur, target, upgradeLogTailLines),
 		})
 	}
 }
@@ -420,13 +424,17 @@ func systemUpgradeStatusHandler(svc *upgradeService, d *sql.DB) gin.HandlerFunc 
 		if from == "" {
 			from = cur
 		}
-		OK(c, buildStatusInfo(svc, snap, from, to))
+		// 全屏查看日志时客户端会要更多行；默认 20 保持不变，避免把小面板
+		// 的载荷顺带放大（Web 端也用这个端点）。
+		tailLines := clampInt(intQuery(c, "log_lines", upgradeLogTailLines),
+			upgradeLogTailLines, upgradeLogTailMax)
+		OK(c, buildStatusInfo(svc, snap, from, to, tailLines))
 	}
 }
 
 // buildStatusInfo 把编排层快照转成对外的 status 载荷。
-func buildStatusInfo(svc *upgradeService, snap upgrade.Snapshot, from, to string) upgradeStatusInfo {
-	tail := svc.mgr.LogTail(upgradeLogTailLines)
+func buildStatusInfo(svc *upgradeService, snap upgrade.Snapshot, from, to string, tailLines int) upgradeStatusInfo {
+	tail := svc.mgr.LogTail(tailLines)
 	if tail == nil {
 		tail = []string{} // 序列化成 []，避免 App 侧判空出错
 	}
