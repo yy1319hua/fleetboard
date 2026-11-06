@@ -255,7 +255,7 @@ void main() {
       expect(right.dy, closeTo(down.dy, 0.5));
       expect(left.dx, lessThan(down.dx));
       expect(right.dx, greaterThan(down.dx));
-      // 上下两行：↑ 在上、↓ 在下，间距等于一个 os 行高（34）。
+      // 上下两行：↑ 在上、↓ 在下，间距等于一个 os 行高。
       expect(down.dy - up.dy, closeTo(TerminalKeyBar.rowHeight, 0.5));
 
       // 7 列等宽：每格宽 = (360 - 34) / 7 ≈ 46.6。
