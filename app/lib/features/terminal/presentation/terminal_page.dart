@@ -44,7 +44,8 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
   TerminalClient? _client;
   ByteConversionSink? _decodeSink;
   bool _started = false;
-  bool _ctrl = false;
+  /// 已点亮、尚未消费的修饰键。可叠加（Ctrl+Shift+A 之类），用后即清。
+  Set<TermModifier> _mods = const <TermModifier>{};
   int _fontSize = 12;
   String? _closedReason;
   int? _exitCode;
@@ -127,26 +128,39 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     client.connect();
   }
 
-  /// 终端要发送的字节。
+  /// 终端要发送的字符。
   ///
-  /// Ctrl 粘滞键在这里生效：点亮后只作用于**下一个字符**，随即自动熄灭。
-  /// 不做「Ctrl 常亮」是因为终端里 Ctrl 组合远少于普通输入，常亮会导致
-  /// 想敲 `ls` 却发出 `\x0c\x13`（清屏 + 暂停输出），看起来像终端卡死。
+  /// 修饰键在这里生效：点亮后只作用于**下一次输入**，随即自动熄灭。
+  /// 不做常亮是因为终端里组合键远少于普通输入，常亮会导致想敲 `ls` 却发出
+  /// `\x0c\x13`（清屏 + 暂停输出），看起来像终端卡死。
+  ///
+  /// 修饰键对这个字符无效时（例如 Ctrl 配汉字）也照样清掉：让它一直亮着，
+  /// 用户会以为下一个字符还会被修饰，实际不会——比不发更误导。
   void _handleTerminalOutput(String data) {
-    if (_ctrl) {
-      final converted = applyCtrl(data);
-      if (converted != null) {
-        _client?.sendInput(utf8.encode(converted));
-        if (mounted) setState(() => _ctrl = false);
-        return;
-      }
+    if (_mods.isEmpty) {
+      _client?.sendInput(utf8.encode(data));
+      return;
     }
-    _client?.sendInput(utf8.encode(data));
+    final mods = _mods;
+    _client?.sendInput(utf8.encode(applyModifiers(data, mods)));
+    if (mounted) setState(() => _mods = const <TermModifier>{});
   }
 
-  void _sendKey(String sequence) => _client?.sendInput(utf8.encode(sequence));
+  /// 按键条送来的是**已算好修饰键**的完整序列，直接发，然后清掉粘滞态。
+  void _sendKey(String sequence) {
+    _client?.sendInput(utf8.encode(sequence));
+    if (_mods.isNotEmpty && mounted) {
+      setState(() => _mods = const <TermModifier>{});
+    }
+  }
 
-  void _toggleCtrl() => setState(() => _ctrl = !_ctrl);
+  void _toggleModifier(TermModifier m) {
+    setState(() {
+      final next = Set<TermModifier>.of(_mods);
+      if (!next.remove(m)) next.add(m);
+      _mods = next;
+    });
+  }
 
   void _toggleKeyboard() {
     if (_focus.hasFocus) {
@@ -253,10 +267,10 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
                 ),
               ),
               TerminalKeyBar(
-                ctrlActive: _ctrl,
+                modifiers: _mods,
                 keyboardVisible: keyboardVisible,
+                onModifierToggle: _toggleModifier,
                 onKey: _sendKey,
-                onCtrlToggle: _toggleCtrl,
                 onKeyboardToggle: _toggleKeyboard,
               ),
             ],
