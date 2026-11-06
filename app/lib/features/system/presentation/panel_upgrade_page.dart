@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -744,21 +745,31 @@ class _RunPanel extends StatelessWidget {
 }
 
 /// 日志尾：等宽小字号、自动滚到底、可全屏看。
-class _LogTailPanel extends StatefulWidget {
+class _LogTailPanel extends ConsumerStatefulWidget {
   const _LogTailPanel({required this.lines});
 
   final List<String> lines;
 
   @override
-  State<_LogTailPanel> createState() => _LogTailPanelState();
+  ConsumerState<_LogTailPanel> createState() => _LogTailPanelState();
 }
 
-class _LogTailPanelState extends State<_LogTailPanel> {
+class _LogTailPanelState extends ConsumerState<_LogTailPanel> {
   final ScrollController _controller = ScrollController();
+
+  /// 面板与全屏页共用的唯一数据源。
+  ///
+  /// 为什么非它不可：`Dialog.fullscreen` 挂在另一个 route 上，父面板 setState
+  /// 重建不到它；全屏页若把 lines 拼成一个 `SelectableText`，就等于在打开那一刻
+  /// 拍了张快照——之后来的行一行都不会上屏。用户的「点开全屏就不流式了」正是此。
+  /// 把「最新的行」推进一个 notifier，谁在显示谁就跟着变。
+  final ValueNotifier<List<String>> _tail =
+      ValueNotifier<List<String>>(const <String>[]);
 
   @override
   void initState() {
     super.initState();
+    _tail.value = widget.lines;
     _scrollToBottomSoon();
   }
 
@@ -766,7 +777,10 @@ class _LogTailPanelState extends State<_LogTailPanel> {
   void didUpdateWidget(covariant _LogTailPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 每次新日志到达都跟到末尾：升级时用户盯的就是「最后一行停在哪一步」。
-    if (oldWidget.lines.length != widget.lines.length) _scrollToBottomSoon();
+    if (oldWidget.lines.length != widget.lines.length) {
+      _tail.value = widget.lines;
+      _scrollToBottomSoon();
+    }
   }
 
   void _scrollToBottomSoon() {
@@ -779,6 +793,9 @@ class _LogTailPanelState extends State<_LogTailPanel> {
   @override
   void dispose() {
     _controller.dispose();
+    // 刻意不 dispose _tail：全屏 dialog 可能还挂在另一个 route 上监听着它，
+    // 而 ChangeNotifier 被 dispose 后再 removeListener 会 assert。它没有 native
+    // 资源，交给 GC 即可——这里省下的不是内存，是一次难复现的崩溃。
     super.dispose();
   }
 
@@ -829,36 +846,172 @@ class _LogTailPanelState extends State<_LogTailPanel> {
     );
   }
 
-  void _openFullScreen() {
-    showDialog<void>(
+  Future<void> _openFullScreen() async {
+    // 全屏期间向服务端要多一些行（20 → 300）。改的是轮询的那个 notifier，
+    // 不另发一个请求：两份日志各自轮询会出现两个快照，更难对齐。
+    final notifier = ref.read(upgradeRunProvider.notifier);
+    notifier.requestLogLines(UpgradeRepository.pollLogLines);
+    await showDialog<void>(
       context: context,
-      builder: (ctx) => Dialog.fullscreen(
-        child: Scaffold(
-          appBar: AppBar(
-            title: const Text('升级日志'),
-            actions: <Widget>[
-              IconButton(
-                tooltip: '关闭',
-                onPressed: () => Navigator.of(ctx).pop(),
-                icon: const Icon(Icons.close),
-              ),
-            ],
-          ),
-          body: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: SelectableText(
-                widget.lines.join('\n'),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontFamily: AppFonts.mono,
-                      fontSize: AppFontSizes.caption,
-                      height: 1.4,
-                      color: AppColors.text,
-                    ),
-              ),
+      builder: (ctx) => LogFullScreen(tail: _tail),
+    );
+    notifier.requestLogLines(20);
+  }
+}
+
+/// 升级日志全屏页。
+///
+/// 之所以是公开类而不是 `_` 私有：widget 测试要能直接把它挂起来，验证
+/// 「新行到达就上屏」——这条正是用户报的 bug，不能只靠手点。
+///
+/// 三条交互约定：
+///  * 新行到达且用户停在底部 → 跟着滚；
+///  * 用户往上翻 → **不抢位置**（正在读第 50 行的人被拽到第 300 行最烦），
+///    右下角给「跳到最新」；
+///  * 底部留 88dp 给 FAB 让位，否则最后一行永远被它压住。
+class LogFullScreen extends StatefulWidget {
+  const LogFullScreen({super.key, required this.tail});
+
+  /// 与面板共用的数据源（面板轮询到新尾就推一次）。
+  final ValueListenable<List<String>> tail;
+
+  @override
+  State<LogFullScreen> createState() => _LogFullScreenState();
+}
+
+class _LogFullScreenState extends State<LogFullScreen> {
+  final ScrollController _controller = ScrollController();
+
+  /// 是否跟随到底部。用户往上翻后置 false，滚回底部后自动恢复。
+  bool _follow = true;
+  int _lastCount = 0;
+
+  /// 距底多少算「仍在看最新的」。
+  ///
+  /// 48 而不是 0：手指松手时列表常有几像素回弹，用 0 判会误判成「用户离开了」，
+  /// 于是新行来了不跟——表现就是「偶尔不流式」，比完全不流式更难查。
+  static const double _bottomTolerance = 48;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastCount = widget.tail.value.length;
+    _controller.addListener(_onScroll);
+    _jumpToBottomSoon();
+  }
+
+  void _onScroll() {
+    if (!_controller.hasClients) return;
+    final pos = _controller.position;
+    final atBottom = pos.maxScrollExtent - pos.pixels <= _bottomTolerance;
+    if (atBottom != _follow) setState(() => _follow = atBottom);
+  }
+
+  void _jumpToBottomSoon() {
+    // 补一帧再贴底：新行进入列表后 maxScrollExtent 当帧还没算出来，
+    // 直接 jump 会停在倒数第二行——这就是「明明跟了却没到底」的成因。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      _controller.jumpTo(_controller.position.maxScrollExtent);
+    });
+  }
+
+  /// 由 [ValueListenableBuilder] 在每次重建时调用，负责决定要不要跟。
+  void _onNewLines(int count) {
+    if (count == _lastCount) return;
+    final grew = count > _lastCount;
+    _lastCount = count;
+    if (grew && _follow) _jumpToBottomSoon();
+  }
+
+  Future<void> _copyAll() async {
+    await Clipboard.setData(ClipboardData(text: widget.tail.value.join('\n')));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已复制 ${widget.tail.value.length} 行'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final lineStyle = theme.textTheme.bodySmall?.copyWith(
+      fontFamily: AppFonts.mono,
+      fontSize: AppFontSizes.caption,
+      height: 1.4,
+      color: AppColors.text,
+    );
+
+    return Dialog.fullscreen(
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('升级日志'),
+          actions: <Widget>[
+            IconButton(
+              tooltip: '复制全部',
+              onPressed: _copyAll,
+              icon: const Icon(Icons.copy_all_outlined),
             ),
+            IconButton(
+              tooltip: '关闭',
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: ValueListenableBuilder<List<String>>(
+            valueListenable: widget.tail,
+            builder: (context, lines, _) {
+              _onNewLines(lines.length);
+              if (lines.isEmpty) {
+                return Center(
+                  child: Text(
+                    '升级还没有产生日志。',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: AppColors.faint),
+                  ),
+                );
+              }
+              return SelectionArea(
+                child: ListView.builder(
+                  controller: _controller,
+                  // 底部 88 给 FAB 让位：不留这段，最后一行永远压在按钮下面。
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    88,
+                  ),
+                  itemCount: lines.length,
+                  itemBuilder: (context, index) => Text(
+                    lines[index],
+                    style: lineStyle,
+                  ),
+                ),
+              );
+            },
           ),
         ),
+        floatingActionButton: _follow
+            ? null
+            : FloatingActionButton.small(
+                tooltip: '跳到最新',
+                onPressed: () {
+                  setState(() => _follow = true);
+                  _jumpToBottomSoon();
+                },
+                child: const Icon(Icons.vertical_align_bottom),
+              ),
       ),
     );
   }

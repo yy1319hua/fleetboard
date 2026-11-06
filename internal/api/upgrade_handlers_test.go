@@ -594,6 +594,52 @@ func TestUpgradeStatusIdle(t *testing.T) {
 	}
 }
 
+// status 的 ?log_lines=：夹紧 20..2000，非法值回退默认。
+//
+// 这个参数服务于「全屏看升级日志」：面板首屏 20 行够瞥一眼，全屏时要 300 行
+// 才看得清卡在哪一步。下限取 20 而不是 1——要 5 行没有意义，日志越全越好读；
+// 上限 2000 与 LogTail 的 256KB 读取窗口对齐，再多就得改读取策略，是另一件事。
+func TestUpgradeStatusLogLinesParam(t *testing.T) {
+	tail := make([]string, 2500)
+	for i := range tail {
+		tail[i] = "line"
+	}
+	cases := []struct {
+		name  string
+		query string
+		want  int
+	}{
+		{"缺省", "", 20},
+		{"显式 300", "?log_lines=300", 300},
+		{"低于下限", "?log_lines=5", 20},
+		{"零", "?log_lines=0", 20},
+		{"负数", "?log_lines=-7", 20},
+		{"高于上限", "?log_lines=99999", 2000},
+		{"非数字", "?log_lines=abc", 20},
+		{"纯空白", "?log_lines=%20%20", 20},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := &fakeUpgradeManager{
+				enabled: true,
+				logTail: tail,
+				snap:    upgrade.Snapshot{State: "replacing"},
+			}
+			r, _ := newUpgradeTestServer(t, m, &fakeVersionSource{tag: "v0.4.0"}, true, nil)
+			tokens := loginTokens(t, r)
+
+			w := upgradeRequest(t, r, http.MethodGet,
+				"/api/system/upgrade/status"+c.query, nil, tokens.AccessToken, nil)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body)
+			}
+			if m.logTailAsked != c.want {
+				t.Errorf("LogTail 请求行数=%d want %d", m.logTailAsked, c.want)
+			}
+		})
+	}
+}
+
 // 真实环境判定：临时目录里放 .env 后应判定通过（systemctl 缺失时原因里会点名它）。
 func TestUpgradeEnvReason(t *testing.T) {
 	dir := t.TempDir()

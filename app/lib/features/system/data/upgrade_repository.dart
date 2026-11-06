@@ -29,13 +29,26 @@ class UpgradeRepository {
     return unwrap<PanelUpgradeInfo>(resp.data, PanelUpgradeInfo.fromJson);
   }
 
+  /// 全屏查看日志时一次要的行数。
+  ///
+  /// 300 是「手机上大约 7 屏」的量级：够回看到卡住之前发生了什么，又不至于让
+  /// 1s 一次的轮询每次都拖回几百 KB。首屏面板只要 20 行（[statusOrNull] 的默认值），
+  /// 那里是「瞥一眼最后一行停在哪」，不是「翻历史」。
+  static const int pollLogLines = 300;
+
   /// 升级窗口内的状态轮询：**任何失败都返回 null**。
   ///
   /// 停服期间 Cloudflare 会回 502，这与「新版本起不来」在 HTTP 层面完全同形，
   /// 所以这里不做任何判定，只负责把「没拿到」这件事如实传上去。
-  Future<UpgradeStatus?> statusOrNull() async {
+  ///
+  /// [logLines] 透传给服务端的 `?log_lines=`（服务端夹紧 20..2000）。老服务端
+  /// 不认这个参数，会照旧回 20 行——功能降级但不报错。
+  Future<UpgradeStatus?> statusOrNull({int logLines = 20}) async {
     try {
-      final resp = await _json.get<dynamic>('/api/system/upgrade/status');
+      final resp = await _json.get<dynamic>(
+        '/api/system/upgrade/status',
+        queryParameters: <String, dynamic>{'log_lines': '$logLines'},
+      );
       return unwrap<UpgradeStatus>(resp.data, UpgradeStatus.fromJson);
     } on Object {
       return null;

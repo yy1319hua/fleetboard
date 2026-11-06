@@ -15,7 +15,11 @@ import '../domain/panel_upgrade.dart';
 const Duration upgradeUnreachableTolerance = Duration(seconds: 180);
 
 /// 轮询间隔。
-const Duration upgradePollInterval = Duration(seconds: 2);
+///
+/// 2s → 1s：升级日志是「包下载到 80% 卡住」这类问题的唯一证据，2s 一次的
+/// 采样在真机上表现为「半天不动一行」。1s 与日志行产生的速度同量级，
+/// 代价是升级窗口内每分钟多 30 次轻量请求（都走同一台面板，可忽略）。
+const Duration upgradePollInterval = Duration(seconds: 1);
 
 /// 无结论轮询的总上限：防止一个残留的「进行中」状态把 App 变成永动机。
 const Duration upgradePollGiveUpAfter = Duration(minutes: 10);
@@ -124,6 +128,19 @@ class UpgradeRunNotifier extends StateNotifier<UpgradeRunState?> {
   DateTime? _startedAt;
   bool _disposed = false;
 
+  /// 下一次轮询要多少行日志尾。
+  ///
+  /// 平时 20 行（面板里只剩「最后一行停在哪」这一个信息有用）；用户点开全屏时
+  /// 页面把它抬到 300，关掉再降回来。不放在 UI 层各拉一份，是因为轮询只有一个
+  /// 定时器——两处各自请求会让日志出现两份快照，反而更难对齐。
+  int _logLines = 20;
+
+  /// 调整日志尾行数（下一次轮询生效，不立即触发请求）。
+  void requestLogLines(int lines) {
+    if (lines == _logLines) return;
+    _logLines = lines;
+  }
+
   /// 开始观察一次升级。[initial] 是触发接口 202 直接带回的状态。
   void begin({
     required String fromVersion,
@@ -192,7 +209,7 @@ class UpgradeRunNotifier extends StateNotifier<UpgradeRunState?> {
     // 升级窗口内：两个请求的失败都在仓储层被吞成 null，这里不做任何提示。
     // 停服期间弹「网络错误」对用户是纯噪音——他刚刚被告知要等 10–30s。
     final healthVersion = await _repository.healthVersionOrNull();
-    final status = await _repository.statusOrNull();
+    final status = await _repository.statusOrNull(logLines: _logLines);
     if (_disposed || state == null) return;
 
     final elapsed = DateTime.now().difference(_startedAt ?? DateTime.now());
