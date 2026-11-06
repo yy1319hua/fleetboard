@@ -24,6 +24,14 @@ class ServerOpsTab extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
       children: [
+        // 终端放第一位：这是这段里唯一「进去就能动手」的入口，
+        // 包更新/Compose 都是围绕某件事的定点操作，只有终端是通用手段。
+        _ActionTile(
+          icon: Icons.terminal,
+          title: '终端',
+          subtitle: '交互式 shell，支持 vim / top 等全屏工具',
+          onTap: () => context.push('/servers/$serverId/terminal'),
+        ),
         _ActionTile(
           icon: Icons.system_update_alt_outlined,
           title: '包更新',

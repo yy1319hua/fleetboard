@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants.dart';
@@ -59,19 +60,9 @@ class OverviewPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('总览'),
         actions: <Widget>[
-          if (bootstrap.value != null)
-            Padding(
-              padding: const EdgeInsets.only(right: AppSpacing.lg),
-              child: Center(
-                child: Text(
-                  '未读 ${bootstrap.value!.unreadAlerts}',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(color: AppColors.accent),
-                ),
-              ),
-            ),
+          // 原来这里是一段「未读 N」的纯文本：看着像入口，点下去没反应。
+          // 通知 Tab 撤掉之后，它就是唯一入口，必须是能点、有角标、带无障碍标签的按钮。
+          _AlertsBell(unread: bootstrap.value?.unreadAlerts ?? 0),
           RefreshIconButton(
             onRefresh: () => ref.read(overviewProvider.notifier).refresh(),
           ),
@@ -223,4 +214,39 @@ class _ErrorState extends ConsumerWidget {
 String _hhmm(DateTime t) {
   String two(int v) => v.toString().padLeft(2, '0');
   return '${two(t.hour)}:${two(t.minute)}';
+}
+
+
+/// 告警入口：未读为 0 时是普通铃铛，有未读时染主色并挂角标。
+///
+/// 角标上限显示 99+：四位数会把图标挤变形，而「超过 99 条未读」这个量级
+/// 本身已经说明问题，具体数字没有意义。
+class _AlertsBell extends StatelessWidget {
+  const _AlertsBell({required this.unread});
+
+  final int unread;
+
+  @override
+  Widget build(BuildContext context) {
+    final hot = unread > 0;
+    final label = hot ? '告警通知，$unread 条未读' : '告警通知';
+    return Semantics(
+      button: true,
+      label: label,
+      child: IconButton(
+        tooltip: label,
+        onPressed: () => context.push('/alerts'),
+        icon: Badge(
+          isLabelVisible: hot,
+          backgroundColor: AppColors.accent,
+          textColor: AppColors.textInverse,
+          label: Text(unread > 99 ? '99+' : '$unread'),
+          child: Icon(
+            hot ? Icons.notifications_active_outlined : Icons.notifications_none,
+            color: hot ? AppColors.accent : AppColors.muted,
+          ),
+        ),
+      ),
+    );
+  }
 }

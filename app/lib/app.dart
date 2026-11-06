@@ -32,6 +32,7 @@ import 'features/settings/presentation/settings_page.dart';
 import 'features/settings/presentation/settings_push_page.dart';
 import 'features/settings/presentation/settings_security_page.dart';
 import 'features/updater/presentation/about_page.dart';
+import 'features/terminal/presentation/terminal_page.dart';
 
 /// 全局 ScaffoldMessenger 键：供 App 生命周期层在 onResumed 弹 Toast（7 天硬墙预警）。
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
@@ -161,18 +162,6 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const OverviewPage(),
           ),
           GoRoute(
-            path: '/alerts',
-            builder: (context, state) => const AlertsPage(),
-            routes: <RouteBase>[
-              GoRoute(
-                path: ':alertId',
-                builder: (context, state) => AlertDetailPage(
-                  alertId: state.pathParameters['alertId'] ?? '',
-                ),
-              ),
-            ],
-          ),
-          GoRoute(
             path: '/settings',
             builder: (context, state) => const SettingsPage(),
             routes: <RouteBase>[
@@ -262,6 +251,21 @@ final goRouterProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
+      // 告警不在底部 Tab 里，而是从总览右上角铃铛 push 上来的二级页。
+      // 放在 Shell 外层是有意的：留在 Shell 内的话，底部两个 Tab 没有一个是
+      // 当前页（index 会退化成 0，出现「高亮总览却在看告警」的矛盾）。
+      GoRoute(
+        path: '/alerts',
+        builder: (context, state) => const AlertsPage(),
+        routes: <RouteBase>[
+          GoRoute(
+            path: ':alertId',
+            builder: (context, state) => AlertDetailPage(
+              alertId: state.pathParameters['alertId'] ?? '',
+            ),
+          ),
+        ],
+      ),
           GoRoute(
             path: '/servers/:serverId',
             builder: (context, state) => ServerDetailPage(
@@ -295,6 +299,18 @@ final goRouterProvider = Provider<GoRouter>((ref) {
               // 资源（镜像/网络/卷）原本设计为详情页内的段，但它和
               // 「文件」「容器」不同：不需要频繁在段之间来回切，
               // 且镜像列表条目长，独立全屏能多显示两行。故做成子路由。
+              // 终端走 root navigator：它要全屏、要避开底部 Tab 壳，
+              // 且键盘弹出时整个页面会重排，套在 ShellRoute 里会连带底部栏闪动。
+              GoRoute(
+                path: 'terminal',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => TerminalPage(
+                  serverId: int.tryParse(
+                        state.pathParameters['serverId'] ?? '',
+                      ) ??
+                      0,
+                ),
+              ),
               GoRoute(
                 path: 'resources',
                 parentNavigatorKey: _rootNavigatorKey,
@@ -327,9 +343,11 @@ class _TabItem {
   final IconData icon;
 }
 
-/// 底部三 Tab 壳（总览 / 通知 / 设置）。
+/// 底部 Tab 壳（总览 / 设置）。
 ///
-/// 通知 Tab 角标读取 OverviewNotifier 的 unreadAlerts（前台轮询/onResumed 持续更新）。
+/// 通知不再是 Tab：它与总览右上角的铃铛是同一件事，而底部一格的机会成本
+/// 很高（每次开 App 都会看到）。未读角标改由铃铛承担，仍读
+/// OverviewNotifier 的 unreadAlerts（前台轮询 / onResumed 持续更新）。
 class AppShell extends ConsumerWidget {
   const AppShell({
     super.key,
@@ -341,7 +359,6 @@ class AppShell extends ConsumerWidget {
 
   static const List<_TabItem> _tabs = <_TabItem>[
     _TabItem(path: '/overview', label: '总览', icon: Icons.dashboard_outlined),
-    _TabItem(path: '/alerts', label: '通知', icon: Icons.notifications_outlined),
     _TabItem(path: '/settings', label: '设置', icon: Icons.settings_outlined),
   ];
 
@@ -355,13 +372,9 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final unread = ref.watch(overviewProvider).value?.unreadAlerts ?? 0;
     final index = _currentIndex;
 
     Icon navIcon(_TabItem t) => Icon(t.icon);
-    Widget iconWithBadge(_TabItem t) => t.path == '/alerts' && unread > 0
-        ? Badge.count(count: unread, child: navIcon(t))
-        : navIcon(t);
 
     // 三档断点（DESIGN.md §8）：
     //   <600  底部 Tab（手机，现状）
@@ -379,7 +392,7 @@ class AppShell extends ConsumerWidget {
               destinations: _tabs
                   .map(
                     (t) => NavigationDestination(
-                      icon: iconWithBadge(t),
+                      icon: navIcon(t),
                       label: t.label,
                     ),
                   )
@@ -401,7 +414,7 @@ class AppShell extends ConsumerWidget {
                 destinations: _tabs
                     .map(
                       (t) => NavigationRailDestination(
-                        icon: iconWithBadge(t),
+                        icon: navIcon(t),
                         label: Text(t.label),
                       ),
                     )
