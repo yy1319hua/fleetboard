@@ -57,6 +57,41 @@ if [ ! -f "$TOKEN" ]; then
         "   再重新 push。"
 fi
 
+# ---------- 签名校验（先于过期校验） ----------
+# 顺序有讲究：过期的判定依赖令牌里的 EXPIRE_EPOCH，而那一行本身是可以被
+# 手写的。先验签，未签名的令牌进不到任何后续判断。
+#
+# 起因：令牌曾是纯文本文件，照着格式手写一份就能通过校验。
+KEY="$WS/.push-token.key"
+
+if [ ! -f "$KEY" ]; then
+    reject "签名密钥缺失（$KEY）" \
+        "  令牌无法验签，一律视为不可信。" \
+        "" \
+        "  → 不要自己造密钥。请用户确认环境后执行：" \
+        "       bash ../multi-agent-collab/scripts/approve-push.sh --init-key" \
+        "     再重新签发令牌。"
+fi
+
+sig=$(sed -n 's/^SIG=//p' "$TOKEN")
+if [ -z "$sig" ]; then
+    reject "令牌没有签名（缺 SIG 行）" \
+        "  令牌必须由 approve-push.sh 用工作区密钥签名。" \
+        "  手写 / 拼凑的令牌一律拒绝。" \
+        "" \
+        "  → 重新取用户批准并签发：" \
+        "       bash ../multi-agent-collab/scripts/approve-push.sh \"<批准说明>\""
+fi
+
+payload=$(sed '/^SIG=/d' "$TOKEN")
+calc=$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$(cat "$KEY")" -r | awk '{print $1}')
+if [ "$sig" != "$calc" ]; then
+    reject "令牌签名不匹配" \
+        "  内容被改过，或令牌不是由 approve-push.sh 签发的。" \
+        "" \
+        "  → 不要修改令牌。重新取用户批准并签发。"
+fi
+
 exp=$(sed -n 's/^EXPIRE_EPOCH=//p' "$TOKEN")
 if [ -z "$exp" ] || [ "$exp" -le "$(date +%s)" ]; then
     echo "" >&2
@@ -138,4 +173,12 @@ else
 fi
 echo "   本次推送涉及文件：" >&2
 printf '%s\n' "$FILES" | sort -u | sed '/^$/d' | sed 's/^/     /' >&2
+
+# 审计留痕：事后可查「谁在什么时候以什么说明推了什么」。
+# 令牌本身用完即删，这份日志是唯一的事后凭据。
+printf '%s\tmode=%s\t%s\thead=%s\n' \
+    "$(date '+%Y-%m-%d %H:%M:%S')" "$mode" "$note" \
+    "$(git rev-parse --short HEAD 2>/dev/null || echo '?')" \
+    >> "$WS/push-audit.log" 2>/dev/null || true
+
 exit 0
