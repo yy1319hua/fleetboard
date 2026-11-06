@@ -57,13 +57,11 @@ class TerminalKeyBar extends StatelessWidget {
   final ValueChanged<String> onKey;
   final VoidCallback onKeyboardToggle;
 
-  /// 单行高度。两行共 60dp（含 1dp 上边框为 61dp）。
+  /// 单行高度。
   ///
-  /// 竖屏 + 软键盘时可用区本就只剩四百多 dp，再高会明显挤压终端行数。34 → 30
-  /// 是按实际使用反馈收敛的：这 8dp 直接换成一整行终端输出，比留在按键上更值。
-  /// 代价是触控区低于 Material 建议的 48dp——但按键条是「高频短按、手指有肌肉
-  /// 记忆」的场景，误触代价只是多敲一个控制字符，与「少一行可见输出」相比可接受。
-  static const double rowHeight = 30;
+  /// 两行共 68dp：竖屏 + 软键盘时可用区本就只剩四百多 dp，再高会明显挤压
+  /// 终端行数；再矮则单键高不足 34dp，误触率上升。34 是这个约束下的取值。
+  static const double rowHeight = 34;
 
   static const String esc = '\x1b';
   static const String tab = '\t';

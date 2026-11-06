@@ -29,22 +29,13 @@ class UpgradeRepository {
     return unwrap<PanelUpgradeInfo>(resp.data, PanelUpgradeInfo.fromJson);
   }
 
-  /// 轮询时取的日志尾行数。
-  ///
-  /// 首屏那个 140dp 的小面板只需要 20 行，但全屏查看要能往回翻，所以固定按
-  /// 300 行取——一份数据两处用，不搞「全屏时再开第二条请求」的第二套状态。
-  /// 300 行约 18KB，1 秒一次对面板这种单人内网场景没有压力。
-  static const int pollLogLines = 300;
-
   /// 升级窗口内的状态轮询：**任何失败都返回 null**。
   ///
   /// 停服期间 Cloudflare 会回 502，这与「新版本起不来」在 HTTP 层面完全同形，
   /// 所以这里不做任何判定，只负责把「没拿到」这件事如实传上去。
-  Future<UpgradeStatus?> statusOrNull({int logLines = 20}) async {
+  Future<UpgradeStatus?> statusOrNull() async {
     try {
-      final resp = await _json.get<dynamic>(
-        '/api/system/upgrade/status?log_lines=$logLines',
-      );
+      final resp = await _json.get<dynamic>('/api/system/upgrade/status');
       return unwrap<UpgradeStatus>(resp.data, UpgradeStatus.fromJson);
     } on Object {
       return null;
