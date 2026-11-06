@@ -59,6 +59,11 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 	r.GET("/api/servers/:id/containers/:cid/logs",
 		containerLogsHandler(opts.DB, opts.MasterKey, opts.JWTSecret, opts.Pool))
 
+	// 交互式终端同样是 WebSocket，握手阶段要读 Authorization 头（App 直连），
+	// 因此与日志流一样放在鉴权组之外，由 handler 自己验令牌。
+	r.GET("/api/servers/:id/terminal",
+		serverTerminalHandler(opts.DB, opts.MasterKey, opts.JWTSecret))
+
 	// 需鉴权端点
 	authed := r.Group("/api", JWTAuth(opts.JWTSecret, opts.DB), AuditMiddleware(opts.DB))
 

@@ -653,6 +653,25 @@ paths:
       responses:
         '200':
           description: 升级为 WebSocket
+  /api/servers/{id}/terminal:
+    get:
+      operationId: serverTerminal
+      tags: [terminal]
+      x-app-consumed: true
+      summary: "交互式终端（WS + PTY，需 Authorization: Bearer；详见 realtime-contract.yaml）"
+      description: >
+        双向字节流。容器化部署时不可用——本端点直连被管机 SSH 并申请 PTY。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: cols, in: query, required: false, schema: { type: integer, default: 80, minimum: 20, maximum: 500 } }
+        - { name: rows, in: query, required: false, schema: { type: integer, default: 24, minimum: 5, maximum: 200 } }
+      responses:
+        '200':
+          description: 升级为 WebSocket
+        '401':
+          description: 缺少或无效的访问令牌
+        '409':
+          description: 该服务器并发终端数已达上限
   /api/servers/{id}/container-stats:
     get:
       operationId: containerStats

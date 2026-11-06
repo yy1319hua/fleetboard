@@ -14,6 +14,15 @@ components:
         ts: { type: string, format: date-time, description: 日志时间戳 }
         stream: { type: string, enum: [stdout, stderr], description: 输出流 }
         text: { type: string, description: 日志文本行 }
+    TermFrame:
+      type: object
+      properties:
+        t: { type: string, enum: [i, o, r, x, e, p], description: 帧类型 }
+        d: { type: string, description: base64 编码的输入/输出字节 }
+        c: { type: integer, description: 列数（t=r 时） }
+        r: { type: integer, description: 行数（t=r 时） }
+        code: { type: integer, description: 退出码（t=x 时） }
+        m: { type: string, description: 错误文案（t=e 时） }
     SseEvent:
       type: object
       properties:
@@ -34,6 +43,26 @@ paths:
         - { name: cid, in: path, required: true, schema: { type: string } }
       messages:
         - $ref: '#/components/schemas/LogChunk'
+
+  # ===== 交互式终端：WebSocket（双向字节流 + PTY resize）=====
+  #
+  # 帧格式（JSON 文本帧，载荷 base64）：
+  #   客户端 → 服务端 {"t":"i","d":"<base64>"} 输入字节 / {"t":"r","c":120,"r":30} 尺寸
+  #   服务端 → 客户端 {"t":"o","d":"<base64>"} 输出字节 / {"t":"x","code":0} 结束 / {"t":"e","m":"..."} 错误
+  # 为什么 base64：PTY 输出是任意字节，单帧可能切在多字节字符中间，
+  # 按字符串逐帧传会把中文变成 U+FFFD。
+  /api/servers/{id}/terminal:
+    get:
+      operationId: serverTerminalWS
+      x-transport: websocket
+      summary: >
+        交互式 shell。握手必须带 `Authorization: Bearer <token>`（App 直连；
+        不支持 ticket 换票——票据是为无法自定义头的浏览器准备的，终端只服务 App）。
+        单机并发上限 3，单会话最长 4 小时，空闲靠 ping/pong 回收。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      messages:
+        - $ref: '#/components/schemas/TermFrame'
 
   # ===== 软件包更新：SSE（text/event-stream，M9.0b 双通道之一）=====
   /api/servers/{id}/packages/update:
