@@ -7,9 +7,20 @@
 #   1. user.name 匹配 ^[a-z][a-z0-9-]*-agent$
 #   2. user.name == <工作区>/CURRENT_AI 的内容（防忘记签到 / 上一位的签到仍在生效）
 #   3. user.email == <user.name>@local
-#   4. 暂存新增行不含私密特征 → 命中即拒
+#   4. 租约带有效签名（LEASE_STATE 的 SIG，HMAC-SHA256）且未在撤销账本中
+#   5. 暂存新增行不含私密特征 → 命中即拒
 #
 # 第 4 条说明：
+#   * CURRENT_AI 只是署名的一行投影，真正被签的是 LEASE_STATE。只写一个
+#     CURRENT_AI 文件没有签名，会被拒；改了 LEASE_STATE 签名又对不上。
+#   * 密钥在 <工作区>/.push-token.key（600，不入库）。密钥缺失时一律拒绝：
+#     正确反应是停下报用户，不是自己造一把。
+#   * 交出工作台时 lease.sh 会把该次签名登记到 <工作区>/LEASE_REVOKED；
+#     之后把旧文件写回来（replay）同样被拒。
+#   * 局限：同一用户能读密钥就仍能自签。本机制把伪造从「补一个文本文件」
+#     抬到「显式读密钥 + 算 HMAC」，是可观察动作，不是物理隔离。
+#
+# 第 5 条说明：
 #   * 只扫本次暂存的新增行，不翻历史。
 #   * 内置仅通用特征（私钥头 / token 前缀），不含任何项目专属串。
 #     项目专属特征请写到工作区（git 工作树之外）的 credscan-patterns.txt，每行一个正则。
@@ -47,7 +58,64 @@ if [[ "$email" != "$name@local" ]]; then
   exit 1
 fi
 
-# ---------- 4) 凭据扫描 ----------
+# ---------- 4) 租约签名 ----------
+# 顺序：先做便宜的字段比对（上一步），再算 HMAC。签名若被跳过，前三步仍拦得住
+# 「没签到就提交」；但拦不住「自己写一个 CURRENT_AI」——那要靠这一步。
+ls_path="$WS/LEASE_STATE"
+rv_path="$WS/LEASE_REVOKED"
+key_path="$WS/.push-token.key"
+
+if [[ ! -f "$ls_path" ]]; then
+  echo "pre-commit 拒：未找到 LEASE_STATE 于 $ls_path" >&2
+  echo "  CURRENT_AI 必须与带签名的租约配对，单独写一个 CURRENT_AI 无效。" >&2
+  echo "  → 停下、报用户，不要自救。" >&2
+  exit 1
+fi
+
+ls_sig=$(sed -n 's/^SIG=//p' "$ls_path")
+if [[ -z "$ls_sig" ]]; then
+  echo "pre-commit 拒：租约没有签名（LEASE_STATE 缺 SIG 行）" >&2
+  echo "  租约须由 lease.sh acquire 签发；手写 / 拼凑的一律拒绝。" >&2
+  echo "  → 停下、报用户，不要自救。" >&2
+  exit 1
+fi
+
+if [[ ! -f "$key_path" ]]; then
+  echo "pre-commit 拒：签名密钥缺失（$key_path）" >&2
+  echo "  → 无法校验租约。停下、报用户，不要自行生成密钥。" >&2
+  exit 1
+fi
+
+# 载荷与 lease.sh 的 lease_payload 必须逐字节一致：
+#   LEASE_STATE 去掉 SIG 行 + CURRENT_AI 原文（不 trim，避免宽严不一）
+lease_name=$(sed -n 's/^SIGNATURE=//p' "$ls_path")
+if [[ "$lease_name" != "$expected" ]]; then
+  echo "pre-commit 拒：LEASE_STATE 的署名 ($lease_name) ≠ CURRENT_AI ($expected)" >&2
+  echo "  → 两个文件必须成对，不要单独改其中一个。" >&2
+  exit 1
+fi
+
+calc=$({ sed '/^SIG=/d' "$ls_path"; printf '%s' "$(cat "$ca_path")"; } \
+       | openssl dgst -sha256 -hmac "$(cat "$key_path")" -r | awk '{print $1}')
+if [[ -z "$calc" ]]; then
+  echo "pre-commit 拒：签名计算失败（openssl dgst 无输出）" >&2
+  exit 1
+fi
+if [[ "$ls_sig" != "$calc" ]]; then
+  echo "pre-commit 拒：租约签名不匹配" >&2
+  echo "  内容被改过，或租约不是由 lease.sh 签发的。" >&2
+  echo "  → 停下、报用户，不要自救。" >&2
+  exit 1
+fi
+
+if [[ -f "$rv_path" ]] && grep -qF "$ls_sig" "$rv_path"; then
+  echo "pre-commit 拒：该租约已交出（签名在撤销账本里）" >&2
+  echo "  交出工作台后把旧文件写回来，等同于伪造签到。" >&2
+  echo "  → 停下、报用户重新签。" >&2
+  exit 1
+fi
+
+# ---------- 5) 凭据扫描 ----------
 HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXCLUDE_SPEC=":(exclude)$(basename "$HOOKS_DIR")/*"
 
