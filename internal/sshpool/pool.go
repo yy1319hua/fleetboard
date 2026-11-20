@@ -124,6 +124,7 @@ func isPasswordPrompt(q string) bool {
 
 // Dialer 抽象底层建连，便于测试注入。
 type Dialer func(ctx context.Context, cfg Config) (*ssh.Client, error)
+
 // DefaultDialer 使用标准 SSH 协议建连。
 func DefaultDialer(ctx context.Context, cfg Config) (*ssh.Client, error) {
 	auths, err := cfg.authMethods()
