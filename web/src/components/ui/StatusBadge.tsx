@@ -68,6 +68,20 @@ export function Pill({ children, className }: { children: React.ReactNode; class
 }
 
 /** 服务器连接状态 → 文案与色调。 */
+/**
+ * 服务器状态徽章文案。
+ *
+ * 「仅保存」的机器从不被轮询，connection_status 永远停在 unknown；照常显示
+ * 「未知」会被读成掉线，所以这类机器统一显示「未监控」。
+ */
+export function serverToneFor(server: {
+  connection_status: string;
+  monitor_enabled?: boolean;
+}): { tone: Tone; label: string } {
+  if (server.monitor_enabled === false) return { tone: "idle", label: "未监控" };
+  return serverTone(server.connection_status);
+}
+
 export function serverTone(status: string): { tone: Tone; label: string } {
   switch (status) {
     case "online":

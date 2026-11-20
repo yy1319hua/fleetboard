@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { MiniBar } from "@/components/MiniBar";
 import { IconServer } from "@/components/icons";
 import { Button } from "@/components/ui/Button";
-import { StatusBadge, Pill, serverTone } from "@/components/ui/StatusBadge";
+import { StatusBadge, Pill, serverToneFor } from "@/components/ui/StatusBadge";
 import { formatRelative } from "@/lib/format";
 import { useDeleteServer, useLatestMetric, useTestServer } from "@/lib/queries";
 import type { Server } from "@/lib/types";
@@ -13,7 +13,7 @@ import type { Server } from "@/lib/types";
  * 卡片内部只用分隔线与区块，不再嵌套第二层卡（DESIGN.md 反模式）。
  */
 export function ServerCard({ server, onError }: { server: Server; onError: (msg: string) => void }) {
-  const status = serverTone(server.connection_status);
+  const status = serverToneFor(server);
   const metric = useLatestMetric(server.id);
   const test = useTestServer();
   const del = useDeleteServer();

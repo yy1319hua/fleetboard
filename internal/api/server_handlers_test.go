@@ -398,3 +398,44 @@ func TestUpdateServerValidation(t *testing.T) {
 		t.Errorf("不存在的服务器应 404，实际 status=%d", w.Code)
 	}
 }
+
+// monitor_enabled 省略时默认 true（老客户端 / 老行为不变），显式 false 才变「仅保存」。
+func TestCreateServerMonitorFlagAPI(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	decode := func(w *httptest.ResponseRecorder) *bool {
+		t.Helper()
+		var resp struct {
+			Data struct {
+				MonitorEnabled *bool `json:"monitor_enabled"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("解析响应: %v body=%s", err, w.Body)
+		}
+		return resp.Data.MonitorEnabled
+	}
+
+	w := authReq(r, http.MethodPost, "/api/servers", tokens.AccessToken, map[string]any{
+		"name": "m1", "host": "1.2.3.4", "auth_method": "password", "password": "pw",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body)
+	}
+	if got := decode(w); got == nil || !*got {
+		t.Errorf("省略 monitor_enabled 应默认 true，got=%v", got)
+	}
+
+	w = authReq(r, http.MethodPost, "/api/servers", tokens.AccessToken, map[string]any{
+		"name": "m2", "host": "1.2.3.5", "auth_method": "password", "password": "pw",
+		"monitor_enabled": false,
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body)
+	}
+	if got := decode(w); got == nil || *got {
+		t.Errorf("显式 false 应落成「仅保存」，got=%v", got)
+	}
+}

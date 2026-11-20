@@ -16,8 +16,15 @@ export function DashboardPage() {
   const servers = data ?? [];
   const online = servers.filter((s) => s.connection_status === "online").length;
   const offline = servers.filter((s) => s.connection_status === "offline").length;
+  // 「仅保存」的机器不参与轮询，状态永远是 unknown——单独计，避免被读成掉线。
+  const unmonitored = servers.filter((s) => s.monitor_enabled === false).length;
   // 首次采集前是 unknown；不单独计的话「在线 + 离线」对不上总数。
-  const unknown = servers.filter((s) => s.connection_status !== "online" && s.connection_status !== "offline").length;
+  const unknown = servers.filter(
+    (s) =>
+      s.monitor_enabled !== false &&
+      s.connection_status !== "online" &&
+      s.connection_status !== "offline",
+  ).length;
 
   const onError = (msg: string) => toast(msg, "danger");
 
@@ -29,6 +36,7 @@ export function DashboardPage() {
           <p className="mt-1 text-body-sm text-text-muted">
             共 {servers.length} 台 · 在线 {online} · 离线 {offline}
             {unknown > 0 ? ` · 未知 ${unknown}` : ""}
+            {unmonitored > 0 ? ` · 未监控 ${unmonitored}` : ""}
             {isFetching ? " · 刷新中" : ""}
           </p>
         </div>

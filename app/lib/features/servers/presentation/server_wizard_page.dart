@@ -18,6 +18,10 @@ import '../domain/private_key_validator.dart';
 ///
 /// 编辑模式（传入 [server]）：元信息预填；凭据默认「已保存，留空则不修改」，
 /// 只有打开「更换凭据」或切换认证方式时才要求重新填写。
+///
+/// **纳管方式**是独立选择：纳入监控（后台轮询）或仅保存（不轮询）。
+/// 后者为共享主机 / 按流量计费 / 易被限流的机器准备——保存仍会做一次连接验证，
+/// 但之后不再由采集循环反复连接。
 class ServerWizardPage extends ConsumerStatefulWidget {
   const ServerWizardPage({super.key, this.server});
 
@@ -49,6 +53,9 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
   /// 编辑模式下是否更换凭据；新增模式恒为 true（必须提供）。
   bool _replaceCredential = true;
 
+  /// 是否纳入后台轮询。false = 仅保存（不采集、不告警）。
+  bool _monitorEnabled = true;
+
   bool _submitting = false;
   String? _failure;
   bool _done = false;
@@ -71,6 +78,7 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
       _port.text = '${s.port}';
       _user.text = s.sshUser;
       _authMethod = s.authMethod;
+      _monitorEnabled = s.monitorEnabled;
       _replaceCredential = false;
     }
   }
@@ -256,6 +264,36 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
           '私钥更安全，推荐；密码方式仅在你没有可用私钥时使用。',
           style: theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
         ),
+        const SizedBox(height: AppSpacing.lg),
+        Text('纳管方式', style: theme.textTheme.titleSmall),
+        const SizedBox(height: AppSpacing.sm),
+        SegmentedButton<bool>(
+          segments: const <ButtonSegment<bool>>[
+            ButtonSegment<bool>(
+              value: true,
+              label: Text('纳入监控'),
+              icon: Icon(Icons.monitor_heart_outlined, size: 18),
+            ),
+            ButtonSegment<bool>(
+              value: false,
+              label: Text('仅保存'),
+              icon: Icon(Icons.bookmark_outline, size: 18),
+            ),
+          ],
+          selected: <bool>{_monitorEnabled},
+          onSelectionChanged: (Set<bool> v) =>
+              setState(() => _monitorEnabled = v.first),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          _monitorEnabled
+              ? '后台按设定间隔（默认 30 秒）采集 CPU / 内存 / 磁盘并评估告警。'
+              : '只保存配置与凭据，不在后台轮询——适合共享主机、按流量计费或对连接'
+                  '频率敏感的机器，避免频繁连 22 端口被限流甚至封禁。打开终端、'
+                  '文件或容器时仍会按需连接；保存时只做一次连接验证。',
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: AppColors.faint, height: 1.5),
+        ),
       ],
     );
   }
@@ -408,13 +446,20 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
           ),
           const SizedBox(height: AppSpacing.md),
           Text(
-            widget.isEdit ? '已保存，连接正常' : '已连接，已纳入总览',
+            widget.isEdit
+                ? '已保存，连接正常'
+                : (_monitorEnabled ? '已连接，已纳入总览' : '已连接，已保存（未纳入监控）'),
             textAlign: TextAlign.center,
             style: theme.textTheme.titleMedium,
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            widget.isEdit ? '新配置已生效，可以查看指标与容器。' : '服务器已加入总览，可以查看指标与容器。',
+            _monitorEnabled
+                ? (widget.isEdit
+                    ? '新配置已生效，可以查看指标与容器。'
+                    : '服务器已加入总览，可以查看指标与容器。')
+                : '配置已保存，可在列表中随时连接。后台不会轮询这台机器，'
+                    '所以没有指标与告警——需要监控时编辑它并切回「纳入监控」。',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
           ),
@@ -453,6 +498,16 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
                             ?.copyWith(color: AppColors.text),
                       ),
                     ),
+                    // 提示要能关掉：否则想清屏只能退出向导重进，填过的内容全丢。
+                    IconButton(
+                      onPressed: () => setState(() => _failure = null),
+                      icon: const Icon(Icons.close, size: 16),
+                      color: AppColors.muted,
+                      tooltip: '关闭提示',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.xs),
@@ -490,6 +545,10 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
                   label: '认证',
                   value: _authMethod == 'key' ? 'SSH 私钥' : '密码',
                 ),
+                _ReviewRow(
+                  label: '监控',
+                  value: _monitorEnabled ? '纳入监控（后台轮询）' : '仅保存（不轮询）',
+                ),
                 if (widget.isEdit)
                   _ReviewRow(
                     label: '凭据',
@@ -501,8 +560,11 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
         ),
         const SizedBox(height: AppSpacing.md),
         Text(
-          '点击「测试并保存」后：先发起一次 SSH 连接验证，通过了才写入面板。'
-          '连不上就停在当前页并给出原因，不会留下一条连不上的记录。',
+          _monitorEnabled
+              ? '点击「测试并保存」后：先发起一次 SSH 连接验证，通过了才写入面板。'
+                  '连不上就停在当前页并给出原因，不会留下一条连不上的记录。'
+              : '点击「测试并保存」后：只做一次 SSH 连接验证，通过了才写入面板；'
+                  '之后后台不再主动连接这台机器，指标与告警都不会产生。',
           style: theme.textTheme.bodySmall
               ?.copyWith(color: AppColors.faint, height: 1.6),
         ),
@@ -676,6 +738,7 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
           password: password,
           privateKey: privateKey,
           keyPass: keyPass,
+          monitorEnabled: _monitorEnabled,
         );
       } else {
         await repo.update(
@@ -690,6 +753,7 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
           keyPass: keyPass,
           // 向导没有标签输入，编辑时原样保留，避免顺手把已有标签清掉。
           tags: editing.tags,
+          monitorEnabled: _monitorEnabled,
         );
       }
 

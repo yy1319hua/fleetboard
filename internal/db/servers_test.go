@@ -165,3 +165,82 @@ func TestDeleteServerNotFound(t *testing.T) {
 		t.Errorf("err=%v, want ErrServerNotFound", err)
 	}
 }
+
+// 「仅保存」是新增的可选纳管模式，默认必须仍是纳入监控——
+// 否则升级后所有既有服务器会悄悄停采，用户却以为还在监控。
+func TestCreateServerMonitorDefaultsOn(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+
+	s, err := CreateServer(d, testMasterKey, CreateServerInput{Name: "a", Host: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.MonitorEnabled {
+		t.Error("未指定 monitor_enabled 时应默认纳入监控")
+	}
+
+	list, err := ListServers(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || !list[0].MonitorEnabled {
+		t.Errorf("ListServers 丢了监控开关: %+v", list)
+	}
+}
+
+func TestCreateServerMonitorDisabled(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+
+	off := false
+	s, err := CreateServer(d, testMasterKey, CreateServerInput{
+		Name: "shared", Host: "h", MonitorEnabled: &off,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.MonitorEnabled {
+		t.Error("显式 false 应落成「仅保存」")
+	}
+
+	got, err := GetServer(d, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.MonitorEnabled {
+		t.Error("GetServer 读回的开关与写入不一致")
+	}
+}
+
+func TestUpdateServerMonitorToggle(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+
+	s, err := CreateServer(d, testMasterKey, CreateServerInput{
+		Name: "a", Host: "a", AuthMethod: "password", Password: "pw",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 只改名称、不带开关：原值不能被顺手改掉（nil ≠ false）。
+	s2, err := UpdateServer(d, testMasterKey, s.ID, UpdateServerInput{Name: "b", Host: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s2.MonitorEnabled {
+		t.Error("未传 monitor_enabled 时不应改变原值")
+	}
+
+	off := false
+	s3, err := UpdateServer(d, testMasterKey, s.ID, UpdateServerInput{
+		Name: "b", Host: "a", MonitorEnabled: &off,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s3.MonitorEnabled {
+		t.Error("显式 false 应切换为「仅保存」")
+	}
+}

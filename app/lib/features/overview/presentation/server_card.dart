@@ -24,6 +24,13 @@ class ServerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // 「仅保存」的机器从不被轮询，connection_status 永远停在 unknown；
+    // 照常显示「未知」会被读成掉线，这里统一改成「未监控」。
+    final monitorOff = !server.monitorEnabled;
+    final statusKind =
+        monitorOff ? StatusKind.idle : statusFromConnection(server.connectionStatus);
+    final statusText =
+        monitorOff ? '未监控' : connectionStatusLabel(server.connectionStatus);
     return Card(
       margin: const EdgeInsets.symmetric(
         horizontal: AppSpacing.lg,
@@ -41,8 +48,8 @@ class ServerCard extends StatelessWidget {
               Row(
                 children: <Widget>[
                   StatusLabel(
-                    kind: statusFromConnection(server.connectionStatus),
-                    label: connectionStatusLabel(server.connectionStatus),
+                    kind: statusKind,
+                    label: statusText,
                     compact: true,
                   ),
                   const SizedBox(width: AppSpacing.sm),
@@ -56,7 +63,7 @@ class ServerCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    connectionStatusLabel(server.connectionStatus),
+                    statusText,
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: AppColors.muted),
                   ),
@@ -71,6 +78,13 @@ class ServerCard extends StatelessWidget {
               if (metric != null) ...<Widget>[
                 const SizedBox(height: AppSpacing.md),
                 _MetricRow(metric: metric!),
+              ] else if (monitorOff) ...<Widget>[
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  '仅保存 · 不轮询，无指标',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: AppColors.faint),
+                ),
               ],
             ],
           ),

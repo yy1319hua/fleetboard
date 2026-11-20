@@ -16,6 +16,7 @@ const empty = {
   password: "",
   key_pass: "",
   tags: "",
+  monitor_enabled: true,
 };
 
 type FormState = typeof empty;
@@ -32,6 +33,7 @@ function initialForm(server?: Server): FormState {
     password: "",
     key_pass: "",
     tags: server.tags ?? "",
+    monitor_enabled: server.monitor_enabled ?? true,
   };
 }
 
@@ -122,6 +124,7 @@ export function AddServerDialog({
         ssh_user: form.ssh_user.trim(),
         auth_method: form.auth_method,
         tags: form.tags.trim(),
+        monitor_enabled: form.monitor_enabled,
       };
 
       // 预检只发连接相关字段：name / tags 与连通性无关，openapi 里也没这两个字段。
@@ -313,6 +316,25 @@ export function AddServerDialog({
             )}
           </>
         )}
+
+        <Field
+          label="纳管方式"
+          htmlFor="srv-monitor"
+          hint={
+            form.monitor_enabled
+              ? "后台按设定间隔（默认 30 秒）采集 CPU / 内存 / 磁盘并评估告警"
+              : "只保存配置与凭据，不后台轮询；适合共享主机或易被限流的机器，保存时仅做一次连接验证"
+          }
+        >
+          <Select
+            id="srv-monitor"
+            value={form.monitor_enabled ? "on" : "off"}
+            onChange={(e) => set("monitor_enabled", e.target.value === "on")}
+          >
+            <option value="on">纳入监控（后台轮询）</option>
+            <option value="off">仅保存（不轮询）</option>
+          </Select>
+        </Field>
 
         <Field label="标签（可选）" htmlFor="srv-tags" hint="用于分组，如 生产 / 测试">
           <Input

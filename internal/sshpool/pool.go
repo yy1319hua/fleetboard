@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -49,7 +50,7 @@ func (c Config) authMethods() ([]ssh.AuthMethod, error) {
 		if c.Password == "" {
 			return nil, errors.New("认证方式为 password 但密码为空")
 		}
-		return []ssh.AuthMethod{ssh.Password(c.Password)}, nil
+		return passwordAuthMethods(c.Password), nil
 	case "", "key":
 		if c.PrivateKey == "" {
 			return nil, errors.New("认证方式为 key 但私钥为空")
@@ -72,9 +73,57 @@ func (c Config) authMethods() ([]ssh.AuthMethod, error) {
 	}
 }
 
+// passwordAuthMethods 返回密码登录用的认证方法。
+//
+// 只给 ssh.Password 是不够的：开放 SSH 的发行版默认把 PasswordAuthentication
+// 关掉、只留 ChallengeResponseAuthentication（即 keyboard-interactive），
+// 共享主机（serv00 之类）也常见这种配置。这类服务器对 `password` 方法直接
+// 回 `no supported methods remain`，而 OpenSSH 客户端能连上——因为它在
+// 服务器只提供 keyboard-interactive 时会自动走那条路，交互提示里再收密码。
+//
+// 两种方法都提供，服务器提供哪种就走哪种；顺序上先试 password，避免对
+// 支持两种方法的机器多做一轮交互。
+func passwordAuthMethods(password string) []ssh.AuthMethod {
+	return []ssh.AuthMethod{
+		ssh.Password(password),
+		ssh.KeyboardInteractive(keyboardPassword(password)),
+	}
+}
+
+// keyboardPassword 构造 keyboard-interactive 的应答逻辑。
+//
+// **只回答密码**：其它提问（短信/OTP 验证码、二次确认、yes/no）一律留空，
+// 让服务器按自己的流程处理。把所有提问都填上密码，会让验证码错误、账号被
+// 风控锁定，且把一个秘密送到与它无关的提示上。
+//
+// 判断依据是「不回显」+ 提示语像密码；只有一个提问时不看措辞直接当密码
+// （各发行版 / PAM 模块的提示语差异太大，按措辞匹配会漏掉一批机器）。
+func keyboardPassword(password string) ssh.KeyboardInteractiveChallenge {
+	return func(name, instruction string, questions []string, echos []bool) ([]string, error) {
+		answers := make([]string, len(questions))
+		for i, q := range questions {
+			hidden := i >= len(echos) || !echos[i]
+			if !hidden {
+				continue
+			}
+			if len(questions) == 1 || isPasswordPrompt(q) {
+				answers[i] = password
+			}
+		}
+		return answers, nil
+	}
+}
+
+// isPasswordPrompt 判断提示语是否在要登录密码。
+func isPasswordPrompt(q string) bool {
+	low := strings.ToLower(q)
+	return strings.Contains(low, "password") ||
+		strings.Contains(low, "passcode") ||
+		strings.Contains(q, "密码")
+}
+
 // Dialer 抽象底层建连，便于测试注入。
 type Dialer func(ctx context.Context, cfg Config) (*ssh.Client, error)
-
 // DefaultDialer 使用标准 SSH 协议建连。
 func DefaultDialer(ctx context.Context, cfg Config) (*ssh.Client, error) {
 	auths, err := cfg.authMethods()

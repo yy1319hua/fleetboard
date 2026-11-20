@@ -81,9 +81,15 @@ class _ServerOverviewTabState extends ConsumerState<ServerOverviewTab>
           children: [
             _IdentityCard(server: server),
             const SizedBox(height: 12),
-            _MetricsCard(metric: metric),
+            _MetricsCard(
+              metric: metric,
+              monitorEnabled: server.monitorEnabled,
+            ),
             const SizedBox(height: 12),
-            _FactsCard(state: ref.watch(serverFactsProvider(widget.serverId))),
+            _FactsCard(
+              state: ref.watch(serverFactsProvider(widget.serverId)),
+              monitorEnabled: server.monitorEnabled,
+            ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: _testing ? null : () => _testConnection(server),
@@ -198,8 +204,11 @@ class _IdentityCard extends StatelessWidget {
 }
 
 class _MetricsCard extends StatelessWidget {
-  const _MetricsCard({required this.metric});
+  const _MetricsCard({required this.metric, required this.monitorEnabled});
   final MetricLatest? metric;
+
+  /// false = 「仅保存」：没有指标不是故障，是用户的选择。
+  final bool monitorEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -216,7 +225,9 @@ class _MetricsCard extends StatelessWidget {
                 Text('实时指标', style: theme.textTheme.titleSmall),
                 const Spacer(),
                 Text(
-                  m == null ? '暂无数据' : '${_ago(m.ts)}采样',
+                  m != null
+                      ? '${_ago(m.ts)}采样'
+                      : (monitorEnabled ? '暂无数据' : '未纳入监控'),
                   style: theme.textTheme.bodySmall,
                 ),
               ],
@@ -224,7 +235,10 @@ class _MetricsCard extends StatelessWidget {
             const SizedBox(height: 12),
             if (m == null)
               Text(
-                '还没有采集到指标。面板默认每分钟采样一次，首次纳管后约一分钟出现。',
+                monitorEnabled
+                    ? '还没有采集到指标。面板默认每分钟采样一次，首次纳管后约一分钟出现。'
+                    : '这台服务器设为「仅保存」，后台不会主动连接，所以没有指标与告警。'
+                        '需要监控时编辑它，把纳管方式切回「纳入监控」。',
                 style: theme.textTheme.bodySmall,
               )
             else ...[
@@ -323,9 +337,10 @@ class _MetricsCard extends StatelessWidget {
 /// 数据来自后台每小时一次的采集，与「实时指标」是两条独立链路：指标挂了
 /// （SSH 抖动）不影响这里显示上一次的配置；配置没采到也不影响指标的刷新。
 class _FactsCard extends StatelessWidget {
-  const _FactsCard({required this.state});
+  const _FactsCard({required this.state, required this.monitorEnabled});
 
   final AsyncValue<ServerFacts?> state;
+  final bool monitorEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -359,7 +374,9 @@ class _FactsCard extends StatelessWidget {
               )
             else if (facts == null)
               Text(
-                '尚未采集到配置。后台每小时采集一次，服务器离线或刚纳管时暂无数据。',
+                monitorEnabled
+                    ? '尚未采集到配置。后台每小时采集一次，服务器离线或刚纳管时暂无数据。'
+                    : '这台服务器设为「仅保存」，后台不会采集系统配置。',
                 style: theme.textTheme.bodySmall,
               )
             else ...[

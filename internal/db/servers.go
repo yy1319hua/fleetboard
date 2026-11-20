@@ -23,6 +23,10 @@ type CreateServerInput struct {
 	PrivateKey string
 	KeyPass    string
 	Tags       string
+	// MonitorEnabled 为空 = 默认纳入监控（保持既有行为）。
+	// 用指针而不是 bool：调用方忘填时不该静默变成「仅保存」——
+	// 那会让机器悄悄停采，用户却以为在监控。
+	MonitorEnabled *bool
 }
 
 // DecryptedCredential 是解密后的凭据，仅用于建立 SSH 连接，调用方即用即弃。
@@ -68,8 +72,8 @@ func CreateServer(d *sql.DB, masterKey string, in CreateServerInput) (*model.Ser
 	defer func() { _ = tx.Rollback() }()
 
 	res, err := tx.Exec(
-		`INSERT INTO servers(name, host, port, ssh_user, auth_method, tags) VALUES (?,?,?,?,?,?)`,
-		in.Name, in.Host, in.Port, in.SSHUser, in.AuthMethod, in.Tags,
+		`INSERT INTO servers(name, host, port, ssh_user, auth_method, tags, monitor_enabled) VALUES (?,?,?,?,?,?,?)`,
+		in.Name, in.Host, in.Port, in.SSHUser, in.AuthMethod, in.Tags, boolToInt(monitorEnabled(in.MonitorEnabled)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("插入服务器: %w", err)
@@ -109,6 +113,8 @@ type UpdateServerInput struct {
 	PrivateKey string
 	KeyPass    string
 	Tags       string
+	// MonitorEnabled 为空 = 保持原值（改名称 / 端口不该顺手改掉监控开关）。
+	MonitorEnabled *bool
 }
 
 // UpdateServer 更新服务器元信息与凭据（凭据重新加密后落库）。
@@ -194,6 +200,16 @@ func UpdateServer(d *sql.DB, masterKey string, id int64, in UpdateServerInput) (
 		return nil, ErrServerNotFound
 	}
 
+	// 监控开关单独更新：nil 表示「本次不改」，不能把 0 当成用户的选择写进去。
+	if in.MonitorEnabled != nil {
+		if _, err := tx.Exec(
+			`UPDATE servers SET monitor_enabled = ? WHERE id = ?`,
+			boolToInt(*in.MonitorEnabled), id,
+		); err != nil {
+			return nil, fmt.Errorf("更新监控开关: %w", err)
+		}
+	}
+
 	// 凭据行理论上必然存在（创建时同事务写入）；用 upsert 兜住历史脏数据。
 	if _, err := tx.Exec(
 		`INSERT INTO ssh_credentials(server_id, auth_method, password_enc, key_enc, key_pass_enc)
@@ -217,7 +233,7 @@ func UpdateServer(d *sql.DB, masterKey string, id int64, in UpdateServerInput) (
 // ListServers 返回全部服务器（不含凭据）。
 func ListServers(d *sql.DB) ([]model.Server, error) {
 	rows, err := d.Query(
-		`SELECT id, name, host, port, ssh_user, auth_method, connection_status, last_heartbeat, tags, created_at
+		`SELECT id, name, host, port, ssh_user, auth_method, connection_status, last_heartbeat, tags, created_at, monitor_enabled
 		 FROM servers ORDER BY id`,
 	)
 	if err != nil {
@@ -239,7 +255,7 @@ func ListServers(d *sql.DB) ([]model.Server, error) {
 // GetServer 按 ID 查询服务器；不存在返回 ErrServerNotFound。
 func GetServer(d *sql.DB, id int64) (*model.Server, error) {
 	row := d.QueryRow(
-		`SELECT id, name, host, port, ssh_user, auth_method, connection_status, last_heartbeat, tags, created_at
+		`SELECT id, name, host, port, ssh_user, auth_method, connection_status, last_heartbeat, tags, created_at, monitor_enabled
 		 FROM servers WHERE id = ?`, id,
 	)
 	s, err := scanServer(row)
@@ -365,16 +381,35 @@ func GetDecryptedCredential(d *sql.DB, masterKey string, serverID int64) (*Decry
 func scanServer(sc interface{ Scan(dest ...any) error }) (*model.Server, error) {
 	var s model.Server
 	var hb sql.NullTime
+	// SQLite 没有布尔类型：驱动返回整数，用 int 接再转，避免依赖驱动的
+	// bool 转换行为（不同版本对 "1"/1 的容忍度不一致）。
+	var monitor int
 	if err := sc.Scan(
 		&s.ID, &s.Name, &s.Host, &s.Port, &s.SSHUser, &s.AuthMethod,
-		&s.ConnectionStatus, &hb, &s.Tags, &s.CreatedAt,
+		&s.ConnectionStatus, &hb, &s.Tags, &s.CreatedAt, &monitor,
 	); err != nil {
 		return nil, err
 	}
+	s.MonitorEnabled = monitor != 0
 	if hb.Valid {
 		s.LastHeartbeat = &hb.Time
 	}
 	return &s, nil
+}
+
+// monitorEnabled 把「可空开关」落成布尔：未指定即纳入监控。
+func monitorEnabled(v *bool) bool {
+	if v == nil {
+		return true
+	}
+	return *v
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 func encryptOptional(master, plain string) (string, error) {

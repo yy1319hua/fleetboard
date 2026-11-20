@@ -18,8 +18,46 @@ func TestAuthMethodsPassword(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authMethods: %v", err)
 	}
-	if len(methods) != 1 {
-		t.Errorf("len=%d, want 1", len(methods))
+	// password + keyboard-interactive：只给 password 会在「关掉 PasswordAuthentication、
+	// 只留 ChallengeResponseAuthentication」的机器上认证失败（serv00 即此类）。
+	if len(methods) != 2 {
+		t.Errorf("len=%d, want 2（password + keyboard-interactive）", len(methods))
+	}
+}
+
+func TestKeyboardPasswordAnswersSoleHiddenPrompt(t *testing.T) {
+	ch := keyboardPassword("s3cret")
+	got, err := ch("", "", []string{"Password: "}, []bool{false})
+	if err != nil {
+		t.Fatalf("challenge: %v", err)
+	}
+	if len(got) != 1 || got[0] != "s3cret" {
+		t.Errorf("got %v, want [s3cret]", got)
+	}
+}
+
+func TestKeyboardPasswordIgnoresNonPasswordPrompts(t *testing.T) {
+	ch := keyboardPassword("s3cret")
+	// 多问题场景：密码 + 验证码。验证码那条必须留空，否则会被当成错误验证码，
+	// 既认证失败、也可能触发风控。
+	got, err := ch("", "", []string{"Password: ", "Verification code: "}, []bool{false, false})
+	if err != nil {
+		t.Fatalf("challenge: %v", err)
+	}
+	if len(got) != 2 || got[0] != "s3cret" || got[1] != "" {
+		t.Errorf("got %v, want [s3cret \"\"]", got)
+	}
+}
+
+func TestKeyboardPasswordSkipsEchoedPrompt(t *testing.T) {
+	ch := keyboardPassword("s3cret")
+	// 回显的问题（用户名之类）绝不能填密码。
+	got, err := ch("", "", []string{"Login as: "}, []bool{true})
+	if err != nil {
+		t.Fatalf("challenge: %v", err)
+	}
+	if len(got) != 1 || got[0] != "" {
+		t.Errorf("got %v, want [\"\"]", got)
 	}
 }
 

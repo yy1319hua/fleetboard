@@ -22,6 +22,8 @@ type createServerRequest struct {
 	PrivateKey string `json:"private_key"`
 	KeyPass    string `json:"key_pass"`
 	Tags       string `json:"tags"`
+	// 省略 = 纳入监控（默认）。显式 false = 仅保存，不进轮询。
+	MonitorEnabled *bool `json:"monitor_enabled"`
 }
 
 // createServerHandler 注册服务器；凭据加密后落库，响应不含凭据。
@@ -42,6 +44,8 @@ func createServerHandler(d *sql.DB, masterKey string) gin.HandlerFunc {
 			PrivateKey: req.PrivateKey,
 			KeyPass:    req.KeyPass,
 			Tags:       req.Tags,
+
+			MonitorEnabled: req.MonitorEnabled,
 		})
 		if err != nil {
 			Fail(c, ErrBadRequest(err.Error()))
@@ -168,6 +172,8 @@ type updateServerRequest struct {
 	PrivateKey string `json:"private_key"`
 	KeyPass    string `json:"key_pass"`
 	Tags       string `json:"tags"`
+	// 省略 = 保持原值；显式 true/false = 切换纳管模式。
+	MonitorEnabled *bool `json:"monitor_enabled"`
 }
 
 // updateServerHandler 更新服务器；成功后关闭旧连接、状态置 unknown。
@@ -195,6 +201,8 @@ func updateServerHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.Ha
 			PrivateKey: req.PrivateKey,
 			KeyPass:    req.KeyPass,
 			Tags:       req.Tags,
+
+			MonitorEnabled: req.MonitorEnabled,
 		})
 		if errors.Is(err, db.ErrServerNotFound) {
 			Fail(c, ErrNotFound("服务器不存在"))

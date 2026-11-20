@@ -242,11 +242,23 @@ class _ServerTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      server.name,
-                      style: theme.textTheme.titleSmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: <Widget>[
+                        Flexible(
+                          child: Text(
+                            server.name,
+                            style: theme.textTheme.titleSmall,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        // 「仅保存」的机器没有指标、也不会被轮询，
+                        // 列表里必须一眼能分辨，否则会被当成掉线。
+                        if (!server.monitorEnabled) ...<Widget>[
+                          const SizedBox(width: AppSpacing.sm),
+                          const _MonitorOffBadge(),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -299,6 +311,28 @@ class _ServerTile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 「仅保存」标记：不轮询、无指标。
+class _MonitorOffBadge extends StatelessWidget {
+  const _MonitorOffBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: AppColors.s2,
+        borderRadius: BorderRadius.circular(AppRadius.badge),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Text(
+        '未监控',
+        style: theme.textTheme.labelSmall?.copyWith(color: AppColors.muted),
       ),
     );
   }

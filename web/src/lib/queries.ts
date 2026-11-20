@@ -76,6 +76,7 @@ export interface CreateServerInput {
   password?: string;
   key_pass?: string;
   tags?: string;
+  monitor_enabled?: boolean;
 }
 
 export function useCreateServer() {

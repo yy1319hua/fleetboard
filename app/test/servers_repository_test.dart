@@ -68,6 +68,7 @@ Map<String, dynamic> _serverJson({int id = 1}) => <String, dynamic>{
       'last_heartbeat': null,
       'tags': '',
       'created_at': '2026-11-03T00:00:00Z',
+      'monitor_enabled': true,
     };
 
 ServersRepository _repo(_FakeAdapter adapter) {
@@ -202,6 +203,61 @@ void main() {
 
       expect(adapter.last?.method, 'POST');
       expect(adapter.last?.path, '/api/servers');
+    });
+  });
+
+  group('monitor_enabled', () {
+    test('创建默认纳入监控', () async {
+      final adapter = _FakeAdapter((_) => _ok(_serverJson()));
+      await _repo(adapter).create(
+        name: 'amd1',
+        host: '192.0.2.1',
+        port: 22,
+        sshUser: 'root',
+        authMethod: 'key',
+        privateKey: 'KEY',
+      );
+      expect(adapter.last?.data, containsPair('monitor_enabled', true));
+    });
+
+    test('创建可显式选「仅保存」', () async {
+      final adapter = _FakeAdapter((_) => _ok(_serverJson()));
+      await _repo(adapter).create(
+        name: 'shared',
+        host: '192.0.2.2',
+        port: 22,
+        sshUser: 'root',
+        authMethod: 'key',
+        privateKey: 'KEY',
+        monitorEnabled: false,
+      );
+      expect(
+        adapter.last?.data,
+        containsPair('monitor_enabled', false),
+        reason: '仅保存必须真的传到后端，否则仍会被 30 秒轮询打死',
+      );
+    });
+
+    test('更新时传了才带该字段，未传则保持原值', () async {
+      final adapter = _FakeAdapter((_) => _ok(_serverJson(id: 7)));
+      final repo = _repo(adapter);
+
+      await repo.update(7,
+          name: 'a', host: 'h', port: 22, sshUser: 'root', authMethod: 'key');
+      expect(
+        (adapter.last!.data as Map<String, dynamic>).containsKey('monitor_enabled'),
+        isFalse,
+        reason: '未传就该不带这个字段，后端才会保持原值',
+      );
+
+      await repo.update(7,
+          name: 'a',
+          host: 'h',
+          port: 22,
+          sshUser: 'root',
+          authMethod: 'key',
+          monitorEnabled: false);
+      expect(adapter.last?.data, containsPair('monitor_enabled', false));
     });
   });
 }

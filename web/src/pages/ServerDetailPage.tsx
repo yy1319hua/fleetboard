@@ -4,7 +4,7 @@ import { NavLink, Outlet, useParams, useNavigate } from "react-router-dom";
 import { AddServerDialog } from "@/components/AddServerDialog";
 import { Button } from "@/components/ui/Button";
 import { EmptyState, ErrorState, SkeletonRows } from "@/components/ui/Feedback";
-import { StatusBadge, serverTone } from "@/components/ui/StatusBadge";
+import { StatusBadge, serverToneFor } from "@/components/ui/StatusBadge";
 import { toast } from "@/components/ui/Toast";
 import { formatRelative } from "@/lib/format";
 import { useDeleteServer, useServer, useTestServer } from "@/lib/queries";
@@ -54,7 +54,7 @@ export function ServerDetailPage() {
     );
   }
 
-  const status = serverTone(server.connection_status);
+  const status = serverToneFor(server);
 
   const handleDelete = () => {
     const ok = window.confirm(`删除服务器「${server.name}」？\n\n仅移除控制台记录，不影响该服务器本身。`);

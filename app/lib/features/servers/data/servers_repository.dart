@@ -70,6 +70,7 @@ class ServersRepository {
     String? privateKey,
     String? keyPass,
     String tags = '',
+    bool monitorEnabled = true,
   }) async {
     final resp = await _dio.post<dynamic>(
       '/api/servers',
@@ -83,6 +84,8 @@ class ServersRepository {
         'private_key': privateKey ?? '',
         'key_pass': keyPass ?? '',
         'tags': tags,
+        // 省略时后端按「纳入监控」处理；显式 false = 仅保存、不进轮询。
+        'monitor_enabled': monitorEnabled,
       },
     );
     return unwrap<Server>(resp.data, Server.fromJson);
@@ -100,6 +103,7 @@ class ServersRepository {
     String? privateKey,
     String? keyPass,
     String tags = '',
+    bool? monitorEnabled,
   }) async {
     final resp = await _dio.put<dynamic>(
       '/api/servers/$id',
@@ -113,6 +117,8 @@ class ServersRepository {
         'private_key': privateKey ?? '',
         'key_pass': keyPass ?? '',
         'tags': tags,
+        // 非空才传：后端把「未传」当作保持原值。
+        if (monitorEnabled != null) 'monitor_enabled': monitorEnabled,
       },
     );
     return unwrap<Server>(resp.data, Server.fromJson);

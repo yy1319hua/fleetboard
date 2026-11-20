@@ -17,6 +17,8 @@ class Server with _$Server {
     @JsonKey(name: 'last_heartbeat') DateTime? lastHeartbeat,
     required String tags,
     @JsonKey(name: 'created_at') required DateTime createdAt,
+    /// false = 「仅保存」：后台不轮询，指标与告警都不会有。默认 true 兼容旧服务端。
+    @JsonKey(name: 'monitor_enabled') @Default(true) bool monitorEnabled,
   }) = _Server;
 
   factory Server.fromJson(Map<String, dynamic> json) => _$ServerFromJson(json);

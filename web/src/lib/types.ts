@@ -13,6 +13,8 @@ export interface Server {
   last_heartbeat: string | null;
   tags: string;
   created_at: string;
+  /** false = 「仅保存」：不轮询、无指标与告警。 */
+  monitor_enabled: boolean;
 }
 
 export interface Container {

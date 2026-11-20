@@ -274,6 +274,12 @@ func runBackground(d *sql.DB, store *settings.Store, pool *sshpool.Pool, masterK
 			var g errgroup.Group
 			g.SetLimit(collectConcurrency)
 			for _, s := range servers {
+				// 「仅保存」的服务器不进轮询：默认 30 秒一次的 SSH 采集会把这些
+				// 机器（共享主机、按流量计费、带连接频率限制的）打到限流甚至封端口。
+				// 用户手动打开终端 / 文件 / 容器时仍会按需建连。
+				if !s.MonitorEnabled {
+					continue
+				}
 				s := s
 				g.Go(func() error {
 					collectOne(s)

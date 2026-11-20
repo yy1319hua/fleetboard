@@ -120,10 +120,17 @@ class EnvelopeInterceptor extends Interceptor {
     // 非 2xx：解析信封文案后 reject。
     final body = isStream ? _decodeBytes(response.data) : response.data;
     var code = status;
-    var msg = '服务异常';
+    // 兜底文案必须带状态码：只写「服务异常」时，用户与日志都分不清
+    // 是凭据错误（401）、网关挂了（502）还是反代超时（504）。
+    var msg = '服务异常（HTTP $status）';
     if (body is Map<String, dynamic>) {
       code = (body['code'] as int?) ?? status;
       msg = (body['msg'] as String?) ?? msg;
+    } else {
+      // 非 JSON 响应（网关 HTML 错误页、纯文本、空体）：附一小段摘要，
+      // 让屏幕上直接能看到真实原因，而不是只有一句「服务异常」。
+      final snippet = _bodySnippet(body);
+      if (snippet.isNotEmpty) msg = '$msg：$snippet';
     }
     handler.reject(
       DioException(
@@ -133,6 +140,28 @@ class EnvelopeInterceptor extends Interceptor {
       ),
     );
   }
+}
+
+/// 把非 JSON 响应体压成一行短摘要。
+///
+/// 网关错误页动辄上万字符，全塞进提示框会撑爆布局；这里压掉换行与重复空白，
+/// 截到 120 字符。HTML 页面单独给一句人话——用户看到一堆 `<html>` 只会更困惑。
+String _bodySnippet(Object? body) {
+  if (body == null) return '';
+  String text;
+  if (body is String) {
+    text = body;
+  } else if (body is List<int>) {
+    text = utf8.decode(body, allowMalformed: true);
+  } else {
+    text = body.toString();
+  }
+  final oneLine = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (oneLine.isEmpty) return '';
+  if (oneLine.startsWith('<')) {
+    return '网关返回了 HTML 错误页（可能是反向代理异常或登录被拦截）';
+  }
+  return oneLine.length <= 120 ? oneLine : '${oneLine.substring(0, 120)}…';
 }
 
 /// 创建"裸" dio：仅挂 [EnvelopeInterceptor]，不注入鉴权头、不触发刷新。

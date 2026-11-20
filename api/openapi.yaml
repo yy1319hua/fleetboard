@@ -55,6 +55,11 @@ components:
         last_heartbeat: { type: string, format: date-time, nullable: true }
         tags: { type: string }
         created_at: { type: string, format: date-time }
+        monitor_enabled:
+          type: boolean
+          description: |
+            false = 「仅保存」：不进后台采集循环，不写指标、不评估告警；
+            用户手动打开终端 / 文件 / 容器时仍可连接。省略时服务端按 true 处理。
     ServerMetric:
       type: object
       properties:

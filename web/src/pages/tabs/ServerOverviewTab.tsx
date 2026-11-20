@@ -2,7 +2,7 @@ import { Link, useOutletContext } from "react-router-dom";
 
 import { MiniBar } from "@/components/MiniBar";
 import { EmptyState, Skeleton } from "@/components/ui/Feedback";
-import { StatusBadge, serverTone } from "@/components/ui/StatusBadge";
+import { StatusBadge, serverToneFor } from "@/components/ui/StatusBadge";
 import { formatDateTime, formatKB, formatPct, formatRelative, formatUptime } from "@/lib/format";
 import { useLatestMetric, useServerFacts } from "@/lib/queries";
 import type { Server } from "@/lib/types";
@@ -25,7 +25,7 @@ export function ServerOverviewTab() {
   const { server } = useOutletContext<Ctx>();
   const { data: metric, isLoading } = useLatestMetric(server.id);
   const { data: facts, isLoading: factsLoading } = useServerFacts(server.id);
-  const status = serverTone(server.connection_status);
+  const status = serverToneFor(server);
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

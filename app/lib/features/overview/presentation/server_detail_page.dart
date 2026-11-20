@@ -99,10 +99,14 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
           children: [
             if (server != null) ...[
               StatusLabel(
-                kind: server.connectionStatus == 'online'
+                kind: server.monitorEnabled &&
+                        server.connectionStatus == 'online'
                     ? StatusKind.ok
                     : StatusKind.idle,
-                label: connectionStatusLabel(server.connectionStatus),
+                // 「仅保存」从不被轮询，unknown 会被读成掉线。
+                label: server.monitorEnabled
+                    ? connectionStatusLabel(server.connectionStatus)
+                    : '未监控',
               ),
               const SizedBox(width: 8),
             ],

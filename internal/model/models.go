@@ -13,6 +13,9 @@ type Server struct {
 	ConnectionStatus string     `json:"connection_status"` // "online" | "offline" | "unknown"
 	LastHeartbeat    *time.Time `json:"last_heartbeat"`
 	Tags             string     `json:"tags"`
+	// MonitorEnabled 为 false = 「仅保存」：不进后台采集循环，不写指标、不评估告警。
+	// 用户手动操作（终端 / 文件 / 容器 / 测试连接）不受影响。
+	MonitorEnabled bool `json:"monitor_enabled"`
 	CreatedAt        time.Time  `json:"created_at"`
 }
 
