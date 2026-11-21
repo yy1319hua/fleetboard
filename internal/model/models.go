@@ -120,7 +120,13 @@ type ServerFacts struct {
 	UptimeSec   int64       `json:"uptime_sec"`
 	Virt        string      `json:"virt"`
 	Disks       []DiskUsage `json:"disks"`
-	CollectedAt time.Time   `json:"collected_at"`
+	// HasDocker / HasSFTP 三态：-1 未检测、0 不支持、1 支持。
+	// 只在首次添加（或手动刷新）时探测一次——目标机装了什么不会自己变，
+	// 每次打开详情页都连一次去问，对限制并发的主机是纯负担。
+	HasDocker   int        `json:"has_docker"`
+	HasSFTP     int        `json:"has_sftp"`
+	ProbedAt    *time.Time `json:"probed_at"`
+	CollectedAt time.Time  `json:"collected_at"`
 }
 
 // UpgradeRecord 面板自更新历史（system_upgrades 一行）。

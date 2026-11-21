@@ -48,13 +48,13 @@ func ParseMetricsLine(line string) (*Snapshot, error) {
 	}, nil
 }
 
-// runScript 在一条新会话上执行脚本，并保证 ctx 取消时能真正中断远端命令。
+// RunScript 在一条新会话上执行脚本，并保证 ctx 取消时能真正中断远端命令。
 //
 // 只靠 context 是不够的：ssh.Session.Output 不接受 ctx，TCP 半开时它会一直
 // 阻塞到内核重传超时（可达数分钟）甚至永不返回——采集 goroutine 卡死，该机
 // 从此停采、停告警，且不会自愈。这里用 Close 会话触发远端 SIGHUP，让 Output
 // 尽快返回；channel 带缓冲，goroutine 不会因此泄漏。
-func runScript(ctx context.Context, cli *ssh.Client, script string) ([]byte, error) {
+func RunScript(ctx context.Context, cli *ssh.Client, script string) ([]byte, error) {
 	sess, err := cli.NewSession()
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func runScript(ctx context.Context, cli *ssh.Client, script string) ([]byte, err
 // metricsScript 依赖 `set -- $a $b` 的隐式分词，在 zsh（armbian 的 root 默认）
 // 下不分词，会直接报 `bad math expression`，采集 100% 失败。详见 sshpool.ShPath。
 func Collect(ctx context.Context, cli *ssh.Client) (*Snapshot, error) {
-	out, err := runScript(ctx, cli, metricsScript)
+	out, err := RunScript(ctx, cli, metricsScript)
 	if err != nil {
 		return nil, err
 	}

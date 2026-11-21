@@ -27,7 +27,11 @@ type createServerRequest struct {
 }
 
 // createServerHandler 注册服务器；凭据加密后落库，响应不含凭据。
-func createServerHandler(d *sql.DB, masterKey string) gin.HandlerFunc {
+//
+// 创建成功后立刻做一次体检（采系统配置 + 探 Docker/sftp），因为这三项
+// 决定了详情页要显示哪些分段、配置卡能不能出内容。体检失败不影响创建：
+// 机器已经存下来了，用户可以在详情页点「刷新配置」重试。
+func createServerHandler(d *sql.DB, masterKey string, pool *sshpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req createServerRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -51,7 +55,27 @@ func createServerHandler(d *sql.DB, masterKey string) gin.HandlerFunc {
 			Fail(c, ErrBadRequest(err.Error()))
 			return
 		}
-		c.JSON(201, Response{Code: CodeOK, Msg: "ok", Data: s})
+
+		// 体检结果随创建响应一起返回，前端完成页据此提示「配置已获取」或
+		// 「已保存，但没连上」——比让用户回到列表再发现配置卡是空的更好。
+		probe := gin.H{"ok": false, "has_docker": -1, "has_sftp": -1}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), probeTimeout)
+		defer cancel()
+		if res, perr := probeServer(ctx, d, masterKey, pool, s); perr != nil {
+			probe["error"] = perr.Error()
+		} else {
+			probe = gin.H{
+				"ok":         true,
+				"has_docker": res.HasDocker,
+				"has_sftp":   res.HasSFTP,
+				"warnings":   res.Warnings,
+			}
+		}
+
+		c.JSON(201, Response{Code: CodeOK, Msg: "ok", Data: gin.H{
+			"server": s,
+			"probe":  probe,
+		}})
 	}
 }
 

@@ -66,6 +66,9 @@ class ServerFacts {
     required this.virt,
     required this.disks,
     required this.collectedAt,
+    this.hasDocker = -1,
+    this.hasSftp = -1,
+    this.probedAt,
   });
 
   final int serverId;
@@ -81,6 +84,19 @@ class ServerFacts {
   final String virt;
   final List<DiskUsage> disks;
   final DateTime collectedAt;
+
+  /// 体检测出的能力：-1 未检测、0 不支持、1 支持。
+  ///
+  /// -1 出现在两种场合：老数据（升级前就采过配置、但没探过能力），
+  /// 或探测项单独失败。两种都按「显示」处理——宁可多给一个用不了的 Tab，
+  /// 也不要因为探测抖动把用户能用的功能藏掉。
+  final int hasDocker;
+  final int hasSftp;
+  final DateTime? probedAt;
+
+  bool get dockerAvailable => hasDocker != 0;
+  bool get sftpAvailable => hasSftp != 0;
+  bool get capabilitiesProbed => hasDocker >= 0 && hasSftp >= 0;
 
   factory ServerFacts.fromJson(Map<String, dynamic> json) {
     int i(String key) {
@@ -117,6 +133,15 @@ class ServerFacts {
       virt: s('virt'),
       disks: disks,
       collectedAt: ts ?? DateTime.now(),
+      hasDocker: json['has_docker'] is num
+          ? (json['has_docker'] as num).toInt()
+          : -1,
+      hasSftp: json['has_sftp'] is num
+          ? (json['has_sftp'] as num).toInt()
+          : -1,
+      probedAt: json['probed_at'] is String
+          ? DateTime.tryParse(json['probed_at'] as String)?.toLocal()
+          : null,
     );
   }
 
@@ -146,11 +171,18 @@ class ServerFacts {
   }
 
   /// 运行时长 → 「12 天 3 小时」这类粗粒度文案（精确到分没有意义）。
+  ///
+  /// 配置不再每小时重采，uptime 是「采集那一刻」的值。直接显示它会越看越旧，
+  /// 所以用「采集时刻 − 当时运行时长」倒推开机时间，再算到现在。
+  /// 已知局限：机器在两次采集之间重启过，推算会偏大——点一次「刷新配置」即可校正。
   String get uptimeText {
     if (uptimeSec <= 0) return '—';
-    final d = uptimeSec ~/ 86400;
-    final h = (uptimeSec % 86400) ~/ 3600;
-    final m = (uptimeSec % 3600) ~/ 60;
+    final bootAt = collectedAt.subtract(Duration(seconds: uptimeSec));
+    final elapsed = DateTime.now().difference(bootAt).inSeconds;
+    if (elapsed <= 0) return '—';
+    final d = elapsed ~/ 86400;
+    final h = (elapsed % 86400) ~/ 3600;
+    final m = (elapsed % 3600) ~/ 60;
     if (d > 0) return h > 0 ? '$d 天 $h 小时' : '$d 天';
     if (h > 0) return m > 0 ? '$h 小时 $m 分' : '$h 小时';
     return '$m 分钟';

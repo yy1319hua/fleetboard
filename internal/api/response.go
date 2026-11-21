@@ -73,6 +73,11 @@ func ErrTooManyRequests(msg string) *APIError {
 	return &APIError{Status: http.StatusTooManyRequests, Code: CodeTooMany, Msg: msg}
 }
 
+// ErrInternal 500，服务端自身故障（落库失败等），文案不含内部细节。
+func ErrInternal(msg string) *APIError {
+	return &APIError{Status: http.StatusInternalServerError, Code: CodeInternal, Msg: msg}
+}
+
 // OK 写入成功响应。
 func OK(c *gin.Context, data any) {
 	c.JSON(http.StatusOK, Response{Code: CodeOK, Msg: "ok", Data: data})

@@ -59,7 +59,7 @@ df -P -x tmpfs -x devtmpfs -x squashfs -x efivarfs 2>/dev/null \
 
 // CollectFacts 采集一台主机的静态配置。
 func CollectFacts(ctx context.Context, cli *ssh.Client) (*model.ServerFacts, error) {
-	out, err := runScript(ctx, cli, factsScript)
+	out, err := RunScript(ctx, cli, factsScript)
 	if err != nil {
 		return nil, err
 	}

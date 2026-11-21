@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
-import type { Server, ServerFacts, ServerMetric } from "@/lib/types";
+import type { SampleSnapshot, Server, ServerFacts, ServerMetric } from "@/lib/types";
 
 export const qk = {
   servers: ["servers"] as const,
@@ -82,11 +82,31 @@ export interface CreateServerInput {
 export function useCreateServer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateServerInput) => apiPost<Server>("/api/servers", input),
-    onSuccess: () => {
+    mutationFn: (input: CreateServerInput) =>
+      apiPost<CreateServerResult>("/api/servers", input),
+    onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: qk.servers });
+      // 创建时后端已经体检过一次，把结果顺手塞进缓存，
+      // 进详情页时不必再等一次 facts 请求。
+      if (data?.server?.id && data.probe?.ok) {
+        void qc.invalidateQueries({ queryKey: qk.serverFacts(data.server.id) });
+      }
     },
   });
+}
+
+/** 体检结果：决定详情页显示哪些标签。失败不代表添加失败。 */
+export interface ProbeOutcome {
+  ok: boolean;
+  has_docker: number;
+  has_sftp: number;
+  error?: string;
+  warnings?: string[];
+}
+
+export interface CreateServerResult {
+  server: Server;
+  probe: ProbeOutcome;
 }
 
 /** 预检输入：编辑场景带 server_id，留空的字段（含凭据）由后端用库里值补齐。 */
@@ -113,6 +133,33 @@ export interface ProbeResult {
 export function useProbeServer() {
   return useMutation({
     mutationFn: (input: ProbeServerInput) => apiPost<ProbeResult>("/api/servers/probe", input),
+  });
+}
+
+/** 对已保存的机器重新体检：采配置 + 探 Docker/sftp。 */
+export function useReprobeServer(serverID: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiPost<ProbeOutcome & { facts: ServerFacts }>(`/api/servers/${serverID}/probe`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.serverFacts(serverID) });
+      void qc.invalidateQueries({ queryKey: qk.server(serverID) });
+      void qc.invalidateQueries({ queryKey: qk.servers });
+    },
+  });
+}
+
+/** 仅保存机器的按需采样：点一次连一次，不后台轮询。 */
+export function useSampleOnce(serverID: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<SampleSnapshot>(`/api/servers/${serverID}/sample`),
+    onSuccess: () => {
+      // 采样写进了时序表：让监控曲线与「最近心跳」都重新取一次。
+      void qc.invalidateQueries({ queryKey: qk.server(serverID) });
+      void qc.invalidateQueries({ queryKey: qk.servers });
+    },
   });
 }
 

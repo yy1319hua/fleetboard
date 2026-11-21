@@ -227,6 +227,19 @@ func (p *Pool) SetDialer(d Dialer) { p.dial = d }
 //     不健康、整个面板卡住、所有机器一起掉线」。
 //  2. 同一 serverID 的并发 Get 只建一条连接（singleflight），其余等待复用。
 func (p *Pool) Get(ctx context.Context, serverID int64, cfg Config) (*ssh.Client, error) {
+	cli, err := p.get(ctx, serverID, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if cli == nil {
+		// 拨号器返回 (nil, nil) 是调用方的实现错误。放行会让上层在 nil 上
+		// panic，最终变成 500 + 空响应体——比在这里明确报错难查得多。
+		return nil, errors.New("拨号返回了空连接")
+	}
+	return cli, nil
+}
+
+func (p *Pool) get(ctx context.Context, serverID int64, cfg Config) (*ssh.Client, error) {
 	if cli, ok := p.reusable(serverID); ok {
 		return cli, nil
 	}

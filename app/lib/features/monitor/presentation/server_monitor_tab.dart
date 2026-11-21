@@ -2,9 +2,12 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/errors/api_exception.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/async_state_view.dart';
 import '../../../core/widgets/tab_refresh_scope.dart';
+import '../../overview/application/overview_notifier.dart';
+import '../../servers/data/servers_repository.dart';
 import '../application/metrics_notifier.dart';
 import '../domain/metric_series.dart';
 
@@ -24,6 +27,69 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab>
     with TabRefreshBinding<ServerMonitorTab> {
   MetricRange _range = MetricRange.day;
 
+  /// 按需采样正在进行。只对「仅保存」的机器用：它们没有后台采集，
+  /// 图上有点的唯一途径就是用户自己点一下。
+  bool _sampling = false;
+
+  Future<void> _sampleOnce() async {
+    setState(() => _sampling = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(serversRepositoryProvider).sample(widget.serverId);
+      if (!mounted) return;
+      // 采样写进了时序表，重拉当前时间窗就能看到新点；顺带刷一次总览，
+      // 让「最近心跳」从「暂无」变成刚刚。
+      await ref
+          .read(metricsProvider((serverId: widget.serverId, range: _range))
+              .notifier)
+          .refresh();
+      await ref.read(overviewProvider.notifier).refresh();
+    } on Object catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text(describeApiError(e))));
+    } finally {
+      if (mounted) setState(() => _sampling = false);
+    }
+  }
+
+  /// 仅保存机器的采样条：一个按钮 + 一句说明。
+  ///
+  /// 放在时间窗选择器上方而不是塞进空态里：空态只在「一条数据都没有」时
+  /// 出现，采过一次后就消失了，按钮跟着消失等于没有入口。
+  Widget _sampleBar(ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '这台机器设为「仅保存」，不后台采集。点一次连一次，'
+              '曲线就是这些采样时刻的连线。',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton.tonalIcon(
+            onPressed: _sampling ? null : _sampleOnce,
+            icon: _sampling
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.bolt, size: 16),
+            label: Text(_sampling ? '采样中…' : '立即采样'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 本段的刷新：只刷当前时间窗。
   ///
   /// 时间窗是分段内部状态（顶部 SegmentedButton 改的就是它），父级不知道；
@@ -39,8 +105,17 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab>
   Widget build(BuildContext context) {
     final key = (serverId: widget.serverId, range: _range);
     final state = ref.watch(metricsProvider(key));
+    final server = ref
+        .watch(overviewProvider)
+        .value
+        ?.servers
+        .where((s) => s.id == widget.serverId)
+        .firstOrNull;
+    final monitorEnabled = server?.monitorEnabled ?? true;
+    final theme = Theme.of(context);
     return Column(
       children: [
+        if (!monitorEnabled) _sampleBar(theme),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Row(
@@ -66,8 +141,11 @@ class _ServerMonitorTabState extends ConsumerState<ServerMonitorTab>
         Expanded(
           child: AsyncStateView<MetricSeries>(
             value: state,
-            emptyHint: '这个时间窗内还没有采样。面板每分钟采一次，'
-                '纳管后约一分钟才会出现第一条。',
+            emptyHint: monitorEnabled
+                ? '这个时间窗内还没有采样。面板每 30 秒采一次，'
+                    '纳管后约半分钟才会出现第一条。'
+                : '还没有任何采样点。这台机器设为「仅保存」，不会后台采集——'
+                    '点上方「立即采样」，采一次就有一个点。',
             onRetry: () => ref.read(metricsProvider(key).notifier).load(),
             builder: (series) {
               final points = downsample(series.points);

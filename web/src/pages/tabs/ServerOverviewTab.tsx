@@ -1,10 +1,13 @@
+import { useEffect, useRef } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 
 import { MiniBar } from "@/components/MiniBar";
+import { Button } from "@/components/ui/Button";
 import { EmptyState, Skeleton } from "@/components/ui/Feedback";
 import { StatusBadge, serverToneFor } from "@/components/ui/StatusBadge";
 import { formatDateTime, formatKB, formatPct, formatRelative, formatUptime } from "@/lib/format";
-import { useLatestMetric, useServerFacts } from "@/lib/queries";
+import { useLatestMetric, useReprobeServer, useServerFacts } from "@/lib/queries";
+import { toast } from "@/components/ui/Toast";
 import type { Server } from "@/lib/types";
 
 interface Ctx {
@@ -25,6 +28,27 @@ export function ServerOverviewTab() {
   const { server } = useOutletContext<Ctx>();
   const { data: metric, isLoading } = useLatestMetric(server.id);
   const { data: facts, isLoading: factsLoading } = useServerFacts(server.id);
+  const reprobe = useReprobeServer(server.id);
+
+  // 升级前添加的「仅保存」机器从没采过配置：打开页面时替用户补一次。
+  // 只试一次，失败就把决定权交回「重新检测」按钮。
+  const autoTried = useRef(false);
+  useEffect(() => {
+    if (autoTried.current || factsLoading || facts) return;
+    if (server.monitor_enabled !== false) return;
+    autoTried.current = true;
+    reprobe.mutate(undefined, { onError: () => {} });
+  }, [facts, factsLoading, server.monitor_enabled, reprobe]);
+
+  // 配置只在首次和手动检测时采，uptime 是采集那一刻的值：
+  // 用「采集时刻 + 当时运行时长」推算此刻，否则过几天还是旧数字。
+  const livePct = (d: { mount: string; used_pct: number }) =>
+    d.mount === "/" && metric ? metric.disk_pct : d.used_pct;
+
+  const liveUptimeSec = facts
+    ? facts.uptime_sec +
+      Math.max(0, (Date.now() - new Date(facts.collected_at).getTime()) / 1000)
+    : 0;
   const status = serverToneFor(server);
 
   return (
@@ -111,9 +135,32 @@ export function ServerOverviewTab() {
       <section className="rounded-card border border-border bg-surface-1 lg:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
           <h2 className="text-h3 text-text">系统配置</h2>
-          {facts ? (
-            <span className="text-caption text-text-faint">采集于 {formatRelative(facts.collected_at)}</span>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {facts ? (
+              <span className="text-caption text-text-faint">采集于 {formatRelative(facts.collected_at)}</span>
+            ) : null}
+            {/* 配置不再自动刷新：装完 Docker、换过内核要手动点这一下。 */}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                reprobe.mutate(undefined, {
+                  onSuccess: (outcome) =>
+                    toast(
+                      outcome.warnings?.length
+                        ? `配置已更新（${outcome.warnings.join("；")}）`
+                        : "配置已更新",
+                      "ok",
+                    ),
+                  onError: (err) =>
+                    toast(err instanceof Error ? err.message : "检测失败", "danger"),
+                })
+              }
+              loading={reprobe.isPending}
+            >
+              重新检测
+            </Button>
+          </div>
         </div>
 
         {factsLoading ? (
@@ -124,7 +171,7 @@ export function ServerOverviewTab() {
         ) : !facts ? (
           <EmptyState
             title="尚未采集到配置"
-            description="后台每小时采集一次；服务器离线或刚纳管时暂无数据，恢复在线后会自动补齐。"
+            description="配置在添加服务器时采集一次。如果当时没连上，点右上角「重新检测」。"
           />
         ) : (
           <>
@@ -150,7 +197,7 @@ export function ServerOverviewTab() {
               <Row label="主机名">
                 <span className="font-mono text-mono-sm">{facts.hostname || "—"}</span>
               </Row>
-              <Row label="运行时长">{formatUptime(facts.uptime_sec)}</Row>
+              <Row label="运行时长">{formatUptime(liveUptimeSec)}</Row>
             </div>
 
             <div className="border-t border-border px-4 py-3">
@@ -166,10 +213,10 @@ export function ServerOverviewTab() {
                       <div className="flex items-baseline justify-between gap-3">
                         <span className="min-w-0 truncate font-mono text-mono-sm text-text">{d.mount}</span>
                         <span className="tabular shrink-0 text-caption text-text-muted">
-                          {formatKB(d.used_kb)} / {formatKB(d.total_kb)}
+                          {formatKB(((d.total_kb * livePct(d)) / 100))} / {formatKB(d.total_kb)}
                         </span>
                       </div>
-                      <MiniBar label={d.device || "—"} value={d.used_pct} className="mt-1" />
+                      <MiniBar label={d.device || "—"} value={livePct(d)} className="mt-1" />
                     </li>
                   ))}
                 </ul>

@@ -49,7 +49,12 @@ export interface DiskUsage {
   used_pct: number;
 }
 
-/** 主机静态配置：每小时采集一次，「这台机器是什么样」而不是「现在怎么样」。 */
+/**
+ * 主机静态配置：「这台机器是什么样」而不是「现在怎么样」。
+ *
+ * 只在首次添加服务器和手动点「重新检测」时采集一次——CPU 型号、内存总量、
+ * 系统版本不会自己变，每小时连一次纯属占用目标机的连接名额。
+ */
 export interface ServerFacts {
   server_id: number;
   cpu_model: string;
@@ -63,7 +68,19 @@ export interface ServerFacts {
   uptime_sec: number;
   virt: string;
   disks: DiskUsage[];
+  /** 三态：-1 未检测、0 不支持、1 支持。决定详情页显示哪些标签。 */
+  has_docker: number;
+  has_sftp: number;
+  probed_at: string | null;
   collected_at: string;
+}
+
+/** 按需采样的一次结果（仅「仅保存」的机器会产生）。 */
+export interface SampleSnapshot {
+  cpu_pct: number;
+  mem_pct: number;
+  disk_pct: number;
+  load1: number;
 }
 
 export interface AlertRule {

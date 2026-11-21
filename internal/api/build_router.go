@@ -166,19 +166,26 @@ func runBackground(d *sql.DB, store *settings.Store, pool *sshpool.Pool, masterK
 				}
 			}
 		}
-		// 配置采集的节流状态：成功后 1 小时再采，失败 5 分钟后重试。
-		// 不单独起 goroutine 的理由：新纳管的机器要尽快看到配置卡，而指标采集
-		// 本来就每 30 秒遍历全部服务器，顺手判断即可，也避免启动时对每台机器
-		// 各建一条连接（两条 goroutine 同时 Get 同一台会撞在建连上）。
-		const (
-			factsOKInterval    = time.Hour
-			factsRetryInterval = 5 * time.Minute
-		)
+		// 配置采集的状态：只记「采过没有、上次成没成」。
+		//
+		// 历史行为是成功后每小时重采一次，但 CPU 型号、内存总量、OS、架构
+		// 这些字段根本不会自己变——每台机器每小时多连一次，对 serv00 这类
+		// 限制并发/频率的主机是实打实的负担。现在改成：
+		//   从未采过 → 采一次；
+		//   采成功 → 以后不再自动采（要更新让用户点「刷新配置」）；
+		//   采失败 → 5 分钟后重试，直到成功。
+		const factsRetryInterval = 5 * time.Minute
 		type factsState struct {
 			at time.Time
 			ok bool
 		}
 		factsAt := make(map[int64]factsState)
+		// 启动预热：库里已有配置的机器视为已采，避免进程重启后全量重采。
+		if ids, err := db.ListFactsServerIDs(d); err == nil {
+			for _, id := range ids {
+				factsAt[id] = factsState{at: time.Now(), ok: true}
+			}
+		}
 
 		// 单机总预算：建连 + 采样 + 配置采集 + 告警评估。
 		const collectTimeout = 20 * time.Second
@@ -225,17 +232,14 @@ func runBackground(d *sql.DB, store *settings.Store, pool *sshpool.Pool, masterK
 			// 恢复在线：复位离线通知状态，下次真离线能立刻再报。
 			engine.ClearOffline(s.ID)
 
-			// 静态配置：复用同一连接，按节流状态决定是否采。
+			// 静态配置：复用同一连接，只在「没采过」或「上次失败」时补。
 			// 失败只记日志，不影响 online 判定——配置采集失败通常是个别命令
 			// 缺失（如没有 systemd-detect-virt），不代表主机不可达。
 			stateMu.Lock()
 			st, seen := factsAt[s.ID]
 			stateMu.Unlock()
-			interval := factsOKInterval
-			if seen && !st.ok {
-				interval = factsRetryInterval
-			}
-			if !seen || time.Since(st.at) >= interval {
+			needFacts := !seen || (!st.ok && time.Since(st.at) >= factsRetryInterval)
+			if needFacts {
 				facts, ferr := monitor.CollectFacts(ctx, cli)
 				ok := ferr == nil
 				if ok {

@@ -7,7 +7,7 @@ import { EmptyState, ErrorState, SkeletonRows } from "@/components/ui/Feedback";
 import { StatusBadge, serverToneFor } from "@/components/ui/StatusBadge";
 import { toast } from "@/components/ui/Toast";
 import { formatRelative } from "@/lib/format";
-import { useDeleteServer, useServer, useTestServer } from "@/lib/queries";
+import { useDeleteServer, useServer, useServerFacts, useTestServer } from "@/lib/queries";
 import { cn } from "@/lib/cn";
 
 const TABS = [
@@ -19,6 +19,20 @@ const TABS = [
   { to: "packages", label: "软件包", end: false },
 ];
 
+/**
+ * 按首次保存时体检测出的能力过滤标签。
+ *
+ * -1（未检测）时全部保留：探测抖动不该把用户能用的功能藏掉，
+ * 真正用不了的时候页面里也有对应提示。
+ */
+function visibleTabs(hasDocker: number, hasSftp: number) {
+  return TABS.filter((t) => {
+    if (t.to === "docker" || t.to === "compose") return hasDocker !== 0;
+    if (t.to === "files") return hasSftp !== 0;
+    return true;
+  });
+}
+
 /** 服务器详情外壳：头部信息 + 标签页导航，子页面由嵌套路由渲染。 */
 export function ServerDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -26,6 +40,9 @@ export function ServerDetailPage() {
   const navigate = useNavigate();
 
   const { data: server, isLoading, isError, error, refetch } = useServer(serverID);
+  // 能力检测结果决定显示哪些标签，必须在 early return 之前取。
+  const facts = useServerFacts(serverID).data;
+  const tabs = visibleTabs(facts?.has_docker ?? -1, facts?.has_sftp ?? -1);
   const test = useTestServer();
   const del = useDeleteServer();
   const [editOpen, setEditOpen] = useState(false);
@@ -112,7 +129,7 @@ export function ServerDetailPage() {
       />
 
       <nav className="flex gap-1 overflow-x-auto border-b border-border" aria-label="服务器功能">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <NavLink
             key={t.to || "overview"}
             to={t.to ? `/servers/${server.id}/${t.to}` : `/servers/${server.id}`}

@@ -407,15 +407,19 @@ func TestCreateServerMonitorFlagAPI(t *testing.T) {
 
 	decode := func(w *httptest.ResponseRecorder) *bool {
 		t.Helper()
+		// 创建响应在 v0.5.9 起是 {server, probe}：probe 是体检结果，
+		// 服务器本体挪到了 data.server 下面。
 		var resp struct {
 			Data struct {
-				MonitorEnabled *bool `json:"monitor_enabled"`
+				Server struct {
+					MonitorEnabled *bool `json:"monitor_enabled"`
+				} `json:"server"`
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("解析响应: %v body=%s", err, w.Body)
 		}
-		return resp.Data.MonitorEnabled
+		return resp.Data.Server.MonitorEnabled
 	}
 
 	w := authReq(r, http.MethodPost, "/api/servers", tokens.AccessToken, map[string]any{

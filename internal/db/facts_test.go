@@ -128,3 +128,63 @@ func TestFactsCascadeOnServerDelete(t *testing.T) {
 		t.Errorf("删除服务器后仍有 %d 行配置残留", n)
 	}
 }
+
+// 配置重采不能把能力检测结果抹掉。
+//
+// 这两条写入路径是分开的：采集循环只调 UpsertFacts，体检测完能力才调
+// UpdateCapabilities。如果 UpsertFacts 顺手写了 has_docker/has_sftp，
+// 一次配置重采就会把「没有 Docker」的判断冲成未检测，容器 Tab 会突然回来。
+func TestUpsertFactsKeepsCapabilities(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	insertTestServer(t, d, 11)
+
+	if err := UpsertFacts(d, &model.ServerFacts{ServerID: 11, CPUModel: "Xeon"}); err != nil {
+		t.Fatalf("UpsertFacts: %v", err)
+	}
+	// 新行默认三态为「未检测」。
+	got, err := GetFacts(d, 11)
+	if err != nil || got == nil {
+		t.Fatalf("GetFacts: %v %v", got, err)
+	}
+	if got.HasDocker != -1 || got.HasSFTP != -1 {
+		t.Errorf("新行能力应默认 -1，实际 docker=%d sftp=%d", got.HasDocker, got.HasSFTP)
+	}
+
+	if err := UpdateCapabilities(d, 11, 1, 0); err != nil {
+		t.Fatalf("UpdateCapabilities: %v", err)
+	}
+	// 再采一次配置（模拟采集循环或手动刷新）。
+	if err := UpsertFacts(d, &model.ServerFacts{ServerID: 11, CPUModel: "Xeon v2"}); err != nil {
+		t.Fatalf("UpsertFacts 二次: %v", err)
+	}
+
+	got, err = GetFacts(d, 11)
+	if err != nil || got == nil {
+		t.Fatalf("GetFacts 二次: %v %v", got, err)
+	}
+	if got.HasDocker != 1 || got.HasSFTP != 0 {
+		t.Errorf("配置重采覆盖了能力列：docker=%d sftp=%d", got.HasDocker, got.HasSFTP)
+	}
+	if got.ProbedAt == nil {
+		t.Error("probed_at 未写入")
+	}
+	if got.CPUModel != "Xeon v2" {
+		t.Errorf("配置没更新：%q", got.CPUModel)
+	}
+}
+
+// 只有配置行存在时能力才存得下；没有行时不该报错，等下次体检重来。
+func TestUpdateCapabilitiesWithoutFactsRow(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	insertTestServer(t, d, 12)
+
+	if err := UpdateCapabilities(d, 12, 1, 1); err != nil {
+		t.Errorf("无配置行时不应报错: %v", err)
+	}
+	got, err := GetFacts(d, 12)
+	if err != nil || got != nil {
+		t.Errorf("未采配置时应仍为 nil，实际 %v %v", got, err)
+	}
+}

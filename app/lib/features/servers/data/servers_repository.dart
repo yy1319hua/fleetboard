@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/http/envelope.dart';
 import '../../../core/http/providers.dart';
 import '../../overview/domain/bootstrap.dart';
+import '../domain/server_probe.dart';
 
 /// 服务器纳管仓储（M11）。
 ///
@@ -60,7 +61,7 @@ class ServersRepository {
     return (data['elapsed_ms'] as num?)?.toInt() ?? 0;
   }
 
-  Future<Server> create({
+  Future<ServerCreation> create({
     required String name,
     required String host,
     required int port,
@@ -88,7 +89,25 @@ class ServersRepository {
         'monitor_enabled': monitorEnabled,
       },
     );
-    return unwrap<Server>(resp.data, Server.fromJson);
+    // 创建响应是 {server, probe}：probe 是「体检」结果，决定详情页要显示
+    // 哪些分段、配置卡有没有内容。兼容 data 直接是 server 的旧格式，
+    // 避免半新半旧的部署把创建流程弄挂。
+    return unwrap<ServerCreation>(resp.data, (Map<String, dynamic> json) {
+      final rawProbe = json['probe'];
+      final rawServer = json['server'];
+      if (rawServer is Map<String, dynamic>) {
+        return ServerCreation(
+          server: Server.fromJson(rawServer),
+          probe: rawProbe is Map<String, dynamic>
+              ? ProbeOutcome.fromJson(rawProbe)
+              : const ProbeOutcome.unknown(),
+        );
+      }
+      return ServerCreation(
+        server: Server.fromJson(json),
+        probe: const ProbeOutcome.unknown(),
+      );
+    });
   }
 
   /// 更新服务器。凭据字段传 null = 不修改（后端按「留空」处理）。
@@ -136,6 +155,31 @@ class ServersRepository {
       (Map<String, dynamic> json) => json,
     );
     return (data['status'] as String?) ?? 'online';
+  }
+
+  /// 对已保存的机器重新体检：采配置 + 探 Docker/sftp。
+  ///
+  /// 与 [probe] 的区别：那个是「还没落库的预检」，只验证能不能连；
+  /// 这个会真的把配置写回库，所以只在用户点「刷新配置」时调。
+  Future<ProbeOutcome> reprobe(int id) async {
+    final resp = await _dio.post<dynamic>('/api/servers/$id/probe');
+    final data = unwrap<Map<String, dynamic>>(
+      resp.data,
+      (Map<String, dynamic> json) => json,
+    );
+    return ProbeOutcome(
+      ok: true,
+      hasDocker: (data['has_docker'] as num?)?.toInt() ?? -1,
+      hasSftp: (data['has_sftp'] as num?)?.toInt() ?? -1,
+      warnings: (data['warnings'] as List?)?.whereType<String>().toList() ??
+          const <String>[],
+    );
+  }
+
+  /// 仅保存机器的按需采样：点一次连一次，不后台轮询。
+  Future<SampleSnapshot> sample(int id) async {
+    final resp = await _dio.post<dynamic>('/api/servers/$id/sample');
+    return unwrap<SampleSnapshot>(resp.data, SampleSnapshot.fromJson);
   }
 }
 

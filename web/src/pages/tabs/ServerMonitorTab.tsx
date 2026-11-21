@@ -16,6 +16,8 @@ import {
 import { Button } from "@/components/ui/Button";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui/Feedback";
 import { apiGet } from "@/lib/api";
+import { useSampleOnce } from "@/lib/queries";
+import { toast } from "@/components/ui/Toast";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { Server, ServerMetric } from "@/lib/types";
@@ -83,6 +85,9 @@ export function ServerMonitorTab() {
     refetchInterval: 60_000,
   });
 
+  const sample = useSampleOnce(server.id);
+  const monitorOff = server.monitor_enabled === false;
+
   const points = useMemo(() => downsample(data?.points ?? []), [data]);
   const latest = points.length > 0 ? points[points.length - 1] : null;
   // 游标点有效时才接管顶部数值卡，否则回落最新点。
@@ -92,6 +97,31 @@ export function ServerMonitorTab() {
 
   return (
     <div className="space-y-4">
+      {monitorOff ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-border bg-surface-1 px-4 py-3">
+          <p className="min-w-0 flex-1 text-caption text-text-muted">
+            这台机器设为「仅保存」，不会后台采集。点一次连一次，曲线就是这些采样时刻的连线
+            —— 采之前的时段没有数据可回溯。
+          </p>
+          <Button
+            size="sm"
+            onClick={() =>
+              sample.mutate(undefined, {
+                onSuccess: () => {
+                  toast("已采样", "ok");
+                  void refetch();
+                },
+                onError: (err) =>
+                  toast(err instanceof Error ? err.message : "采样失败", "danger"),
+              })
+            }
+            loading={sample.isPending}
+          >
+            立即采样
+          </Button>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1 rounded-control border border-border bg-surface-1 p-0.5">
           {(["24h", "7d"] as Range[]).map((r) => (

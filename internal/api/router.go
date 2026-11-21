@@ -79,13 +79,17 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 
 	// 服务器管理
 	authed.GET("/servers", listServersHandler(opts.DB))
-	authed.POST("/servers", createServerHandler(opts.DB, opts.MasterKey))
+	authed.POST("/servers", createServerHandler(opts.DB, opts.MasterKey, opts.Pool))
 	// 纳管预检：连不上就不落库，所以必须先于「创建」可用，且不需要 id。
 	authed.POST("/servers/probe", probeServerHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.GET("/servers/:id", getServerHandler(opts.DB))
 	authed.PUT("/servers/:id", updateServerHandler(opts.DB, opts.MasterKey, opts.Pool))
 	authed.DELETE("/servers/:id", deleteServerHandler(opts.DB))
 	authed.POST("/servers/:id/test", testServerHandler(opts.DB, opts.MasterKey, opts.Pool))
+	// 已保存机器的体检：采配置 + 探 Docker/sftp。只在首次添加和用户点刷新时调。
+	authed.POST("/servers/:id/probe", serverProbeHandler(opts.DB, opts.MasterKey, opts.Pool))
+	// 仅保存机器的按需采样：点一次连一次，不后台轮询。
+	authed.POST("/servers/:id/sample", sampleServerHandler(opts.DB, opts.MasterKey, opts.Pool))
 
 	// Docker 管理
 	authed.GET("/servers/:id/containers", listContainersHandler(opts.DB, opts.MasterKey, opts.Pool))

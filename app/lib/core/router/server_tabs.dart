@@ -57,9 +57,43 @@ const List<ServerTabSpec> serverTabs = <ServerTabSpec>[
   ),
 ];
 
+/// 按这台机器的实际能力筛出要显示的分段。
+///
+/// 判断依据是首次保存时体检测出的结果（存库），不是每次进页面去连一次。
+/// `-1` 表示没探到（老数据或该项探测失败），此时**保留**该段：
+/// 宁可多给一个点了会提示「未检测到 Docker」的入口，
+/// 也不要因为探测抖动把用户真能用的功能藏掉。
+///
+/// 「监控」段不隐藏：仅保存的机器在里面有按需采样面板，属于可用功能。
+List<ServerTabSpec> visibleServerTabs({
+  required int hasDocker,
+  required int hasSftp,
+}) {
+  return serverTabs.where((t) {
+    switch (t.label) {
+      case '容器':
+        return hasDocker != 0;
+      case '文件':
+        return hasSftp != 0;
+      default:
+        return true;
+    }
+  }).toList(growable: false);
+}
+
 /// 按 label 找索引（深链 `?tab=文件` 用）。
+///
+/// 过滤后的列表长度会变，所以深链必须按 label 在**实际显示的列表**里找，
+/// 不能拿全量表的下标去对应。
 int serverTabIndex(String? label) {
   if (label == null || label.isEmpty) return 0;
   final i = serverTabs.indexWhere((t) => t.label == label);
+  return i < 0 ? 0 : i;
+}
+
+/// 在给定列表里按 label 找索引；找不到回落到 0。
+int tabIndexOf(List<ServerTabSpec> tabs, String? label) {
+  if (label == null || label.isEmpty) return 0;
+  final i = tabs.indexWhere((t) => t.label == label);
   return i < 0 ? 0 : i;
 }

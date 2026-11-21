@@ -89,6 +89,8 @@ class _ServerOverviewTabState extends ConsumerState<ServerOverviewTab>
             _FactsCard(
               state: ref.watch(serverFactsProvider(widget.serverId)),
               monitorEnabled: server.monitorEnabled,
+              serverId: widget.serverId,
+              metric: metric,
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
@@ -113,6 +115,14 @@ class _ServerOverviewTabState extends ConsumerState<ServerOverviewTab>
       },
     );
   }
+}
+
+/// 相对时间：两张卡片都用「多久之前采集/采样」，放顶层免得各写一份。
+String _ago(DateTime ts) {
+  final d = DateTime.now().difference(ts);
+  if (d.inMinutes < 1) return '刚刚';
+  if (d.inHours < 1) return '${d.inMinutes} 分钟前';
+  return '${d.inHours} 小时前';
 }
 
 class _IdentityCard extends StatelessWidget {
@@ -274,13 +284,6 @@ class _MetricsCard extends StatelessWidget {
     );
   }
 
-  static String _ago(DateTime ts) {
-    final d = DateTime.now().difference(ts);
-    if (d.inMinutes < 1) return '刚刚';
-    if (d.inHours < 1) return '${d.inMinutes} 分钟前';
-    return '${d.inHours} 小时前';
-  }
-
   Widget _bar(ThemeData theme, String label, double pct) {
     // 阈值沿用后端告警默认值思路：80% 起黄、90% 起红。
     final color = pct >= 90
@@ -336,16 +339,89 @@ class _MetricsCard extends StatelessWidget {
 ///
 /// 数据来自后台每小时一次的采集，与「实时指标」是两条独立链路：指标挂了
 /// （SSH 抖动）不影响这里显示上一次的配置；配置没采到也不影响指标的刷新。
-class _FactsCard extends StatelessWidget {
-  const _FactsCard({required this.state, required this.monitorEnabled});
+class _FactsCard extends ConsumerStatefulWidget {
+  const _FactsCard({
+    required this.state,
+    required this.monitorEnabled,
+    required this.serverId,
+    this.metric,
+  });
 
   final AsyncValue<ServerFacts?> state;
   final bool monitorEnabled;
+  final int serverId;
+
+  /// 最新一次实时指标。只用来把「/」的磁盘占用刷成 30 秒内的新鲜值：
+  /// 配置不再每小时重采，facts 里的磁盘用量会越看越旧。
+  final MetricLatest? metric;
+
+  @override
+  ConsumerState<_FactsCard> createState() => _FactsCardState();
+}
+
+class _FactsCardState extends ConsumerState<_FactsCard> {
+  bool _probing = false;
+
+  /// 自动补采只尝试一次（每个页面实例）。老的「仅保存」机器在升级前
+  /// 从没采过配置，打开详情页时替用户补一次；失败就停手，把决定权交回
+  /// 右上角的按钮，避免每次进页面都去连一台可能连不上的机器。
+  bool _autoTried = false;
+
+  /// 手动刷新配置：重新连一次，采配置 + 探 Docker/sftp。
+  ///
+  /// 这是「配置只采一次」的配套出口——装了 Docker、换了内核之后，
+  /// 不点这一下界面不会自己变。所以失败也要说清楚原因，不能让按钮
+  /// 看起来像点了没反应。
+  Future<void> _refreshFacts({bool silent = false}) async {
+    setState(() => _probing = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final outcome =
+          await ref.read(serversRepositoryProvider).reprobe(widget.serverId);
+      if (!mounted) return;
+      ref.invalidate(serverFactsProvider(widget.serverId));
+      await ref.read(overviewProvider.notifier).refresh();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            outcome.warnings.isEmpty
+                ? '配置已更新'
+                : '配置已更新（${outcome.warnings.join('；')}）',
+          ),
+        ),
+      );
+    } on Object catch (e) {
+      if (!mounted) return;
+      // 自动补采失败不弹窗：用户只是打开了页面，没点任何按钮，
+      // 突然弹一条红色错误会让人以为是他操作错了。
+      if (!silent) {
+        messenger.showSnackBar(SnackBar(content: Text(describeApiError(e))));
+      }
+    } finally {
+      if (mounted) setState(() => _probing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final facts = state.valueOrNull;
+    final facts = widget.state.valueOrNull;
+    final metric = widget.metric;
+
+    // 仅保存 + 从未采过 = 升级前添加的老机器。补一次，让「系统配置」卡
+    // 不至于对这类机器永远空着。
+    if (facts == null &&
+        !widget.monitorEnabled &&
+        !widget.state.isLoading &&
+        !widget.state.hasError &&
+        !_autoTried &&
+        !_probing) {
+      _autoTried = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _refreshFacts(silent: true);
+      });
+    }
 
     return Card(
       child: Padding(
@@ -362,21 +438,38 @@ class _FactsCard extends StatelessWidget {
                     '${_ago(facts.collectedAt)}采集',
                     style: theme.textTheme.bodySmall,
                   ),
+                const SizedBox(width: 4),
+                // 配置不再自动刷新，必须给一个手动出口，否则「装完 Docker
+                // 容器段还是不出来」就成了死路。
+                if (_probing)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  IconButton(
+                    tooltip: '重新检测（配置 + Docker + SFTP）',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    onPressed: _refreshFacts,
+                  ),
               ],
             ),
             const SizedBox(height: 12),
-            if (state.isLoading)
+            if (widget.state.isLoading)
               const LinearProgressIndicator(minHeight: 3)
-            else if (state.hasError)
+            else if (widget.state.hasError)
               Text(
-                '读取配置失败：${describeApiError(state.error!)}',
+                '读取配置失败：${describeApiError(widget.state.error!)}',
                 style: theme.textTheme.bodySmall,
               )
             else if (facts == null)
               Text(
-                monitorEnabled
-                    ? '尚未采集到配置。后台每小时采集一次，服务器离线或刚纳管时暂无数据。'
-                    : '这台服务器设为「仅保存」，后台不会采集系统配置。',
+                widget.monitorEnabled
+                    ? '尚未采集到配置。刚添加或服务器离线时暂无数据，可点右上角重新检测。'
+                    : '这台服务器设为「仅保存」，添加时采集一次配置；如果当时没连上，'
+                        '可点右上角重新检测。',
                 style: theme.textTheme.bodySmall,
               )
             else ...[
@@ -403,7 +496,14 @@ class _FactsCard extends StatelessWidget {
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 8),
-                for (final d in facts.disks) _disk(theme, d),
+                for (final d in facts.disks)
+                  // 根分区有 30 秒的实时百分比，优先用它；其他挂载点只能
+                  // 沿用采集时的数值（配置不再自动刷新）。
+                  _disk(
+                    theme,
+                    d,
+                    livePct: d.mount == '/' ? metric?.diskPct : null,
+                  ),
               ],
             ],
           ],
@@ -431,8 +531,14 @@ class _FactsCard extends StatelessWidget {
       );
 
   /// 一个挂载点：挂载路径 + 已用/总量 + 占比条（阈值与实时指标一致）。
-  Widget _disk(ThemeData theme, DiskUsage d) {
-    final pct = d.usedPct.clamp(0.0, 100.0);
+  ///
+  /// [livePct] 有值时用它重算已用量——容量（totalKb）是静态的，
+  /// 乘上最新百分比就是当前用量，不必为了一个进度条去重采整份配置。
+  Widget _disk(ThemeData theme, DiskUsage d, {double? livePct}) {
+    final pct = (livePct ?? d.usedPct).clamp(0.0, 100.0);
+    final usedText = livePct == null
+        ? d.usedText
+        : kbToText((d.totalKb * pct / 100).round());
     final color = pct >= 90
         ? theme.colorScheme.error
         : pct >= 80
@@ -455,7 +561,7 @@ class _FactsCard extends StatelessWidget {
                 ),
               ),
               Text(
-                '${d.usedText} / ${d.totalText}',
+                '$usedText / ${d.totalText}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
@@ -475,13 +581,5 @@ class _FactsCard extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  static String _ago(DateTime ts) {
-    final d = DateTime.now().difference(ts);
-    if (d.inMinutes < 1) return '刚刚';
-    if (d.inHours < 1) return '${d.inMinutes} 分钟前';
-    if (d.inDays < 1) return '${d.inHours} 小时前';
-    return '${d.inDays} 天前';
   }
 }

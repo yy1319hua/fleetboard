@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../overview/domain/bootstrap.dart';
 import '../../settings/presentation/settings_common.dart';
 import '../data/servers_repository.dart';
+import '../domain/server_probe.dart';
 import '../domain/private_key_validator.dart';
 
 /// 服务器向导：新增与编辑共用（三步）。
@@ -57,6 +58,10 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
   bool _monitorEnabled = true;
 
   bool _submitting = false;
+
+  /// 创建时后端顺手做的那次体检结果：成功说明配置卡有内容了，
+  /// 失败要说出来——否则用户回到详情页看到「尚未采集」会以为是新 bug。
+  ProbeOutcome? _probe;
   String? _failure;
   bool _done = false;
 
@@ -459,10 +464,23 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
                     ? '新配置已生效，可以查看指标与容器。'
                     : '服务器已加入总览，可以查看指标与容器。')
                 : '配置已保存，可在列表中随时连接。后台不会轮询这台机器，'
-                    '所以没有指标与告警——需要监控时编辑它并切回「纳入监控」。',
+                    '所以没有历史曲线——进详情页的「监控」段可以点「立即采样」'
+                    '看当前资源占用。',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(color: AppColors.faint),
           ),
+          if (!widget.isEdit && _probe != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              _probe!.ok
+                  ? '系统配置已获取，Docker 与 SFTP 状态已记录。'
+                  : '服务器已保存，但系统配置未取到：${_probe!.error.isEmpty ? '连接失败' : _probe!.error}',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _probe!.ok ? AppColors.ok : AppColors.warn,
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.xl),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
@@ -729,7 +747,7 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
 
       // 第二关：探通了才写库。
       if (editing == null) {
-        await repo.create(
+        final created = await repo.create(
           name: name,
           host: host,
           port: port,
@@ -740,6 +758,7 @@ class _ServerWizardPageState extends ConsumerState<ServerWizardPage> {
           keyPass: keyPass,
           monitorEnabled: _monitorEnabled,
         );
+        _probe = created.probe;
       } else {
         await repo.update(
           editing.id,

@@ -98,6 +98,15 @@ components:
         disks:
           type: array
           items: { $ref: '#/components/schemas/DiskUsage' }
+        has_docker:
+          type: integer
+          enum: [-1, 0, 1]
+          description: 三态，-1 未检测 / 0 不支持 / 1 支持；决定详情页是否显示容器与 Compose 标签。
+        has_sftp:
+          type: integer
+          enum: [-1, 0, 1]
+          description: 同上，决定是否显示文件标签。
+        probed_at: { type: string, format: date-time, nullable: true }
         collected_at: { type: string, format: date-time }
     Container:
       type: object
@@ -486,13 +495,36 @@ paths:
       operationId: createServer
       tags: [servers]
       x-app-consumed: true
-      summary: 新增服务器
+      summary: 新增服务器（创建后立即体检一次）
+      description: |
+        创建成功后异步体检测一次：采系统配置、探 Docker、探 sftp，结果写入 server_facts。
+        体检失败不影响创建——机器已落库，响应里的 probe.ok=false 与 error 说明原因，
+        用户可在详情页点「重新检测」重试。
       responses:
-        '200':
-          description: 成功
+        '201':
+          description: 已创建
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ApiEnvelope' }
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiEnvelope' }
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [server, probe]
+                        properties:
+                          server: { $ref: '#/components/schemas/Server' }
+                          probe:
+                            type: object
+                            properties:
+                              ok: { type: boolean }
+                              has_docker: { type: integer, enum: [-1, 0, 1] }
+                              has_sftp: { type: integer, enum: [-1, 0, 1] }
+                              error: { type: string }
+                              warnings:
+                                type: array
+                                items: { type: string }
   /api/servers/probe:
     post:
       operationId: probeServer
@@ -612,6 +644,70 @@ paths:
               schema: { $ref: '#/components/schemas/ApiEnvelope' }
 
   # ===== 容器 =====
+  /api/servers/{id}/probe:
+    post:
+      operationId: reprobeServer
+      tags: [servers]
+      x-app-consumed: true
+      summary: 重新体检（采配置 + 探 Docker/sftp）
+      description: |
+        与 POST /api/servers/probe 的区别：那个是「还没落库的预检」，只验证能不能连；
+        这个针对已保存的机器，会真的把配置与能力写回库，用于「装完 Docker 后让容器标签出来」。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiEnvelope' }
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          has_docker: { type: integer, enum: [-1, 0, 1] }
+                          has_sftp: { type: integer, enum: [-1, 0, 1] }
+                          facts: { $ref: '#/components/schemas/ServerFacts' }
+                          warnings:
+                            type: array
+                            items: { type: string }
+        '502': { description: 连不上或采配置失败 }
+        '404': { description: 服务器不存在 }
+
+  /api/servers/{id}/sample:
+    post:
+      operationId: sampleServerOnce
+      tags: [metrics]
+      x-app-consumed: true
+      summary: 按需采样一次（仅「仅保存」的机器使用）
+      description: |
+        纳管机器有 30 秒后台采集，不需要调它。「仅保存」不轮询，用户点一下才连一次，
+        把这一瞬间的 CPU/内存/磁盘/负载写进 server_metrics。
+        因此曲线上的点是稀疏的——只有被点过的时刻才有数据，不是历史回放。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiEnvelope' }
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          cpu_pct: { type: number }
+                          mem_pct: { type: number }
+                          disk_pct: { type: number }
+                          load1: { type: number }
+        '502': { description: 连接或采样失败 }
+
   /api/servers/{id}/containers:
     get:
       operationId: listContainers
@@ -890,7 +986,9 @@ paths:
       tags: [metrics]
       x-app-consumed: true
       summary: 主机静态配置（CPU 型号/核数、内存总量、磁盘挂载点、系统与内核）
-      description: 由后台每小时采集一次写入 server_facts；尚未采集时返回 404 与提示文案。
+      description: |
+        在首次添加服务器时采集一次（含 Docker/sftp 能力探测），之后仅在用户点「重新检测」时更新。
+        尚未采集时返回 404 与提示文案。
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:

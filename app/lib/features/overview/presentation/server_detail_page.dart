@@ -8,11 +8,12 @@ import '../../../core/widgets/status_dot.dart';
 import '../../../core/widgets/tab_active_scope.dart';
 import '../../../core/widgets/tab_refresh_scope.dart';
 import '../../overview/application/overview_notifier.dart';
+import '../../servers/data/facts_repository.dart';
 
-/// 服务器详情页：五段 Tab（概览 / 容器 / 监控 / 文件 / 运维）。
+/// 服务器详情页：分段随机器能力变化（概览 / 容器 / 监控 / 文件 / 运维）。
 ///
-/// 取代 M9.1 的两行 ListTile 占位实现：五段各自接真实数据源，
-/// 每段都有空态与错误态文案（空态必须说明「为什么空、怎么让它不空」）。
+/// 分段不再固定五个：首次保存时体检测出「没有 Docker」「没有 sftp 子系统」，
+/// 对应的段直接不出现——留着点了只会报错的入口，比没有更让人困惑。
 ///
 /// Tab 状态与 URL 联动：`/servers/3?tab=文件` 可直达指定段（App 内部导航用得上，
 /// 例如从通知中心点「磁盘告警」直接落到监控段）。**只改 query 不改路径**，
@@ -33,34 +34,62 @@ class ServerDetailPage extends ConsumerStatefulWidget {
 
 class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
     with SingleTickerProviderStateMixin {
-  late final TabController _controller = TabController(
-    length: serverTabs.length,
-    vsync: this,
-    initialIndex: serverTabIndex(widget.initialTab),
-  )..addListener(_handleTabChanged);
+  TabController? _controller;
+
+  /// 当前实际显示的分段。首帧按全量渲染，facts 到达后再收窄。
+  List<ServerTabSpec> _tabs = serverTabs;
+
+  /// 刷新句柄按 label 存，不按索引：分段数量会随能力变化而变，
+  /// 用索引存会在重建时把「文件段的句柄」错配给「监控段」。
+  final Map<String, TabRefreshSlot> _slots = <String, TabRefreshSlot>{};
 
   /// 当前段索引。只为「监控段要不要允许横滑切段」这一件事维护：
   /// TabController.index 在 animateTo 开始时就已变成目标值，所以监听器里
   /// 必须自己比一次，否则每帧动画都会 setState。
-  late int _tabIndex = _controller.index;
+  int _tabIndex = 0;
 
-  /// 每个分段一个刷新句柄，由分段自己注册（见 TabRefreshScope）。
-  ///
-  /// 为什么不让父级直接调各 provider：监控段的时间窗、文件段的当前目录都是
-  /// 分段内部状态，父级根本不知道要传什么参数。句柄是唯一不需要父级偷看子级
-  /// 状态的接法。
-  late final List<TabRefreshSlot> _slots = List.generate(
-    serverTabs.length,
-    (_) => TabRefreshSlot(),
-  );
+  @override
+  void initState() {
+    super.initState();
+    _installController(serverTabs, widget.initialTab);
+  }
+
+  TabRefreshSlot _slotFor(String label) =>
+      _slots.putIfAbsent(label, TabRefreshSlot.new);
+
+  void _installController(List<ServerTabSpec> tabs, String? keepLabel) {
+    final labels = tabs.map((t) => t.label).toList(growable: false);
+    var idx = keepLabel == null ? 0 : labels.indexOf(keepLabel);
+    if (idx < 0) idx = 0;
+
+    _controller?.removeListener(_handleTabChanged);
+    _controller?.dispose();
+    _controller = TabController(
+      length: tabs.length,
+      vsync: this,
+      initialIndex: idx,
+    )..addListener(_handleTabChanged);
+    _tabs = tabs;
+    _tabIndex = idx;
+  }
+
+  bool _sameLabels(List<ServerTabSpec> a, List<ServerTabSpec> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].label != b[i].label) return false;
+    }
+    return true;
+  }
 
   /// AppBar 刷新按钮：刷「当前这一段」。
   ///
   /// 没注册句柄的分段（运维段没有可刷新的列表）退回刷新概览——按钮按下去
   /// 总要有反馈，不能出现「点了什么都不发生」的情况。
   Future<void> _refreshCurrentTab() async {
-    final slot = _slots[_tabIndex];
-    if (slot.hasHandler) {
+    final slot = _tabIndex < _tabs.length
+        ? _slotFor(_tabs[_tabIndex].label)
+        : null;
+    if (slot != null && slot.hasHandler) {
       await slot.run();
       return;
     }
@@ -68,15 +97,15 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
   }
 
   void _handleTabChanged() {
-    if (_tabIndex == _controller.index) return;
-    setState(() => _tabIndex = _controller.index);
+    final c = _controller;
+    if (c == null || _tabIndex == c.index) return;
+    setState(() => _tabIndex = c.index);
   }
 
   @override
   void dispose() {
-    _controller
-      ..removeListener(_handleTabChanged)
-      ..dispose();
+    _controller?.removeListener(_handleTabChanged);
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -92,6 +121,28 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
     final servers = ref.watch(overviewProvider).value?.servers ?? const [];
     final server = servers.where((s) => s.id == sid).firstOrNull;
     final theme = Theme.of(context);
+
+    // 能力来自首次保存时的体检结果。-1（没探到）时两段都保留。
+    final facts = ref.watch(serverFactsProvider(sid)).valueOrNull;
+    final nextTabs = visibleServerTabs(
+      hasDocker: facts?.hasDocker ?? -1,
+      hasSftp: facts?.hasSftp ?? -1,
+    );
+    if (!_sameLabels(_tabs, nextTabs)) {
+      // 不能在 build 里 dispose 正在被 TabBar 使用的 controller（会抛
+      // "used after being disposed"），所以推到帧末再重建。
+      // 代价是收窄分段时会闪一帧，只发生在 facts 首次加载完成那一刻。
+      final keep = _tabIndex < _tabs.length ? _tabs[_tabIndex].label : widget.initialTab;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_sameLabels(_tabs, nextTabs)) return;
+        setState(() => _installController(nextTabs, keep));
+      });
+    }
+
+    final controller = _controller;
+    final tabs = _tabs;
+    final monitorIndex = tabIndexOf(tabs, '监控');
 
     return Scaffold(
       appBar: AppBar(
@@ -138,51 +189,55 @@ class _ServerDetailPageState extends ConsumerState<ServerDetailPage>
             onRefresh: _refreshCurrentTab,
           ),
         ],
-        bottom: TabBar(
-          controller: _controller,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          labelStyle: theme.textTheme.labelLarge,
-          tabs: [
-            for (final tab in serverTabs)
-              Tab(
-                height: 44,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(tab.icon, size: 16),
-                    const SizedBox(width: 6),
-                    Text(tab.label),
-                  ],
-                ),
+        bottom: controller == null
+            ? null
+            : TabBar(
+                controller: controller,
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                labelStyle: theme.textTheme.labelLarge,
+                tabs: [
+                  for (final tab in tabs)
+                    Tab(
+                      height: 44,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(tab.icon, size: 16),
+                          const SizedBox(width: 6),
+                          Text(tab.label),
+                        ],
+                      ),
+                    ),
+                ],
               ),
-          ],
-        ),
       ),
-      body: TabBarView(
-        controller: _controller,
-        // 监控段禁止横滑切段：那一段里左右拖动是「移动时间游标」，
-        // 段级横滑会和它抢同一个手势。与其在竞技场里赌谁先 accept
-        // （v0.4.10 试过，真机上外层照样赢），不如从结构上让外层不参战。
-        // 代价：监控段不能用滑动切段，要点上面的 Tab —— 仪表盘类页面的常规做法。
-        physics: _tabIndex == serverTabIndex('监控')
-            ? const NeverScrollableScrollPhysics()
-            : null,
-        children: [
-          for (var i = 0; i < serverTabs.length; i++)
-            // 子树始终保留（切回来不重拉、滚动位置不丢），可见性单独下传：
-            // 各段据此停掉自己的轮询。两者拆开之后，既没有「切走还在打 SSH」，
-            // 也没有「切回来从头加载」。
-            _KeepAlive(
-              active: _tabIndex == i,
-              child: TabRefreshScope(
-                slot: _slots[i],
-                child: serverTabs[i].builder(sid),
-              ),
+      body: controller == null
+          ? const SizedBox.shrink()
+          : TabBarView(
+              controller: controller,
+              // 监控段禁止横滑切段：那一段里左右拖动是「移动时间游标」，
+              // 段级横滑会和它抢同一个手势。与其在竞技场里赌谁先 accept
+              // （v0.4.10 试过，真机上外层照样赢），不如从结构上让外层不参战。
+              // 代价：监控段不能用滑动切段，要点上面的 Tab —— 仪表盘类页面的常规做法。
+              physics: _tabIndex == monitorIndex
+                  ? const NeverScrollableScrollPhysics()
+                  : null,
+              children: [
+                for (var i = 0; i < tabs.length; i++)
+                  // 子树始终保留（切回来不重拉、滚动位置不丢），可见性单独下传：
+                  // 各段据此停掉自己的轮询。两者拆开之后，既没有「切走还在打 SSH」，
+                  // 也没有「切回来从头加载」。
+                  _KeepAlive(
+                    active: _tabIndex == i,
+                    child: TabRefreshScope(
+                      slot: _slotFor(tabs[i].label),
+                      child: tabs[i].builder(sid),
+                    ),
+                  ),
+              ],
             ),
-        ],
-      ),
-      floatingActionButton: server == null
+      floatingActionButton: server == null || !tabs.any((t) => t.label == '容器')
           ? null
           : FloatingActionButton.small(
               tooltip: '容器日志',
