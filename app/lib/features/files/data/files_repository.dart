@@ -53,6 +53,8 @@ class FilesRepository {
       total: (data['total'] as num?)?.toInt() ?? entries.length,
       offset: (data['offset'] as num?)?.toInt() ?? 0,
       limit: (data['limit'] as num?)?.toInt() ?? limit,
+      path: (data['path'] as String?) ?? '',
+      home: (data['home'] as String?) ?? '',
     );
   }
 

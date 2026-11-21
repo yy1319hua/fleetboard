@@ -115,7 +115,7 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab>
             ),
             const SizedBox(height: 12),
             Text(
-              '正在读取 ${state.path}',
+              state.path.isEmpty ? '正在读取目录' : '正在读取 ${state.path}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
@@ -124,13 +124,21 @@ class _ServerFilesTabState extends ConsumerState<ServerFilesTab>
     }
     if (state.error != null && state.listing == null) {
       return _ErrorPane(
-        path: state.path,
+        // 起始目录由后端决定，此时还没有路径可显示，用「起始目录」代替。
+        path: state.path.isEmpty ? '起始目录' : state.path,
         error: state.error!,
         onRetry: () =>
             ref.read(fileBrowserProvider(_serverId).notifier).refresh(),
-        onUp: state.path == '/'
+        // 空 path 表示「由后端决定起始目录」，此时还没有上一级可退。
+        onUp: state.path.isEmpty || state.path == '/'
             ? null
             : () => ref.read(fileBrowserProvider(_serverId).notifier).up(),
+        // 读某个目录被拒时（常见于根目录 /），给一条确定的退路。
+        onHome: state.home.isNotEmpty && state.home != state.path
+            ? () => ref
+                .read(fileBrowserProvider(_serverId).notifier)
+                .load(state.home)
+            : null,
       );
     }
     final listing = state.listing;
@@ -569,12 +577,16 @@ class _ErrorPane extends StatelessWidget {
     required this.error,
     required this.onRetry,
     this.onUp,
+    this.onHome,
   });
 
   final String path;
   final Object error;
   final VoidCallback onRetry;
   final VoidCallback? onUp;
+
+  /// 「回到我的目录」：登录目录读得了，当前目录读不了时的退路。
+  final VoidCallback? onHome;
 
   @override
   Widget build(BuildContext context) {
@@ -608,6 +620,14 @@ class _ErrorPane extends StatelessWidget {
                 onPressed: onUp,
                 icon: const Icon(Icons.arrow_upward, size: 18),
                 label: Text('返回 ${parentOf(path)}'),
+              ),
+            ],
+            if (onHome != null) ...<Widget>[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: onHome,
+                icon: const Icon(Icons.home_outlined, size: 18),
+                label: const Text('回到我的目录'),
               ),
             ],
           ],
@@ -683,7 +703,9 @@ class _PathBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final atRoot = path == '/' || path.isEmpty;
+    final atRoot = path == '/';
+    // 空 path 只在首次加载时出现：起始目录由后端决定，此时还不知道落在哪。
+    final label = path.isEmpty ? '读取目录…' : (atRoot ? '/' : path);
     return Material(
       color: theme.colorScheme.surfaceContainerLow,
       child: Padding(
@@ -694,7 +716,7 @@ class _PathBar extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.arrow_upward),
               tooltip: '上一级',
-              onPressed: atRoot ? null : onUp,
+              onPressed: atRoot || path.isEmpty ? null : onUp,
             ),
             Expanded(
               child: SingleChildScrollView(
@@ -703,7 +725,7 @@ class _PathBar extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Text(
-                    atRoot ? '/' : path,
+                    label,
                     style: theme.textTheme.bodySmall
                         ?.copyWith(fontFamily: 'monospace'),
                   ),
@@ -713,7 +735,7 @@ class _PathBar extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.upload_file_outlined),
               tooltip: '上传到当前目录',
-              onPressed: onUpload,
+              onPressed: path.isEmpty ? null : onUpload,
             ),
             IconButton(
               icon: const Icon(Icons.sort),

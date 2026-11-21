@@ -35,6 +35,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(slowRequestLogger())
 
 	// 登录失败退避：进程内单实例，按「用户名 + IP」计数。
 	loginGuard := newLoginGuard()

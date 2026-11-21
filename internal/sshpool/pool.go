@@ -137,7 +137,9 @@ func DefaultDialer(ctx context.Context, cfg Config) (*ssh.Client, error) {
 		Auth: auths,
 		// 首次信任（TOFU）；后续可切换为 known_hosts 校验。
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
+		// 注意：ClientConfig.Timeout 只被 ssh.Dial 使用，对下面手工建的 conn 无效，
+		// 真正的握手上限由 SetDeadline 控制（见 handshakeTimeout）。
+		Timeout: 10 * time.Second,
 	}
 
 	d := &net.Dialer{Timeout: 10 * time.Second}
@@ -145,13 +147,39 @@ func DefaultDialer(ctx context.Context, cfg Config) (*ssh.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// 握手必须有上限：ssh.NewClientConn 会一直等对端的 version 字符串，
+	// 且 ClientConfig.Timeout 只对 ssh.Dial 生效、对这条已建好的 conn 无效。
+	// 部分主机（如限制并发连接的虚拟主机）收下 TCP 后不回 banner，此时
+	// 没有 deadline 就会永久阻塞——拨号协程泄漏、socket 半死挂在 ESTAB。
+	deadline := time.Now().Add(handshakeTimeout)
+	if dl, ok := ctx.Deadline(); ok && dl.Before(deadline) {
+		deadline = dl // 调用方给得更紧时以调用方为准
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
 	sc, chans, reqs, err := ssh.NewClientConn(conn, cfg.addr(), cc)
 	if err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("SSH 握手未完成（对端无响应或拒绝并发连接）: %w", err)
+	}
+	// 握手完成后清掉 deadline：这条 conn 之后承载终端、SFTP 等长连接，
+	// 残留 deadline 会让所有读写到点统一超时。
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		_ = sc.Close()
 		_ = conn.Close()
 		return nil, err
 	}
 	return ssh.NewClient(sc, chans, reqs), nil
 }
+
+// handshakeTimeout 是 TCP 建连后完成 SSH 握手的上限。
+//
+// 10s 与拨号超时一致：超过这个时间对端仍未完成密钥交换，基本可判为
+// 不可用（虚拟主机限制并发连接时表现为「收下连接后不回话」）。
+const handshakeTimeout = 10 * time.Second
 
 type entry struct {
 	client   *ssh.Client

@@ -59,12 +59,21 @@ class FileListing {
     required this.total,
     required this.offset,
     required this.limit,
+    this.path = '',
+    this.home = '',
   });
 
   final List<FileEntry> entries;
   final int total;
   final int offset;
   final int limit;
+
+  /// 后端实际读取的目录。首次进入时请求不带 path，由后端决定「登录目录」，
+  /// 再用它回填面包屑——部分主机（serv00 这类）普通账户读不了 `/`。
+  final String path;
+
+  /// 登录目录（sftp 的 Getwd）。取不到时为空。
+  final String home;
 
   bool get hasMore => offset + entries.length < total;
 

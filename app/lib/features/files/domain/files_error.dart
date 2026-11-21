@@ -27,7 +27,7 @@ String describeFilesError(Object error, {String? path}) {
 
   if (lower.contains('permission denied') || code == 403) {
     return '没有权限访问 $target。当前 SSH 账户在此目录没有读权限，'
-        '可以返回上一级，或换用有权限的账户。';
+        '可以返回上一级，或点下方「回到我的目录」。';
   }
   if (lower.contains('no such file') ||
       lower.contains('does not exist') ||

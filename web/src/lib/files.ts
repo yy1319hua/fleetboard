@@ -9,6 +9,10 @@ export interface ListResult {
   total: number;
   offset: number;
   limit: number;
+  /** 后端实际读取的目录（请求不带 path 时由服务端的登录目录决定）。 */
+  path: string;
+  /** 登录目录（sftp Getwd），读当前目录被拒时作为退路。 */
+  home: string;
 }
 
 export function listFiles(

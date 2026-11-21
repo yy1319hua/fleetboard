@@ -55,7 +55,8 @@ export function ServerFilesTab() {
   const { server } = useOutletContext<Ctx>();
   const qc = useQueryClient();
 
-  const [dir, setDir] = useState("/");
+  // 空串 = 由后端决定起始目录（sftp 登录目录）；部分主机普通账户读不了 /。
+  const [dir, setDir] = useState("");
   const [sort, setSort] = useState<SortField>("name");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
   const [editing, setEditing] = useState<string | null>(null);
@@ -74,7 +75,10 @@ export function ServerFilesTab() {
 
   const entries = data?.entries ?? [];
   const hasMore = entries.length < (data?.total ?? 0);
-  const crumbs = useMemo(() => breadcrumbs(dir), [dir]);
+  // 请求没带 path 时实际目录由后端决定，界面一律以回传值为准。
+  const resolvedDir = data?.path || dir;
+  const crumbs = useMemo(() => breadcrumbs(resolvedDir), [resolvedDir]);
+  const home = data?.home ?? "";
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ["files", server.id] });
@@ -137,7 +141,7 @@ export function ServerFilesTab() {
   const handleRename = (entry: FileEntry) => {
     const next = window.prompt("重命名为（可含路径）", entry.name);
     if (!next || next === entry.name) return;
-    const target = next.includes("/") ? next : joinPath(dir, next);
+    const target = next.includes("/") ? next : joinPath(resolvedDir, next);
     rename.mutate({ from: entry.path, to: target });
   };
 
@@ -174,7 +178,7 @@ export function ServerFilesTab() {
       const update = (patch: Partial<UploadItem>) =>
         setUploads((prev) => prev.map((u) => (u.id === item.id ? { ...u, ...patch } : u)));
 
-      const remotePath = joinPath(dir, file.name);
+      const remotePath = joinPath(resolvedDir, file.name);
 
       try {
         await uploadFileChunked({
@@ -261,8 +265,13 @@ export function ServerFilesTab() {
         </nav>
 
         <div className="flex items-center gap-2">
-          {dir !== "/" ? (
-            <Button size="sm" variant="ghost" onClick={() => setDir(parentPath(dir))}>
+          {home && home !== resolvedDir ? (
+            <Button size="sm" variant="ghost" onClick={() => setDir(home)}>
+              我的目录
+            </Button>
+          ) : null}
+          {resolvedDir && resolvedDir !== "/" ? (
+            <Button size="sm" variant="ghost" onClick={() => setDir(parentPath(resolvedDir))}>
               上一级
             </Button>
           ) : null}
@@ -335,7 +344,17 @@ export function ServerFilesTab() {
         {isLoading ? (
           <SkeletonRows rows={6} cols={4} />
         ) : isError ? (
-          <ErrorState message={error instanceof Error ? error.message : "加载失败"} onRetry={() => void refetch()} />
+          <div className="pb-6">
+            <ErrorState message={error instanceof Error ? error.message : "加载失败"} onRetry={() => void refetch()} />
+            {/* 常见于读根目录被拒：给一条确定的退路，而不是让用户自己找家目录。 */}
+            {home && home !== resolvedDir ? (
+              <div className="-mt-4 flex justify-center">
+                <Button size="sm" variant="secondary" onClick={() => setDir(home)}>
+                  回到我的目录（{home}）
+                </Button>
+              </div>
+            ) : null}
+          </div>
         ) : entries.length === 0 ? (
           <EmptyState title="空目录" description="此目录下没有文件，或当前 SSH 用户无读取权限。" />
         ) : (

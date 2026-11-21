@@ -11,6 +11,7 @@ import '../domain/file_entry.dart';
 class FileBrowserState {
   const FileBrowserState({
     required this.path,
+    this.home = '',
     this.listing,
     this.loading = false,
     this.loadingMore = false,
@@ -20,6 +21,10 @@ class FileBrowserState {
   });
 
   final String path;
+
+  /// 登录目录（后端 sftp Getwd）。首次加载后才有值；
+  /// 读 `path` 被拒时，界面用它作为「回到我的目录」的落点。
+  final String home;
   final FileListing? listing;
   final bool loading;
 
@@ -32,6 +37,7 @@ class FileBrowserState {
 
   FileBrowserState copyWith({
     String? path,
+    String? home,
     FileListing? listing,
     bool? loading,
     bool? loadingMore,
@@ -42,6 +48,7 @@ class FileBrowserState {
   }) {
     return FileBrowserState(
       path: path ?? this.path,
+      home: home ?? this.home,
       listing: listing ?? this.listing,
       loading: loading ?? this.loading,
       loadingMore: loadingMore ?? this.loadingMore,
@@ -54,8 +61,9 @@ class FileBrowserState {
 
 class FileBrowserNotifier extends StateNotifier<FileBrowserState> {
   FileBrowserNotifier(this._repo, this._serverId)
-      : super(const FileBrowserState(path: '/', loading: true)) {
-    load('/');
+      : super(const FileBrowserState(path: '', home: '', loading: true)) {
+    // 空 path = 由后端决定起始目录（sftp 的登录目录），不再假设根目录可读。
+    load('');
   }
 
   final FilesRepository _repo;
@@ -67,6 +75,7 @@ class FileBrowserNotifier extends StateNotifier<FileBrowserState> {
     final sameDir = path == state.path;
     state = FileBrowserState(
       path: path,
+      home: state.home,
       listing: sameDir ? state.listing : null,
       loading: true,
       sort: state.sort,
@@ -80,7 +89,18 @@ class FileBrowserNotifier extends StateNotifier<FileBrowserState> {
         order: state.order,
       );
       if (!mounted) return;
-      state = state.copyWith(listing: listing, loading: false, clearError: true);
+      // 请求没带 path 时，实际目录由后端决定，这里回填成响应里的 path，
+      // 否则面包屑会停在空路径上。
+      final resolved = path.isNotEmpty
+          ? path
+          : (listing.path.isNotEmpty ? listing.path : '/');
+      state = state.copyWith(
+        path: resolved,
+        home: listing.home.isNotEmpty ? listing.home : state.home,
+        listing: listing,
+        loading: false,
+        clearError: true,
+      );
     } on Object catch (e) {
       if (!mounted) return;
       state = state.copyWith(loading: false, error: e);

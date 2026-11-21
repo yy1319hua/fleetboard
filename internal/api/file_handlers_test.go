@@ -188,3 +188,38 @@ func TestStatServerNotFound(t *testing.T) {
 		t.Errorf("status=%d, want 404", w.Code)
 	}
 }
+
+// 省略 path 表示「起始目录交给服务端决定」（sftp 的登录目录）。
+// 过去默认补成 "/"，在 serv00 这类读不了根目录的主机上必然 permission denied。
+func TestListFilesWithoutPathNotRejected(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	cw := authReq(r, http.MethodPost, "/api/servers", tokens.AccessToken, map[string]any{
+		"name": "x", "host": "unreachable", "auth_method": "key", "private_key": "K",
+	})
+	if cw.Code != http.StatusCreated {
+		t.Fatalf("创建失败 status=%d", cw.Code)
+	}
+
+	w := authReq(r, http.MethodGet, "/api/servers/1/files", tokens.AccessToken, nil)
+	if w.Code == http.StatusBadRequest {
+		t.Fatalf("省略 path 被判 400，起始目录应交给服务端决定: %s", w.Body)
+	}
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status=%d, want 502（假 dialer 必然失败）body=%s", w.Code, w.Body)
+	}
+}
+
+// 相对路径仍然要挡住：空值放宽不等于放弃路径校验。
+func TestListFilesRejectsRelativePath(t *testing.T) {
+	r, d := newAuthTestServer(t)
+	defer d.Close()
+	tokens := loginTokens(t, r)
+
+	w := authReq(r, http.MethodGet, "/api/servers/1/files?path=etc/passwd", tokens.AccessToken, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status=%d, want 400 body=%s", w.Code, w.Body)
+	}
+}
